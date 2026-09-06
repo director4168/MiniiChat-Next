@@ -16,7 +16,7 @@
 
 ## 简介
 
-本应用/项目(MiniiChat Next)由*director_Carter*基于*MiniiChat*项目(MIT开源)，新增部分功能基于RikkaHub项目(AGPL-3.0开源）的相关源码
+本应用/项目(MiniiChat Next)由*director_Carter*基于*MiniiChat*项目(MIT开源)，新增部分功能基于RikkaHub项目(AGPL-3.0开源）的相关源码  
 由于使用了AGPL-3.0开源的*RikkaHub*项目源码，根据*AGPL-3.0 5-c、13*，本项目将使用AGPL-3.0进行开源
 
 本项目使用了以下项目内容:  
