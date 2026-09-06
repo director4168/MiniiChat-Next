@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MiniiChat Next</string>
+    <string name="new_chat">New chat</string>
+    <string name="send">Send</string>
+    <string name="settings">Settings</string>
+    <string name="hint_input">Message MiniiChat…</string>
+    <string name="empty_title">Hi, I\'m MiniiChat</string>
+    <string name="empty_subtitle">An open-source LLM client. Bring your own keys.</string>
+    <string name="copy">Copy</string>
+    <string name="delete">Delete</string>
+    <string name="rename">Rename</string>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="save">Save</string>
+    <string name="add">Add</string>
+    <string name="chats">Chats</string>
+    <string name="providers">Providers</string>
+    <string name="provider">Provider</string>
+    <string name="assistants">Assistants</string>
+    <string name="assistant">Assistant</string>
+    <string name="active">Active</string>
+    <string name="add_provider">Add provider</string>
+    <string name="edit_provider">Edit provider</string>
+    <string name="add_assistant">Add assistant</string>
+    <string name="edit_assistant">Edit assistant</string>
+    <string name="assistant_name">Name</string>
+    <string name="assistant_avatar">Emoji avatar</string>
+    <string name="assistant_system_prompt">System prompt</string>
+    <string name="prompt_vars_hint">Variables: {model} {provider} {assistant} {date} {time} {datetime} {weekday} {locale}</string>
+    <string name="override_temperature">Override temperature</string>
+    <string name="provider_name">Name</string>
+    <string name="setting_base_url">Base URL</string>
+    <string name="setting_api_key">API Key</string>
+    <string name="setting_model">Model</string>
+    <string name="setting_system">System prompt</string>
+    <string name="setting_temperature">Temperature</string>
+    <string name="setting_stream">Stream responses</string>
+    <string name="setting_about">About</string>
+    <string name="setting_appearance">Appearance</string>
+    <string name="setting_dynamic_color">Material You dynamic color</string>
+    <string name="setting_dynamic_color_hint">Follow system color (Android 12+)</string>
+    <string name="setting_theme_mode">Theme mode</string>
+    <string name="setting_theme_system">System</string>
+    <string name="setting_theme_light">Light</string>
+    <string name="setting_theme_dark">Dark</string>
+    <string name="setting_language">Language</string>
+    <string name="setting_language_system">System</string>
+    <string name="setting_language_en">English</string>
+    <string name="setting_language_zh">中文</string>
+    <string name="custom_headers">Custom HTTP headers</string>
+    <string name="custom_headers_hint">Sent with every request</string>
+    <string name="extra_body">Extra request body</string>
+    <string name="extra_body_hint">Merged into the chat completion JSON body</string>
+    <string name="key">Key</string>
+    <string name="value">Value</string>
+    <string name="add_row">Add a row</string>
+    <string name="about_text">MiniiChat — an open-source LLM client. MIT licensed.</string>
+    <string name="about_text_intro" translatable="false">本应用/项目（MiniiChat Next）由director_Carter基于MiniiChat项目（MIT开源），新增部分功能基于RikkaHub项目（AGPL-3.0开源）的相关源码</string>
+    <string name="about_text_full" translatable="false">本应用/项目（MiniiChat Next）由director_Carter基于MiniiChat项目（MIT开源），新增部分功能基于RikkaHub项目（AGPL-3.0开源）的相关源码\nMiniiChat(https://github.com/Minis233/miniichat)\nRikkaHub(https://github.com/rikkahub/rikkahub)\nMiniiChat Next</string>
+    <string name="error_no_provider">No provider configured. Add one in Settings.</string>
+    <string name="stop">Stop</string>
+    <string name="regenerate">Regenerate</string>
+    <string name="thinking">Thinking…</string>
+    <string name="example_prompt_1">Explain what an LLM is in one paragraph.</string>
+    <string name="example_prompt_2">Write a haiku about Android development.</string>
+    <string name="example_prompt_3">Give me 5 tips for productive remote work.</string>
+    <string name="example_prompt_4">Translate \"Good morning\" into Japanese.</string>
+    <string name="search_chats">Search chats</string>
+    <string name="search_models">Search models</string>
+    <string name="fetch_models">Fetch models</string>
+    <string name="fetching">Fetching…</string>
+    <string name="add_model_manually">Add model manually</string>
+    <string name="select_model">Select model</string>
+    <string name="no_models">No models yet. Tap “Fetch models” or add manually.</string>
+    <string name="no_providers">No providers yet</string>
+    <string name="no_providers_hint">Add one to get started</string>
+    <string name="pick_preset_or_manual">Pick a preset or fill in manually</string>
+    <string name="choose_preset">Choose preset…</string>
+    <string name="expand_models">Show %1$d more</string>
+    <string name="collapse_models">Show fewer</string>
+    <string name="attach_image">Attach image</string>
+    <string name="attach_file">Attach file</string>
+    <string name="attachment_image">Image</string>
+    <string name="attachment_file">File</string>
+    <string name="attachment_unsupported">Provider does not support multimodal input — sent as filename reference only.</string>
+    <string name="attachment_too_large">Attachment too large (max %1$d MB)</string>
+    <string name="date_today">Today</string>
+    <string name="date_yesterday">Yesterday</string>
+    <string name="date_previous_7">Previous 7 days</string>
+    <string name="date_previous_30">Previous 30 days</string>
+    <string name="date_older">Older</string>
+    <string name="section_behavior">Behavior</string>
+    <string name="section_about">About</string>
+    <string name="error_dialog_title">Something went wrong</string>
+    <string name="error_open_providers">Open Providers</string>
+    <string name="edit">Edit</string>
+    <string name="regenerate_from_here">Regenerate from here</string>
+    <string name="advanced_options">Advanced</string>
+
+    <!-- Profile -->
+    <string name="profile">Profile</string>
+    <string name="profile_subtitle">Your display name and avatar</string>
+    <string name="display_name">Display name</string>
+    <string name="display_name_default">You</string>
+    <string name="tap_avatar_to_change">Tap avatar to change</string>
+    <string name="back">Back</string>
+
+    <!-- Skills -->
+    <string name="skills">Skills</string>
+    <string name="skills_section_hint">Skills are added to the system prompt. Enable per assistant.</string>
+    <string name="skills_empty_title">No skills yet</string>
+    <string name="skills_empty_hint">Skills inject extra instructions into the system prompt.</string>
+    <string name="skills_subtitle_empty">Import .md or create</string>
+    <string name="skills_subtitle_count">%1$d enabled · bind per assistant</string>
+    <string name="skills_import">Import .md</string>
+    <string name="skills_new">New skill</string>
+    <string name="skill_edit_title">Edit skill</string>
+    <string name="skill_new_title">New skill</string>
+    <string name="skill_field_name">Name</string>
+    <string name="skill_field_description">Description</string>
+    <string name="skill_field_body">Body (markdown / prompt content)</string>
+    <string name="skill_pick_or_crop">Pick / Crop</string>
+    <string name="skill_chars_count">%1$d chars</string>
+    <string name="skill_imported">Imported skill: %1$s</string>
+    <string name="skill_import_failed">Import failed: %1$s</string>
+    <string name="skill_import_failed_read">Could not read file</string>
+    <string name="skill_import_failed_empty">File is empty</string>
+    <string name="skill_import_failed_meta">SKILL.md is missing required name / description fields</string>
+    <string name="skill_no_skills_for_assistant">No skills available. Import from Settings → Skills first.</string>
+    <string name="skill_auto_name">Parsed name: %1$s</string>
+    <string name="skill_name_required">Please use the correct SKILL instead of just an md document</string>
+    <string name="skill_delete_confirm">Delete skill \"%1$s\"? Linked assistants will also have it removed.</string>
+
+    <!-- Avatar picker -->
+    <string name="avatar_picker_title">Avatar</string>
+    <string name="avatar_picker_emoji_hint">Or type an emoji</string>
+    <string name="avatar_picker_pick_image">Pick image</string>
+    <string name="avatar_picker_reset_emoji">Reset to emoji</string>
+
+    <!-- Image cropper -->
+    <string name="cropper_loading">Loading…</string>
+    <string name="cropper_hint">Pinch / drag to adjust</string>
+    <string name="cropper_confirm">Confirm</string>
+
+    <string name="action_cancel">Cancel</string>
+    <string name="action_save">Save</string>
+
+    <!-- Token usage -->
+    <string name="token_usage">Token usage</string>
+    <string name="token_usage_input">Prompt (input)</string>
+    <string name="token_usage_output">Completion (output)</string>
+    <string name="token_usage_total">Total</string>
+    <string name="token_usage_hint">Total consumption</string>
+
+    <!-- Assistant editor -->
+    <string name="assistant_skills">Assistant skills</string>
+    <string name="assistant_skills_hint">Skills enabled for this assistant are added to its system prompt.</string>
+    <string name="assistant_background">Assistant background</string>
+    <string name="background_opacity">Background opacity</string>
+    <string name="background_opacity_value">%1$d%%</string>
+    <string name="background_pick_image">Pick image</string>
+    <string name="background_clear">Clear</string>
+    <string name="assistant_delete_confirm">Delete assistant \"%1$s\"? Linked chats and skills stay, but the assistant will no longer be selectable.</string>
+    <string name="background_short">BG</string>
+    <string name="language_restart_toast">Language changed. Restarting…</string>
+    <string name="continue_generating">Continue</string>
+    <string name="attach">Add</string>
+    <string name="context_compress">Context compress</string>
+    <string name="reply_candidates">Reply candidates</string>
+    <string name="aux_model_not_configured_title">No model configured for title generation. Configure it in Settings.</string>
+    <string name="aux_model_not_configured_suggestion">No model configured for reply candidates. Configure it in Settings.</string>
+    <string name="aux_model_not_configured_compress">No model configured for context compression. Configure it in Settings.</string>
+    <string name="aux_generation_failed">Generation failed</string>
+    <string name="compress_not_enough">Not enough messages to compress while keeping recent ones.</string>
+    <string name="suggestion_generate_hint">Enter the page to generate candidates</string>
+    <string name="section_aux_features">Auxiliary feature models</string>
+    <string name="aux_model_ocr">OCR model</string>
+    <string name="aux_model_title">Title generation</string>
+    <string name="aux_model_compress">Context compression</string>
+    <string name="aux_model_suggestion">Reply candidates</string>
+    <string name="aux_model_not_set">Not set</string>
+    <string name="aux_model_using_active">Using active chat model</string>
+    <string name="compress_target_tokens">Target tokens</string>
+    <string name="compress_keep_recent">Keep recent messages</string>
+    <string name="compress_additional_prompt">Additional instructions</string>
+    <string name="confirm">Confirm</string>
+    <string name="chat_completions_path">Chat Completions path</string>
+    <string name="response_api">Response API</string>
+    <string name="response_api_hint">OpenAI\'s next-generation API</string>
+    <string name="response_api_warning">The Response API is OpenAI\'s next-generation API, which is not supported by most service providers. If you are not sure what this is, or if your provider\'s model does not support it, please do not enable it.</string>
+
+    <!-- Provider editor -->
+    <string name="provider_type">Provider type</string>
+    <string name="provider_type_openai">OpenAI Compatible</string>
+    <string name="provider_type_claude">Claude (Anthropic)</string>
+    <string name="thinking_level">Thinking level</string>
+    <string name="thinking_off">Off</string>
+    <string name="thinking_low">Low</string>
+    <string name="thinking_medium">Medium</string>
+    <string name="thinking_high">High</string>
+    <string name="thinking_budget_label">budget_tokens = %1$d</string>
+    <string name="max_tokens">Max tokens</string>
+    <string name="provider_delete_confirm">Delete provider \"%1$s\"?</string>
+    <string name="claude_no_models">Claude API has no model list — type model names manually.</string>
+
+    <!-- Misc -->
+    <string name="edit_chat_title">Rename chat</string>
+    <string name="untitled">Untitled</string>
+    <string name="no_chats_yet">No chats yet</string>
+    <string name="no_matches">No matches</string>
+    <string name="pick_image">Pick image</string>
+    <string name="clear">Clear</string>
+    <string name="profile_default_name">You</string>
+    <string name="models_count_configured">%1$d configured</string>
+    <string name="server_sent_events">Server-Sent Events</string>
+</resources>

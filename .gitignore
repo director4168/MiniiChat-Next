@@ -1,0 +1,31 @@
+# Gradle / Android
+.gradle/
+build/
+*.iml
+.idea/
+local.properties
+.DS_Store
+captures/
+.externalNativeBuild/
+.cxx/
+.kotlin/
+*.jks
+*.keystore
+
+# APK artefacts (rebuilt by CI)
+*.apk
+
+# Generated / OS
+*.log
+*.hprof
+.DS_Store
+Thumbs.db
+
+# Agent / editor
+.cursor/
+.claude/
+.idea/
+
+# Project-specific noisy folders from the on-device AndroidIDE build
+miniichat-main.zip
+workspace.json

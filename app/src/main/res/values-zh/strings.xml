@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MiniiChat Next</string>
+    <string name="new_chat">新建对话</string>
+    <string name="send">发送</string>
+    <string name="settings">设置</string>
+    <string name="hint_input">发消息给 MiniiChat…</string>
+    <string name="empty_title">你好，我是 MiniiChat</string>
+    <string name="empty_subtitle">开源 LLM 客户端，自带 API key 即可使用</string>
+    <string name="copy">复制</string>
+    <string name="delete">删除</string>
+    <string name="rename">重命名</string>
+    <string name="cancel">取消</string>
+    <string name="ok">确定</string>
+    <string name="save">保存</string>
+    <string name="add">添加</string>
+    <string name="chats">对话</string>
+    <string name="providers">服务商</string>
+    <string name="provider">服务商</string>
+    <string name="assistants">助手</string>
+    <string name="assistant">助手</string>
+    <string name="active">使用中</string>
+    <string name="add_provider">添加服务商</string>
+    <string name="edit_provider">编辑服务商</string>
+    <string name="add_assistant">添加助手</string>
+    <string name="edit_assistant">编辑助手</string>
+    <string name="assistant_name">名称</string>
+    <string name="assistant_avatar">表情头像</string>
+    <string name="assistant_system_prompt">系统提示词</string>
+    <string name="prompt_vars_hint">可用变量：{model} {provider} {assistant} {date} {time} {datetime} {weekday} {locale}</string>
+    <string name="override_temperature">覆盖温度</string>
+    <string name="provider_name">名称</string>
+    <string name="setting_base_url">Base URL</string>
+    <string name="setting_api_key">API Key</string>
+    <string name="setting_model">模型</string>
+    <string name="setting_system">系统提示词</string>
+    <string name="setting_temperature">温度</string>
+    <string name="setting_stream">流式输出</string>
+    <string name="setting_about">关于</string>
+    <string name="setting_appearance">外观</string>
+    <string name="setting_dynamic_color">Material You 动态主题</string>
+    <string name="setting_dynamic_color_hint">跟随系统颜色（Android 12+）</string>
+    <string name="setting_theme_mode">主题模式</string>
+    <string name="setting_theme_system">跟随系统</string>
+    <string name="setting_theme_light">浅色</string>
+    <string name="setting_theme_dark">深色</string>
+    <string name="setting_language">语言</string>
+    <string name="setting_language_system">系统</string>
+    <string name="setting_language_en">English</string>
+    <string name="setting_language_zh">中文</string>
+    <string name="custom_headers">自定义 HTTP 请求头</string>
+    <string name="custom_headers_hint">每次请求都会带上</string>
+    <string name="extra_body">附加请求体</string>
+    <string name="extra_body_hint">合并到 chat completion 的 JSON body 里</string>
+    <string name="key">键</string>
+    <string name="value">值</string>
+    <string name="add_row">添加一行</string>
+    <string name="about_text">MiniiChat —— MIT 协议的开源 LLM 客户端。</string>
+    <string name="about_text_intro" translatable="false">本应用/项目（MiniiChat Next）由director_Carter基于MiniiChat项目（MIT开源），新增部分功能基于RikkaHub项目（AGPL-3.0开源）的相关源码</string>
+    <string name="about_text_full" translatable="false">本应用/项目（MiniiChat Next）由director_Carter基于MiniiChat项目（MIT开源），新增部分功能基于RikkaHub项目（AGPL-3.0开源）的相关源码\nMiniiChat(https://github.com/Minis233/miniichat)\nRikkaHub(https://github.com/rikkahub/rikkahub)\nMiniiChat Next</string>
+    <string name="error_no_provider">未配置服务商，请先到设置里添加。</string>
+    <string name="stop">停止</string>
+    <string name="regenerate">重新生成</string>
+    <string name="thinking">思考中…</string>
+    <string name="example_prompt_1">用一段话解释什么是大语言模型。</string>
+    <string name="example_prompt_2">写一首关于 Android 开发的小诗。</string>
+    <string name="example_prompt_3">给我 5 条远程办公的高效率建议。</string>
+    <string name="example_prompt_4">把「Good morning」翻译成日语。</string>
+    <string name="search_chats">搜索对话</string>
+    <string name="search_models">搜索模型</string>
+    <string name="fetch_models">获取模型</string>
+    <string name="fetching">获取中…</string>
+    <string name="add_model_manually">手动添加模型</string>
+    <string name="select_model">选择模型</string>
+    <string name="no_models">还没有模型。点「获取模型」或手动添加。</string>
+    <string name="no_providers">还没有服务商</string>
+    <string name="no_providers_hint">添加一个开始使用</string>
+    <string name="pick_preset_or_manual">选择预设或手动填写</string>
+    <string name="choose_preset">选择预设…</string>
+    <string name="expand_models">展开 %1$d 个</string>
+    <string name="collapse_models">收起</string>
+    <string name="attach_image">添加图片</string>
+    <string name="attach_file">添加文件</string>
+    <string name="attachment_image">图片</string>
+    <string name="attachment_file">文件</string>
+    <string name="attachment_unsupported">服务商可能不支持多模态输入，仅按文件名引用发送。</string>
+    <string name="attachment_too_large">附件太大（上限 %1$d MB）</string>
+    <string name="date_today">今天</string>
+    <string name="date_yesterday">昨天</string>
+    <string name="date_previous_7">最近 7 天</string>
+    <string name="date_previous_30">最近 30 天</string>
+    <string name="date_older">更早</string>
+    <string name="section_behavior">行为</string>
+    <string name="section_about">关于</string>
+    <string name="error_dialog_title">出错了</string>
+    <string name="error_open_providers">打开服务商设置</string>
+    <string name="edit">编辑</string>
+    <string name="regenerate_from_here">从此处重新生成</string>
+    <string name="advanced_options">高级选项</string>
+
+    <!-- Profile -->
+    <string name="profile">个人资料</string>
+    <string name="profile_subtitle">你的显示名称与头像</string>
+    <string name="display_name">显示名称</string>
+    <string name="display_name_default">我</string>
+    <string name="tap_avatar_to_change">点击头像更换</string>
+    <string name="back">返回</string>
+
+    <!-- Skills -->
+    <string name="skills">技能</string>
+    <string name="skills_section_hint">技能会附加到系统提示词中，按助手单独启用。</string>
+    <string name="skills_empty_title">还没有技能</string>
+    <string name="skills_empty_hint">技能会在系统提示词中注入额外指令。</string>
+    <string name="skills_subtitle_empty">导入 .md 或新建</string>
+    <string name="skills_subtitle_count">已启用 %1$d 个 · 按助手绑定</string>
+    <string name="skills_import">导入 .md</string>
+    <string name="skills_new">新建技能</string>
+    <string name="skill_edit_title">编辑技能</string>
+    <string name="skill_new_title">新建技能</string>
+    <string name="skill_field_name">名称</string>
+    <string name="skill_field_description">描述</string>
+    <string name="skill_field_body">内容（Markdown / 提示词）</string>
+    <string name="skill_pick_or_crop">选择 / 裁剪</string>
+    <string name="skill_chars_count">%1$d 字</string>
+    <string name="skill_imported">已导入技能：%1$s</string>
+    <string name="skill_import_failed">导入失败：%1$s</string>
+    <string name="skill_import_failed_read">无法读取文件</string>
+    <string name="skill_import_failed_empty">文件为空</string>
+    <string name="skill_import_failed_meta">SKILL.md 缺少必需的 name / description 字段</string>
+    <string name="skill_no_skills_for_assistant">暂无可用技能，请先到 设置 → 技能 导入或创建。</string>
+    <string name="skill_auto_name">已解析名称：%1$s</string>
+    <string name="skill_name_required">请使用正确的SKILL而非单纯md文档</string>
+    <string name="skill_delete_confirm">确认删除技能「%1$s」？已启用此技能的助手也会同步移除。</string>
+
+    <!-- Avatar picker -->
+    <string name="avatar_picker_title">头像</string>
+    <string name="avatar_picker_emoji_hint">或输入表情</string>
+    <string name="avatar_picker_pick_image">选择图片</string>
+    <string name="avatar_picker_reset_emoji">恢复为表情</string>
+
+    <!-- Image cropper -->
+    <string name="cropper_loading">加载中…</string>
+    <string name="cropper_hint">双指缩放 / 拖动调整</string>
+    <string name="cropper_confirm">确定</string>
+
+    <string name="action_cancel">取消</string>
+    <string name="action_save">保存</string>
+
+    <!-- Token usage -->
+    <string name="token_usage">Token 用量</string>
+    <string name="token_usage_input">输入 Token</string>
+    <string name="token_usage_output">输出 Token</string>
+    <string name="token_usage_total">合计</string>
+    <string name="token_usage_hint">累计消耗量</string>
+
+    <!-- Assistant editor -->
+    <string name="assistant_skills">助手技能</string>
+    <string name="assistant_skills_hint">为本助手启用的技能会附加到它的系统提示词中。</string>
+    <string name="assistant_background">助手背景</string>
+    <string name="background_opacity">背景不透明度</string>
+    <string name="background_opacity_value">%1$d%%</string>
+    <string name="background_pick_image">选择图片</string>
+    <string name="background_clear">清除</string>
+    <string name="assistant_delete_confirm">确认删除助手「%1$s」？关联对话和技能会保留，但该助手将不再可选。</string>
+    <string name="background_short">背景</string>
+    <string name="language_restart_toast">语言已切换，正在重启应用…</string>
+    <string name="continue_generating">继续说</string>
+    <string name="attach">添加</string>
+    <string name="context_compress">上下文压缩</string>
+    <string name="reply_candidates">候选回复</string>
+    <string name="aux_model_not_configured_title">未配置标题生成模型，请到设置中配置</string>
+    <string name="aux_model_not_configured_suggestion">未配置候选回复模型，请到设置中配置</string>
+    <string name="aux_model_not_configured_compress">未配置上下文压缩模型，请到设置中配置</string>
+    <string name="aux_generation_failed">生成失败</string>
+    <string name="compress_not_enough">消息不足以压缩（需保留最近消息）</string>
+    <string name="suggestion_generate_hint">进入页面后生成候选</string>
+    <string name="section_aux_features">辅助功能模型</string>
+    <string name="aux_model_ocr">OCR 模型</string>
+    <string name="aux_model_title">标题生成</string>
+    <string name="aux_model_compress">上下文压缩</string>
+    <string name="aux_model_suggestion">候选回复</string>
+    <string name="aux_model_not_set">未设置</string>
+    <string name="aux_model_using_active">使用当前对话模型</string>
+    <string name="compress_target_tokens">目标 token 数</string>
+    <string name="compress_keep_recent">保留最近消息数量</string>
+    <string name="compress_additional_prompt">附加说明</string>
+    <string name="confirm">确认</string>
+    <string name="chat_completions_path">Chat Completions 路径</string>
+    <string name="response_api">Response API</string>
+    <string name="response_api_hint">OpenAI新一代API</string>
+    <string name="response_api_warning">Response API是OpenAI新一代 API，大部分服务商并不支持。如果不清楚这是什么，或提供商模型不支持，请勿开启</string>
+
+    <!-- Provider editor -->
+    <string name="provider_type">服务商类型</string>
+    <string name="provider_type_openai">OpenAI 兼容</string>
+    <string name="provider_type_claude">Claude (Anthropic)</string>
+    <string name="thinking_level">思考等级</string>
+    <string name="thinking_off">关</string>
+    <string name="thinking_low">低</string>
+    <string name="thinking_medium">中</string>
+    <string name="thinking_high">高</string>
+    <string name="thinking_budget_label">budget_tokens = %1$d</string>
+    <string name="max_tokens">最大 Token</string>
+    <string name="provider_delete_confirm">确认删除服务商「%1$s」？</string>
+    <string name="claude_no_models">Claude API 无模型列表 — 请手动输入模型名。</string>
+
+    <!-- Misc -->
+    <string name="edit_chat_title">重命名对话</string>
+    <string name="untitled">未命名</string>
+    <string name="no_chats_yet">暂无对话</string>
+    <string name="no_matches">无匹配</string>
+    <string name="pick_image">选择图片</string>
+    <string name="clear">清除</string>
+    <string name="profile_default_name">我</string>
+    <string name="models_count_configured">已配置 %1$d 个</string>
+    <string name="server_sent_events">Server-Sent Events</string>
+</resources>

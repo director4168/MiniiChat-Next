@@ -1,0 +1,431 @@
+package com.miniichatNext.carter.ui
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.outlined.ChatBubbleOutline
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.miniichatNext.carter.R
+import com.miniichatNext.carter.data.Conversation
+import java.util.Calendar
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GlassDrawer(
+    conversations: List<Conversation>,
+    activeId: String?,
+    assistants: List<com.miniichatNext.carter.data.Assistant>,
+    activeAssistantId: String,
+    onSelectAssistant: (String) -> Unit,
+    onSelect: (String) -> Unit,
+    onNew: () -> Unit,
+    onDelete: (String) -> Unit,
+    onRename: (String, String) -> Unit,
+    onOpenAssistants: () -> Unit,
+    onOpenSettings: () -> Unit
+) {
+    var renameTarget by remember { mutableStateOf<Conversation?>(null) }
+    var deleteTarget by remember { mutableStateOf<Conversation?>(null) }
+    var query by remember { mutableStateOf("") }
+    var showAssistantPicker by remember { mutableStateOf(false) }
+
+    // Current assistant entry (matches RikkaHub's drawer assistant label).
+    val currentAssistant = assistants.firstOrNull { it.id == activeAssistantId }
+
+    val filtered = remember(conversations, query) {
+        if (query.isBlank()) conversations
+        else conversations.filter { it.title.contains(query, ignoreCase = true) }
+    }
+    val grouped = remember(filtered) { groupConversationsByDate(filtered) }
+
+    ModalDrawerSheet(
+        drawerContainerColor = MaterialTheme.colorScheme.background,
+        modifier = Modifier.fillMaxSize().width(312.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(WindowInsets.statusBars.asPaddingValues())
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(11.dp))
+                        .background(MaterialTheme.colorScheme.primary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("M", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold)
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    stringResource(R.string.app_name),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                IconButton(onClick = onNew) {
+                    Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.new_chat))
+                }
+            }
+
+            // Search box
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Search, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    BasicTextField(
+                        value = query, onValueChange = { query = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        textStyle = LocalTextStyle.current.copy(
+                            color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp
+                        ),
+                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                        singleLine = true,
+                        decorationBox = { inner ->
+                            if (query.isEmpty()) {
+                                Text(
+                                    stringResource(R.string.search_chats),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 14.sp
+                                )
+                            }
+                            inner()
+                        }
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            if (filtered.isEmpty()) {
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            Icons.Outlined.ChatBubbleOutline, contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            if (query.isBlank()) stringResource(R.string.no_chats_yet)
+                            else stringResource(R.string.no_matches),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    grouped.forEach { (labelKey, items) ->
+                        item(key = "h-$labelKey") {
+                            Text(
+                                stringResource(labelKey),
+                                modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        items(items, key = { it.id }) { conv ->
+                            ChatRow(
+                                conv = conv,
+                                selected = conv.id == activeId,
+                                onClick = { onSelect(conv.id) },
+                                onRename = { renameTarget = conv },
+                                onDelete = { deleteTarget = conv }
+                            )
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Left: switch assistant (RikkaHub-style sheet picker)
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable { showAssistantPicker = true }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        currentAssistant?.avatar?.ifBlank { "🤖" } ?: "🤖",
+                        fontSize = 20.sp
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text(
+                        currentAssistant?.name ?: stringResource(R.string.assistant),
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        "⌄",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontSize = 20.sp
+                    )
+                }
+                // Right: settings
+                Row(
+                    modifier = Modifier
+                        .clickable(onClick = onOpenSettings)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Settings, contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        stringResource(R.string.settings),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+            Spacer(Modifier.padding(WindowInsets.navigationBars.asPaddingValues()))
+        }
+    }
+
+    renameTarget?.let { conv ->
+        var newTitle by remember(conv.id) { mutableStateOf(conv.title) }
+        AlertDialog(
+            onDismissRequest = { renameTarget = null },
+            confirmButton = {
+                TextButton(onClick = {
+                    onRename(conv.id, newTitle.ifBlank { "" })
+                    renameTarget = null
+                }) { Text(stringResource(R.string.ok)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.cancel)) }
+            },
+            title = { Text(stringResource(R.string.rename)) },
+            text = {
+                OutlinedTextField(value = newTitle, onValueChange = { newTitle = it }, singleLine = true)
+            }
+        )
+    }
+    deleteTarget?.let { conv ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            confirmButton = {
+                TextButton(onClick = { onDelete(conv.id); deleteTarget = null }) {
+                    Text(stringResource(R.string.delete))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.cancel)) }
+            },
+            title = { Text(stringResource(R.string.delete)) },
+            text = { Text("Delete \"${conv.title}\"?") }
+        )
+    }
+
+    if (showAssistantPicker) {
+        ModalBottomSheet(onDismissRequest = { showAssistantPicker = false }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(stringResource(R.string.assistants), style = MaterialTheme.typography.titleLarge)
+                assistants.forEach { assistant ->
+                    val selected = assistant.id == activeAssistantId
+                    Card(
+                        onClick = {
+                            onSelectAssistant(assistant.id)
+                            showAssistantPicker = false
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surface
+                        )
+                    ) {
+                        ListItem(
+                            headlineContent = { Text(assistant.name) },
+                            leadingContent = {
+                                Text(assistant.avatar.ifBlank { assistant.name.take(1) }, fontSize = 22.sp)
+                            },
+                            trailingContent = {
+                                if (selected) Icon(Icons.Default.Check, contentDescription = null)
+                            },
+                            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatRow(
+    conv: Conversation,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onRename: () -> Unit,
+    onDelete: () -> Unit
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    val bg = if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
+    Row(
+        modifier = Modifier
+            .padding(horizontal = 8.dp, vertical = 1.dp)
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            conv.title.ifBlank { stringResource(R.string.untitled) },
+            modifier = Modifier.weight(1f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Box {
+            IconButton(onClick = { menuOpen = true }, modifier = Modifier.size(28.dp)) {
+                Icon(
+                    Icons.Default.MoreVert, contentDescription = "more",
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.rename)) },
+                    leadingIcon = { Icon(Icons.Default.Edit, null) },
+                    onClick = { menuOpen = false; onRename() }
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.delete)) },
+                    leadingIcon = { Icon(Icons.Default.Delete, null) },
+                    onClick = { menuOpen = false; onDelete() }
+                )
+            }
+        }
+    }
+}
+
+private fun groupConversationsByDate(
+    list: List<Conversation>
+): List<Pair<Int, List<Conversation>>> {
+    if (list.isEmpty()) return emptyList()
+    val cal = Calendar.getInstance()
+    cal.set(Calendar.HOUR_OF_DAY, 0); cal.set(Calendar.MINUTE, 0)
+    cal.set(Calendar.SECOND, 0); cal.set(Calendar.MILLISECOND, 0)
+    val todayStart = cal.timeInMillis
+    val yStart = todayStart - 86_400_000L
+    val sStart = todayStart - 7 * 86_400_000L
+    val tStart = todayStart - 30 * 86_400_000L
+    val today = mutableListOf<Conversation>(); val yest = mutableListOf<Conversation>()
+    val sevenDays = mutableListOf<Conversation>(); val thirtyDays = mutableListOf<Conversation>()
+    val older = mutableListOf<Conversation>()
+    list.sortedByDescending { it.updatedAt }.forEach { c ->
+        when {
+            c.updatedAt >= todayStart -> today += c
+            c.updatedAt >= yStart -> yest += c
+            c.updatedAt >= sStart -> sevenDays += c
+            c.updatedAt >= tStart -> thirtyDays += c
+            else -> older += c
+        }
+    }
+    val out = mutableListOf<Pair<Int, List<Conversation>>>()
+    if (today.isNotEmpty()) out += R.string.date_today to today
+    if (yest.isNotEmpty()) out += R.string.date_yesterday to yest
+    if (sevenDays.isNotEmpty()) out += R.string.date_previous_7 to sevenDays
+    if (thirtyDays.isNotEmpty()) out += R.string.date_previous_30 to thirtyDays
+    if (older.isNotEmpty()) out += R.string.date_older to older
+    return out
+}
