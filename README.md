@@ -31,12 +31,15 @@
 
 - 哔哩哔哩:
 [director_Carter](https://b23.tv/tk7CcWA)  
+
 - MT论坛:
 [director_mark](https://bbs.binmt.cc/home.php?mod=space&uid=134138&do=profile&mobile=2)  
+
 - QQ:
-2705722903
-3623293903
-*若2705722903账号被封，请添加3623293903，或使用其他联系方式*
+2705722903  
+3623293903  
+*若2705722903账号被封，请添加3623293903，或使用其他联系方式*  
+
 - 邮箱:
 director4168@163.com  
 2705722903@qq.com  
