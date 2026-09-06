@@ -1,8 +1,8 @@
 <div align="center">
 
-# MiniiChat Next
+# MiniiChat Next  
 
-**一个开源的安卓LLM聊天客户端**
+**一个开源的安卓LLM聊天客户端**  
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-7F52FF.svg)](https://kotlinlang.org)
@@ -14,7 +14,7 @@
 
 ---
 
-## 简介
+## 简介  
 
 本应用/项目(MiniiChat Next)由*director_Carter*基于*MiniiChat*项目(MIT开源)，新增部分功能基于RikkaHub项目(AGPL-3.0开源）的相关源码  
 由于使用了AGPL-3.0开源的*RikkaHub*项目源码，根据*AGPL-3.0 5-c、13*，本项目将使用AGPL-3.0进行开源  
@@ -35,34 +35,34 @@
 - MT论坛:
 [director_mark](https://bbs.binmt.cc/home.php?mod=space&uid=134138&do=profile&mobile=2)  
 
-- QQ:
+- QQ:  
 2705722903  
 3623293903  
 *若2705722903账号被封，请添加3623293903，或使用其他联系方式*  
 
-- 邮箱:
+- 邮箱:  
 director4168@163.com  
 2705722903@qq.com  
 3623293903@qq.com  
 
 ---
 
-## 部分修改内容
+## 部分修改内容  
 
-MiniiChat Next主要修改了以下方面：
-- **许可证**: MIT -> **AGPL-3.0**
-- **构建**: 修改了构建输出路径、签名与包名
-- **候选词缓存**: 按 `页` 持久化
-- **辅助模型**: OCR/标题/压缩/候选，需要在设置中配置*辅助模型*
-- **Skill**: 支持了使用SKILL技能书
-- **API**: ~~支持了克劳德(Anthropic)格式的API接入~~
-- **Response API**: ~~支持了启用Response API~~
-- **继续说**: 追加 AI **继续生成**
-- **自动标题**: 在完成第一轮对话后，使用所选的标题辅助模型，自动命名当前对话
-- **沉浸模式**: 双击空白处沉浸、渐隐（可以用来看背景图片）
-- **AI气泡**: AI回复的内容也有气泡
-- **设置**: 辅助模型、助手SKILL等
-- ……
+MiniiChat Next主要修改了以下方面：  
+- **许可证**: MIT -> **AGPL-3.0**  
+- **构建**: 修改了构建输出路径、签名与包名  
+- **候选词缓存**: 按 `页` 持久化  
+- **辅助模型**: OCR/标题/压缩/候选，需要在设置中配置*辅助模型*  
+- **Skill**: 支持了使用SKILL技能书  
+- **API**: ~~支持了克劳德(Anthropic)格式的API接入~~  
+- **Response API**: ~~支持了启用Response API~~  
+- **继续说**: 追加 AI **继续生成**  
+- **自动标题**: 在完成第一轮对话后，使用所选的标题辅助模型，自动命名当前对话  
+- **沉浸模式**: 双击空白处沉浸、渐隐（可以用来看背景图片）  
+- **AI气泡**: AI回复的内容也有气泡  
+- **设置**: 辅助模型、助手SKILL等  
+- ……  
 
 ---
 
