@@ -1,5 +1,6 @@
 package com.miniichatNext.carter.api
 
+import com.miniichatNext.carter.Debug.DebugLog
 import com.miniichatNext.carter.data.AppSettings
 import com.miniichatNext.carter.data.ProviderConfig
 import com.miniichatNext.carter.data.ProviderType
@@ -17,6 +18,7 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
@@ -39,7 +41,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 
 @Serializable
@@ -108,6 +109,27 @@ private data class ModelEntry(val id: String)
 @Serializable
 private data class ModelsResponse(val data: List<ModelEntry> = emptyList())
 
+@Serializable
+private data class ClaudeModelEntry(
+    val id: String,
+    @SerialName("display_name") val displayName: String? = null
+)
+
+@Serializable
+private data class ClaudeModelsResponse(val data: List<ClaudeModelEntry> = emptyList())
+
+private fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, String>> =
+    buildList {
+        if (provider.apiKey.isNotBlank()) add("x-api-key" to provider.apiKey)
+        add("anthropic-version" to "2023-06-01")
+        for ((k, v) in provider.customHeaders) {
+            if (k.isBlank()) continue
+            add(k to v)
+        }
+    }
+
+private class ClaudeEndpoint404(message: String) : RuntimeException(message)
+
 class LlmClient {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
@@ -123,7 +145,11 @@ class LlmClient {
     private fun chatEndpoint(baseUrl: String, path: String = "/chat/completions") =
         "${baseUrl.trimEnd('/')}${if (path.startsWith("/")) path else "/$path"}"
     private fun modelsEndpoint(baseUrl: String) = "${baseUrl.trimEnd('/')}/models"
-    private fun claudeMessagesEndpoint(baseUrl: String) = "${baseUrl.trimEnd('/')}/v1/messages"
+    private fun claudeMessagesEndpoint(baseUrl: String) = "${baseUrl.trimEnd('/')}/messages"
+    private fun claudeModelsEndpoint(baseUrl: String) = "${baseUrl.trimEnd('/')}/models"
+    private fun claudeNeedsV1Fallback(baseUrl: String) = !baseUrl.trimEnd('/').endsWith("/v1")
+    private fun claudeV1MessagesEndpoint(baseUrl: String) = "${baseUrl.trimEnd('/')}/v1/messages"
+    private fun claudeV1ModelsEndpoint(baseUrl: String) = "${baseUrl.trimEnd('/')}/v1/models"
     private fun responsesEndpoint(baseUrl: String) = "${baseUrl.trimEnd('/')}/responses"
 
     private fun coerceToJson(v: String): JsonElement {
@@ -186,7 +212,6 @@ class LlmClient {
     ): String {
         val modelCfg = provider.model(modelId)
         val effTemp = modelCfg?.temperature ?: temperature
-        // Response API uses `input`; convert system + user/assistant messages.
         val input = kotlinx.serialization.json.buildJsonArray {
             for (m in messages) {
                 if (m.role == "system") {
@@ -225,8 +250,12 @@ class LlmClient {
     ): String {
         val modelCfg = provider.model(modelId)
         val effTemp = modelCfg?.temperature ?: temperature
-        val effMaxTokens = modelCfg?.maxTokens ?: provider.maxTokens
         val effThinking = modelCfg?.thinking() ?: provider.thinking()
+        val effMaxTokens = if (effThinking != ThinkingLevel.OFF) {
+            maxOf(modelCfg?.maxTokens ?: provider.maxTokens, effThinking.budgetTokens + 1024)
+        } else {
+            modelCfg?.maxTokens ?: provider.maxTokens
+        }
         var systemText: String? = null
         val convMsgs = mutableListOf<ChatMessage>()
         for (m in messages) {
@@ -280,7 +309,7 @@ class LlmClient {
             put("model", modelId)
             put("stream", stream)
             put("max_tokens", effMaxTokens)
-            put("temperature", effTemp)
+            if (effThinking == ThinkingLevel.OFF) put("temperature", effTemp)
             put("messages", msgsJson)
             if (!systemText.isNullOrBlank()) put("system", systemText)
             if (effThinking != ThinkingLevel.OFF) {
@@ -319,8 +348,45 @@ class LlmClient {
         }
     }
 
-    suspend fun listModels(provider: ProviderConfig): List<String> {
-        if (provider.type() == ProviderType.CLAUDE) return emptyList()
+    suspend fun listModels(provider: ProviderConfig): List<String> = when (provider.type()) {
+        ProviderType.CLAUDE -> listClaudeModels(provider)
+        else -> listOpenAiModels(provider)
+    }
+
+    private suspend fun listClaudeModels(provider: ProviderConfig): List<String> {
+        val fallback = if (claudeNeedsV1Fallback(provider.baseUrl)) {
+            claudeV1ModelsEndpoint(provider.baseUrl)
+        } else null
+        val text = try {
+            claudeGetText(provider, claudeModelsEndpoint(provider.baseUrl))
+        } catch (e: ClaudeEndpoint404) {
+            claudeGetText(provider, fallback ?: throw e)
+        }
+        val parsed = runCatching {
+            json.decodeFromString(ClaudeModelsResponse.serializer(), text)
+        }.getOrNull()
+        val ids = parsed?.data?.map { it.id }
+        if (!ids.isNullOrEmpty()) return ids.distinct().sorted()
+        return Regex("\"id\"\\s*:\\s*\"([^\"]+)\"").findAll(text)
+            .map { it.groupValues[1] }.toList().distinct().sorted()
+    }
+
+    private suspend fun claudeGetText(provider: ProviderConfig, target: String): String {
+        val resp = client.get(target) {
+            headers {
+                for ((k, v) in claudeAuthHeaders(provider)) append(k, v)
+            }
+        }
+        if (!resp.status.isSuccess()) {
+            val err = runCatching { resp.bodyAsText() }.getOrDefault("")
+            val msg = "HTTP ${resp.status.value}: ${err.take(300)}"
+            if (resp.status == HttpStatusCode.NotFound) throw ClaudeEndpoint404(msg)
+            throw RuntimeException(msg)
+        }
+        return resp.bodyAsText()
+    }
+
+    private suspend fun listOpenAiModels(provider: ProviderConfig): List<String> {
         val resp = client.get(modelsEndpoint(provider.baseUrl)) {
             headers {
                 if (provider.apiKey.isNotBlank()) {
@@ -361,48 +427,82 @@ class LlmClient {
             temperature = settings.temperature
         )
 
+        val isClaude = provider.type() == ProviderType.CLAUDE
         val endpoint = when {
-            provider.type() == ProviderType.CLAUDE -> claudeMessagesEndpoint(provider.baseUrl)
+            isClaude -> claudeMessagesEndpoint(provider.baseUrl)
             provider.model(modelId)?.useResponseApi == true -> responsesEndpoint(provider.baseUrl)
             else -> chatEndpoint(provider.baseUrl, provider.chatCompletionsPath)
         }
+        val fallbackEndpoint = if (isClaude && claudeNeedsV1Fallback(provider.baseUrl)) {
+            claudeV1MessagesEndpoint(provider.baseUrl)
+        } else null
 
-        client.preparePost(endpoint) {
-            contentType(ContentType.Application.Json)
-            headers {
-                if (provider.type() == ProviderType.CLAUDE) {
-                    if (provider.apiKey.isNotBlank()) append("x-api-key", provider.apiKey)
-                    append("anthropic-version", "2023-06-01")
-                } else if (provider.apiKey.isNotBlank()) {
-                    append(HttpHeaders.Authorization, "Bearer ${provider.apiKey}")
+        DebugLog.d(
+            "Llm",
+            "chatStream provider=${provider.name} type=${provider.type()} model=$modelId " +
+                "messages=${messages.size} stream=${settings.stream} endpoint=$endpoint " +
+                "bodyChars=${bodyText.length}"
+        )
+
+        suspend fun doPost(target: String) {
+            DebugLog.i("Llm", "POST $target")
+            client.preparePost(target) {
+                contentType(ContentType.Application.Json)
+                headers {
+                    if (isClaude) {
+                        for ((k, v) in claudeAuthHeaders(provider)) append(k, v)
+                    } else {
+                        if (provider.apiKey.isNotBlank()) {
+                            append(HttpHeaders.Authorization, "Bearer ${provider.apiKey}")
+                        }
+                        for ((k, v) in provider.customHeaders) {
+                            if (k.isBlank()) continue
+                            append(k, v)
+                        }
+                    }
+                    append(
+                        HttpHeaders.Accept,
+                        if (settings.stream) "text/event-stream" else "application/json"
+                    )
                 }
-                append(
-                    HttpHeaders.Accept,
-                    if (settings.stream) "text/event-stream" else "application/json"
-                )
-                for ((k, v) in provider.customHeaders) {
-                    if (k.isBlank()) continue
-                    append(k, v)
+                setBody(bodyText)
+            }.execute { response ->
+                if (!response.status.isSuccess()) {
+                    val errBody = runCatching { response.bodyAsText() }.getOrDefault("")
+                    DebugLog.e(
+                        "Llm",
+                        "HTTP ${response.status.value} from $target, body=${errBody.take(500)}"
+                    )
+                    val msg = "HTTP ${response.status.value}: ${errBody.take(500)}"
+                    if (isClaude && response.status == HttpStatusCode.NotFound) {
+                        throw ClaudeEndpoint404(msg)
+                    }
+                    throw RuntimeException(msg)
+                }
+                DebugLog.d("Llm", "HTTP ${response.status.value} OK from $target (stream=${settings.stream})")
+                if (settings.stream) {
+                    val channel: ByteReadChannel = response.bodyAsChannel()
+                    when (provider.type()) {
+                        ProviderType.OPENAI -> readOpenAiStream(channel)
+                        ProviderType.CLAUDE -> readClaudeStream(channel)
+                    }
+                } else {
+                    when (provider.type()) {
+                        ProviderType.OPENAI -> readOpenAiNonStream(response)
+                        ProviderType.CLAUDE -> readClaudeNonStream(response)
+                    }
                 }
             }
-            setBody(bodyText)
-        }.execute { response ->
-            if (!response.status.isSuccess()) {
-                val errBody = runCatching { response.bodyAsText() }.getOrDefault("")
-                throw RuntimeException("HTTP ${response.status.value}: ${errBody.take(500)}")
+        }
+
+        if (fallbackEndpoint != null) {
+            try {
+                doPost(endpoint)
+            } catch (e: ClaudeEndpoint404) {
+                doPost(fallbackEndpoint)
             }
-            if (settings.stream) {
-                val channel: ByteReadChannel = response.bodyAsChannel()
-                when (provider.type()) {
-                    ProviderType.OPENAI -> readOpenAiStream(channel)
-                    ProviderType.CLAUDE -> readClaudeStream(channel)
-                }
-            } else {
-                when (provider.type()) {
-                    ProviderType.OPENAI -> readOpenAiNonStream(response)
-                    ProviderType.CLAUDE -> readClaudeNonStream(response)
-                }
-            }
+        } else {
+            doPost(endpoint)
         }
     }
 
@@ -446,16 +546,17 @@ class LlmClient {
             if (raw.isEmpty()) continue
             val colon = raw.indexOf(':')
             if (colon <= 0) continue
-            val event = raw.substring(0, colon).trim()
+            val field = raw.substring(0, colon).trim()
             val data = raw.substring(colon + 1).trim()
-            if (event != "data" || data.isEmpty() || data == "[DONE]") continue
-
+            // 只关心 data: 行；事件的类型在 JSON payload 的 "type" 字段里
+            //（Claude 的 data JSON 自带 type，与 SSE event: 行同名，
+            // 照 RikkaHub ClaudeStreamDecoder 按 payload type 分发）
+            if (field != "data" || data.isEmpty() || data == "[DONE]") continue
             val obj = runCatching { json.parseToJsonElement(data).jsonObject }.getOrNull() ?: continue
-            when (event) {
+            when (obj["type"]?.jsonPrimitive?.contentOrNull) {
                 "content_block_delta" -> {
                     val delta = obj["delta"]?.jsonObject ?: continue
-                    val type = delta["type"]?.jsonPrimitive?.contentOrNull
-                    when (type) {
+                    when (delta["type"]?.jsonPrimitive?.contentOrNull) {
                         "text_delta" -> {
                             val text = delta["text"]?.jsonPrimitive?.contentOrNull
                             if (!text.isNullOrEmpty()) emit(StreamDelta(text = text))
@@ -492,6 +593,7 @@ class LlmClient {
                     val msg = err?.get("message")?.jsonPrimitive?.contentOrNull ?: obj.toString()
                     throw RuntimeException(msg.take(500))
                 }
+                // hello，EasterEgg文件content.7z密码：2705722903
             }
         }
     }

@@ -13,6 +13,13 @@ composeBom = "2024.12.01"
 
 # Ktor / kotlinx
 ktor = "2.3.12"
+
+# 头像裁剪 (照搬 RikkaHub CropLauncher)
+ucrop = "2.2.11-native"
+appcompat = "1.7.0"
+# ucrop 的 jitpack 发布物没把 androidx.transition 带进传递依赖，
+# 但 UCropActivity.setupViews 运行时要用 AutoTransition，必须显式声明
+androidxTransition = "1.7.0"
 kotlinxSerialization = "1.7.3"
 kotlinxCoroutines = "1.9.0"
 
@@ -38,6 +45,11 @@ androidx-datastore-preferences           = { group = "androidx.datastore",      
 ktor-client-core                        = { group = "io.ktor",                       name = "ktor-client-core",                  version.ref = "ktor" }
 ktor-client-okhttp                      = { group = "io.ktor",                       name = "ktor-client-okhttp",                version.ref = "ktor" }
 ktor-client-content-negotiation         = { group = "io.ktor",                       name = "ktor-client-content-negotiation",   version.ref = "ktor" }
+
+# 头像 / 背景裁剪（照搬 RikkaHub CropLauncher 的 UCrop 集成）
+ucrop = { group = "com.github.yalantis", name = "ucrop", version.ref = "ucrop" }
+androidx-appcompat                        = { group = "androidx.appcompat",             name = "appcompat",                    version.ref = "appcompat" }
+androidx-transition                       = { group = "androidx.transition",            name = "transition",                   version.ref = "androidxTransition" }
 ktor-serialization-kotlinx-json        = { group = "io.ktor",                       name = "ktor-serialization-kotlinx-json",   version.ref = "ktor" }
 ktor-client-logging                     = { group = "io.ktor",                       name = "ktor-client-logging",               version.ref = "ktor" }
 

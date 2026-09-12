@@ -1,5 +1,6 @@
 package com.miniichatNext.carter.ui
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -24,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.HorizontalDivider
@@ -48,20 +50,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.LinkAnnotation
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.TextLinkStyles
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.AppSettings
 import com.miniichatNext.carter.data.Assistant
 import com.miniichatNext.carter.data.ProviderConfig
-import com.miniichatNext.carter.data.Skill
+import com.miniichatNext.carter.data.Skills.Skill
 import com.miniichatNext.carter.data.UserProfile
 
 @Composable
@@ -76,7 +72,10 @@ fun SettingsScreen(
     onOpenProviders: () -> Unit,
     onOpenAssistants: () -> Unit,
     onOpenSkills: () -> Unit,
-    onOpenUserProfile: () -> Unit
+    onOpenUserProfile: () -> Unit,
+    onOpenAbout: () -> Unit,
+    // 外部传入的滚动状态（AppRoot 用 rememberSaveable 持有，跳转到关于再返回时保留位置）
+    scrollState: ScrollState? = null
 ) {
     var system by rememberSaveable { mutableStateOf(settings.systemPrompt) }
     var temperature by rememberSaveable { mutableStateOf(settings.temperature) }
@@ -99,7 +98,8 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                // 用 AppRoot 传入的 ScrollState（如果提供），导航到关于页再返回时滚动位置保留
+                .verticalScroll(scrollState ?: rememberScrollState())
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -357,35 +357,37 @@ fun SettingsScreen(
             }
 
             SectionHeader(stringResource(R.string.section_about))
+            // 关于入口：从内联展开改成独立页面跳转，关于文本 / 链接 / 版本号
+            // 都在 AboutScreen 里展示，这里只保留一个导航行
             SectionCard {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                    Text(
-                        buildAnnotatedString {
-                            append(stringResource(R.string.about_text_intro))
-                            append("\n")
-                            withLink(
-                                LinkAnnotation.Url(
-                                    "https://github.com/Minis233/miniichat",
-                                    styles = TextLinkStyles(SpanStyle(
-                                        color = MaterialTheme.colorScheme.primary,
-                                        textDecoration = TextDecoration.Underline
-                                    ))
-                                )
-                            ) { append("MiniiChat") }
-                            append("\n")
-                            withLink(
-                                LinkAnnotation.Url(
-                                    "https://github.com/rikkahub/rikkahub",
-                                    styles = TextLinkStyles(SpanStyle(
-                                        color = MaterialTheme.colorScheme.primary,
-                                        textDecoration = TextDecoration.Underline
-                                    ))
-                                )
-                            ) { append("RikkaHub") }
-                            append("\nMiniiChat Next")
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenAbout)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.Info,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.section_about),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            stringResource(R.string.about_subtitle),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(
+                        Icons.Default.ChevronRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }

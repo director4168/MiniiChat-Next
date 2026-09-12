@@ -62,41 +62,60 @@ object ProviderPresets {
     data class Preset(
         val name: String,
         val baseUrl: String,
-        val sampleModel: String,
         val hint: String,
+        val path: String = "/chat/completions",
         val type: ProviderType = ProviderType.OPENAI
     )
 
+    /*
+     * 下面的这些是提供的模型预设
+     *
+     * 如果是克劳德格式需要追加:
+     * type = ProviderType.CLAUDE),
+     *
+     * 如果提供商的API路径不是/chat/completions，需要自定义，那么可以追加:
+     * path = "[API路径]"
+     *
+     * 追加提供商基础格式：
+     * Preset("[提供商名称]", "[提供商的baseUrl]",
+     *     "[介绍]"),
+     */
     val all: List<Preset> = listOf(
-        Preset("OpenAI", "https://api.openai.com/v1", "gpt-4o-mini",
-            "Official OpenAI API"),
-        Preset("Anthropic Claude", "https://api.anthropic.com", "claude-sonnet-4-5",
-            "Anthropic Claude (native Messages API)",
-            ProviderType.CLAUDE),
-        Preset("OpenRouter", "https://openrouter.ai/api/v1", "openrouter/auto",
-            "Aggregator for OpenAI / Anthropic / Gemini / open-source"),
-        Preset("DeepSeek", "https://api.deepseek.com", "deepseek-chat",
-            "DeepSeek-V3 / R1"),
-        Preset("Groq", "https://api.groq.com/openai/v1", "llama-3.1-70b-versatile",
-            "Fast inference, free tier"),
-        Preset("Mistral", "https://api.mistral.ai/v1", "mistral-small-latest",
-            "Mistral models"),
-        Preset("Together AI", "https://api.together.xyz/v1",
-            "meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo",
-            "Open-source models hosting"),
-        Preset("Gemini (OpenAI shim)",
-            "https://generativelanguage.googleapis.com/v1beta/openai",
-            "gemini-1.5-flash",
-            "Google Gemini via OpenAI-compatible endpoint"),
-        Preset("SiliconFlow",
-            "https://api.siliconflow.cn/v1",
-            "Qwen/Qwen2.5-7B-Instruct",
-            "国内聚合，速度快"),
-        Preset("Ollama (local)", "http://10.0.2.2:11434/v1", "llama3.2",
-            "Local Ollama via emulator (10.0.2.2)"),
-        Preset("LM Studio (local)", "http://10.0.2.2:1234/v1", "local-model",
-            "Local LM Studio via emulator"),
-        Preset("Custom", "https://", "",
-            "Any OpenAI-compatible endpoint"),
-    )
+            Preset("OpenAI", "https://api.openai.com/v1",
+                "OpenAI官方API，提供GPT系列模型"),
+
+            Preset("Anthropic Claude", "https://api.anthropic.com/v1",
+                "Anthropic（Claude克劳德）官方API，提供Claude系列模型",
+                type = ProviderType.CLAUDE),
+
+            Preset("OpenRouter", "https://openrouter.ai/api/v1",
+                "第三方提供商，提供OpenAI / Anthropic / Gemini"),
+
+            Preset("DeepSeek", "https://api.deepseek.com",
+                "Deepseek官方API，提供deepseek系列模型"),
+
+            Preset("xAI", "https://api.x.ai/v1",
+                "马斯克产业旗下xAI，提供Grok（格ro克）系列模型",
+                path = "/responses"),
+
+            Preset("Mistral", "https://api.mistral.ai/v1",
+                "提供Mistral模型"),
+
+            Preset("Minimax", "https://api.minimaxi.com/anthropic/v1",
+                "Minimax官方API，提供minimax系列模型",
+                type = ProviderType.CLAUDE),
+
+            Preset("Gemini (OpenAI shim)",
+                "https://generativelanguage.googleapis.com/v1beta/openai",
+                "谷歌旗下的Gemini官方API，提供Gemini系列模型"),
+
+            Preset("SiliconFlow",
+                "https://api.siliconflow.cn/v1",
+                "国内聚合，速度快"),
+
+            Preset("AK AI Gateway",
+                "https://aigateway.akile.ai/v1",
+                "第三方中转站，提供GPT、Claude系列模型，注册地址：https://aigateway.akile.ai/register?aff=CFJYTVZ4QSEN"),
+            // CFJYTVZ4QSEN  是我的邀请码，如果愿意还请使用一下
+        )
 }

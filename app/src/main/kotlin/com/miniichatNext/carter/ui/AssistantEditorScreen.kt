@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
@@ -56,7 +57,7 @@ import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.Assistant
 import com.miniichatNext.carter.data.Avatar
-import com.miniichatNext.carter.data.Skill
+import com.miniichatNext.carter.data.Skills.Skill
 import com.miniichatNext.carter.ui.components.AvatarPicker
 import com.miniichatNext.carter.ui.components.AvatarView
 import com.miniichatNext.carter.util.AvatarStorage
@@ -69,8 +70,7 @@ fun AssistantEditorScreen(
     availableSkills: List<Skill>,
     onCancel: () -> Unit,
     onSave: (Assistant) -> Unit,
-    onDelete: () -> Unit = {},
-    onToggleSkill: (String, Boolean) -> Unit = { _, _ -> }
+    onDelete: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -83,6 +83,9 @@ fun AssistantEditorScreen(
     var temp by remember(initial?.id) { mutableStateOf(initial?.temperature ?: 0.7f) }
     var backgroundPath by remember(initial?.id) { mutableStateOf(initial?.backgroundPath) }
     var backgroundOpacity by remember(initial?.id) { mutableStateOf(initial?.backgroundOpacity ?: 1f) }
+    // 三种背景模式：默认/图片/CSS
+    var backgroundMode by remember(initial?.id) { mutableStateOf(initial?.backgroundMode ?: "default") }
+    var backgroundCss by remember(initial?.id) { mutableStateOf(initial?.backgroundCss ?: "") }
     var enabledSkills by remember(initial?.id) {
         mutableStateOf(initial?.enabledSkillIds?.toSet() ?: emptySet())
     }
@@ -95,6 +98,9 @@ fun AssistantEditorScreen(
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
             val path = AvatarStorage.saveFromUri(context, newId(), uri, maxSide = 4096)
+            com.miniichatNext.carter.Debug.DebugLog.i(
+                "AssistantEditor", "background image imported: uri=$uri -> path=$path"
+            )
             backgroundPath = path
         }
     }
@@ -129,6 +135,21 @@ fun AssistantEditorScreen(
             TextButton(
                 enabled = name.isNotBlank(),
                 onClick = {
+                    val stableAvatarPath =
+                        com.miniichatNext.carter.util.AvatarStorage.copyIntoAppStorage(context, avatarPath)
+                    if (stableAvatarPath != avatarPath) {
+                        com.miniichatNext.carter.Debug.DebugLog.i(
+                            "AssistantEditor",
+                            "avatar path normalized: $avatarPath -> $stableAvatarPath"
+                        )
+                        avatarPath = stableAvatarPath
+                    }
+                    com.miniichatNext.carter.Debug.DebugLog.i(
+                        "AssistantEditor",
+                        "save avatarPath=$stableAvatarPath exists=" +
+                            (stableAvatarPath?.let { java.io.File(it).exists() } ?: false) +
+                            " bgMode=$backgroundMode bgPath=$backgroundPath cssLen=${backgroundCss.length}"
+                    )
                     val validSkillIds = enabledSkills.intersect(
                         availableSkills.map { it.id }.toSet()
                     )
@@ -136,17 +157,16 @@ fun AssistantEditorScreen(
                         .copy(
                             name = name.trim(),
                             avatar = avatar.trim().ifBlank { "🤖" },
-                            avatarPath = avatarPath,
+                            avatarPath = stableAvatarPath,
                             systemPrompt = systemPrompt,
                             temperature = if (hasTemp) temp else null,
-                            backgroundPath = backgroundPath,
+                            backgroundMode = backgroundMode,
+                            backgroundPath = if (backgroundMode == "image") backgroundPath else null,
+                            backgroundCss = if (backgroundMode == "css") backgroundCss else "",
                             backgroundOpacity = backgroundOpacity,
                             enabledSkillIds = validSkillIds.toList()
                         )
                     onSave(a)
-                    val previous = initial?.enabledSkillIds?.toSet() ?: emptySet()
-                    (validSkillIds - previous).forEach { onToggleSkill(it, true) }
-                    (previous - validSkillIds).forEach { onToggleSkill(it, false) }
                 }
             ) { Text(stringResource(R.string.action_save)) }
         }
@@ -165,7 +185,7 @@ fun AssistantEditorScreen(
                 Box(
                     modifier = Modifier
                         .size(56.dp)
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                         .clickable { showAvatarPicker = true },
                     contentAlignment = Alignment.Center
@@ -270,79 +290,162 @@ fun AssistantEditorScreen(
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
 
             SectionLabel(stringResource(R.string.assistant_background))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(56.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center
-                ) {
-                    val currentBgPath = backgroundPath
-                    if (currentBgPath != null && java.io.File(currentBgPath).exists()) {
-                        val bitmap = remember(currentBgPath) {
-                            runCatching {
-                                android.graphics.BitmapFactory.decodeFile(currentBgPath)
-                                    ?.asImageBitmap()
-                            }.getOrNull()
-                        }
-                        if (bitmap != null) {
-                            androidx.compose.foundation.Image(
-                                bitmap = bitmap,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(56.dp)
-                                    .clip(RoundedCornerShape(12.dp)),
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                            )
-                        } else {
-                            Icon(
-                                Icons.Default.Image,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    } else {
-                        Icon(
-                            Icons.Default.Image,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = {
-                            bgPicker.launch(
-                                androidx.activity.result.PickVisualMediaRequest(
-                                    ActivityResultContracts.PickVisualMedia.ImageOnly
-                                )
-                            )
-                        }) { Text(stringResource(R.string.background_pick_image)) }
+
+            // 三种背景模式切换：默认/图片/CSS
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                androidx.compose.material3.FilterChip(
+                    selected = backgroundMode == "default",
+                    onClick = {
+                        backgroundMode = "default"
+                        // 切到default时顺手清掉image/css状态，避免脏数据
                         if (backgroundPath != null) {
-                            TextButton(onClick = {
-                                backgroundPath?.let { AvatarStorage.delete(context, it) }
-                                backgroundPath = null
-                            }) { Text(stringResource(R.string.background_clear)) }
+                            backgroundPath?.let { AvatarStorage.delete(context, it) }
+                            backgroundPath = null
+                        }
+                        backgroundCss = ""
+                    },
+                    label = { Text(stringResource(R.string.background_mode_default)) }
+                )
+                androidx.compose.material3.FilterChip(
+                    selected = backgroundMode == "image",
+                    onClick = { backgroundMode = "image" },
+                    label = { Text(stringResource(R.string.background_mode_image)) }
+                )
+                androidx.compose.material3.FilterChip(
+                    selected = backgroundMode == "css",
+                    onClick = {
+                        backgroundMode = "css"
+                        // 切到css时清掉 image，避免同时存在两个source
+                        if (backgroundPath != null) {
+                            backgroundPath?.let { AvatarStorage.delete(context, it) }
+                            backgroundPath = null
+                        }
+                    },
+                    label = { Text(stringResource(R.string.background_mode_css)) }
+                )
+            }
+
+            Spacer(Modifier.height(8.dp))
+
+            when (backgroundMode) {
+                "image" -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val currentBgPath = backgroundPath
+                            if (currentBgPath != null && java.io.File(currentBgPath).exists()) {
+                                val bitmap = remember(currentBgPath) {
+                                    runCatching {
+                                        android.graphics.BitmapFactory.decodeFile(currentBgPath)
+                                            ?.asImageBitmap()
+                                    }.getOrNull()
+                                }
+                                if (bitmap != null) {
+                                    androidx.compose.foundation.Image(
+                                        bitmap = bitmap,
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .size(56.dp)
+                                            .clip(RoundedCornerShape(12.dp)),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.Default.Image,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            } else {
+                                Icon(
+                                    Icons.Default.Image,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = {
+                                    bgPicker.launch(
+                                        androidx.activity.result.PickVisualMediaRequest(
+                                            ActivityResultContracts.PickVisualMedia.ImageOnly
+                                        )
+                                    )
+                                }) { Text(stringResource(R.string.background_pick_image)) }
+                                if (backgroundPath != null) {
+                                    TextButton(onClick = {
+                                        backgroundPath?.let { AvatarStorage.delete(context, it) }
+                                        backgroundPath = null
+                                    }) { Text(stringResource(R.string.background_clear)) }
+                                }
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "${stringResource(R.string.background_opacity)}: " + stringResource(
+                            R.string.background_opacity_value,
+                            (backgroundOpacity * 100).toInt()
+                        ),
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                    Slider(
+                        value = backgroundOpacity,
+                        onValueChange = { backgroundOpacity = it },
+                        valueRange = 0f..1f,
+                        steps = 19
+                    )
+                }
+                "css" -> {
+                    Text(
+                        stringResource(R.string.background_css_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(140.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                    ) {
+                        BasicTextField(
+                            value = backgroundCss,
+                            onValueChange = { backgroundCss = it },
+                            modifier = Modifier.fillMaxSize(),
+                            textStyle = LocalTextStyle.current.copy(
+                                color = LocalContentColor.current,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                fontSize = 13.sp
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
+                        )
+                        if (backgroundCss.isEmpty()) {
+                            Text(
+                                stringResource(R.string.background_css_placeholder),
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                ),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
                         }
                     }
                 }
+                // default: 不显示任何控件
+                else -> Unit
             }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                "${stringResource(R.string.background_opacity)}: " + stringResource(
-                    R.string.background_opacity_value,
-                    (backgroundOpacity * 100).toInt()
-                ),
-                style = MaterialTheme.typography.labelLarge
-            )
-            Slider(
-                value = backgroundOpacity,
-                onValueChange = { backgroundOpacity = it },
-                valueRange = 0f..1f,
-                steps = 19
-            )
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
 

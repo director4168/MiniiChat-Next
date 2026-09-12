@@ -60,6 +60,7 @@ Adapted from RikkaHub's
 | `ModelAbility.toolCall / vision / …` capability map | `ModelConfig.useResponseApi` / `chatCompletionsPath` per-model overrides |
 | Multipart `UIMessagePart.Image` rendering | `ChatPart(type="image_url", imageUrl=…)` built inline in `ChatViewModel.sendMessage` |
 | Streaming SSE through `okhttp` via coroutine `callbackFlow` | Ktor + `HttpClient(OkHttp)` `execute { response -> readOpenAiStream(channel) }` — Ktor-3 style |
+| Claude endpoint scheme: `{baseUrl}/messages` & `{baseUrl}/models` with `/v1`-suffixed baseUrl, `x-api-key` + `anthropic-version` headers, models list parsed from `data[].id` + `display_name` | Same endpoint/header scheme in `LlmClient` (`claudeMessagesEndpoint` / `claudeModelsEndpoint` / `listClaudeModels`); additionally, legacy saved baseUrls without the `/v1` suffix get a one-shot `/v1` retry on HTTP 404 |
 | Provider registry / `KoinProviderManager` | `LlmClient` is constructed once in `ChatViewModel` and re-used per call |
 
 ### 3.2 `app/src/main/kotlin/com/miniichatNext/carter/data/SkillStore.kt` and `SkillFrontmatterParser.kt`

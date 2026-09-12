@@ -5,7 +5,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.miniichatNext.carter.api.ChatMessage
 import com.miniichatNext.carter.api.LlmClient
-import com.miniichatNext.carter.api.StreamDelta
 import com.miniichatNext.carter.data.AppSettings
 import com.miniichatNext.carter.data.Assistant
 import com.miniichatNext.carter.data.AssistantStore
@@ -16,8 +15,8 @@ import com.miniichatNext.carter.data.ModelConfig
 import com.miniichatNext.carter.data.ProviderConfig
 import com.miniichatNext.carter.data.ProviderStore
 import com.miniichatNext.carter.data.SettingsRepository
-import com.miniichatNext.carter.data.Skill
-import com.miniichatNext.carter.data.SkillStore
+import com.miniichatNext.carter.data.Skills.Skill
+import com.miniichatNext.carter.data.Skills.SkillStore
 import com.miniichatNext.carter.data.TokenUsage
 import com.miniichatNext.carter.data.UserProfile
 import com.miniichatNext.carter.data.UserProfileStore
@@ -81,15 +80,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     private val _fetchingModelsFor = MutableStateFlow<String?>(null)
     val fetchingModelsFor: StateFlow<String?> = _fetchingModelsFor.asStateFlow()
 
-    /** Non-null when the context-compress dialog should be shown. */
     private val _compressDialog = MutableStateFlow<Boolean>(false)
     val compressDialog: StateFlow<Boolean> = _compressDialog.asStateFlow()
 
-    /**
-     * Temporary (session-only) skill overrides per assistant.
-     * assistantId -> (skillId -> temporarily enabled).
-     * null value = temporarily disabled (overriding the assistant default).
-     */
     private val _tempSkillOverrides = MutableStateFlow<Map<String, Map<String, Boolean>>>(emptyMap())
     val tempSkillOverrides: StateFlow<Map<String, Map<String, Boolean>>> = _tempSkillOverrides.asStateFlow()
 
@@ -98,19 +91,39 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     init {
         viewModelScope.launch {
             store.migrateAssistantId(settings.value.activeAssistantId)
-            // Prime the disk-backed skill cache once on startup.
             skillStore.refresh()
         }
+        pruneOrphanAvatars()
     }
 
-    fun conversationsForCurrentAssistant(): List<Conversation> {
-        val aid = settings.value.activeAssistantId
-        return conversations.value.filter { it.assistantId == aid }
-    }
-
-    fun activeConversation(): Conversation? {
-        val aid = settings.value.activeAssistantId
-        return conversations.value.firstOrNull { it.id == _activeId.value && it.assistantId == aid }
+    /**
+     * 清理不再被引用的头像文件
+     * 安全前提：等助手列表真正加载完（非空）后才执行，且只删24小时前的文件，避免把正在使用的头像或刚裁好还没保存的文件删掉
+     */
+    private fun pruneOrphanAvatars() {
+        viewModelScope.launch {
+            val loaded = kotlinx.coroutines.withTimeoutOrNull(10_000L) {
+                assistants.first { it.isNotEmpty() }
+            } ?: return@launch
+            val keep = buildSet {
+                loaded.forEach { a ->
+                    a.avatarPath?.takeIf { it.isNotBlank() }?.let { add(it) }
+                    a.backgroundPath?.takeIf { it.isNotBlank() }?.let { add(it) }
+                }
+                (userProfile.value.avatar as? com.miniichatNext.carter.data.Avatar.Image)
+                    ?.path?.takeIf { it.isNotBlank() }?.let { add(it) }
+            }
+            val removed = com.miniichatNext.carter.util.AvatarStorage.pruneOrphans(
+                getApplication(),
+                keep,
+                olderThanMs = 24L * 60 * 60 * 1000
+            )
+            if (removed > 0) {
+                com.miniichatNext.carter.Debug.DebugLog.i(
+                    "AvatarStorage", "pruned $removed orphan avatar file(s)"
+                )
+            }
+        }
     }
 
     fun selectConversation(id: String?) {
@@ -145,7 +158,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun setError(msg: String) { _error.value = msg }
     fun setToast(msg: String) { _toast.value = msg }
 
-    /** Request the context-compress dialog (called from the input bar "+" menu). */
     fun requestCompressDialog() { _compressDialog.value = true }
     fun dismissCompressDialog() { _compressDialog.value = false }
 
@@ -218,27 +230,30 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun fetchModels(providerId: String) {
         viewModelScope.launch {
             val provider = providerStore.snapshot().firstOrNull { it.id == providerId } ?: return@launch
-            if (provider.providerType == "CLAUDE") {
-                _toast.value = getApplication<Application>().getString(
-                    com.miniichatNext.carter.R.string.claude_no_models
-                )
-                return@launch
-            }
             _fetchingModelsFor.value = providerId
             try {
                 val models = client.listModels(provider)
                 if (models.isEmpty()) {
-                    _toast.value = "No models returned from /models"
+                    _toast.value = getApplication<Application>()
+                        .getString(com.miniichatNext.carter.R.string.models_none_returned)
                 } else {
                     val existingIds = provider.modelIds().toSet()
                     val newConfigs = models.filter { it !in existingIds }
                         .map { ModelConfig(modelId = it, displayName = it) }
                     val updated = provider.copy(models = provider.models + newConfigs)
                     providerStore.upsert(updated)
-                    _toast.value = "Fetched ${models.size} models"
+                    _toast.value = getApplication<Application>()
+                        .getString(
+                            com.miniichatNext.carter.R.string.models_fetched,
+                            models.size
+                        )
                 }
             } catch (e: Exception) {
-                _error.value = "Fetch models failed: ${e.message}"
+                _error.value = getApplication<Application>()
+                    .getString(
+                        com.miniichatNext.carter.R.string.error_fetch_models,
+                        e.message ?: ""
+                    )
             } finally {
                 _fetchingModelsFor.value = null
             }
@@ -291,8 +306,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteSkill(id: String) {
         viewModelScope.launch {
-            // Resolve the canonical skill (id == sanitised name on disk) so legacy
-            // imports whose id was a random uuid are also cleaned up.
             val skill = skillStore.snapshot().firstOrNull { it.id == id }
                 ?: skillStore.snapshot().firstOrNull { it.name == id }
             val canonicalId = skill?.id ?: id
@@ -326,62 +339,50 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Toggle a skill temporarily for the current session (does not persist to the assistant default). */
-    fun toggleTemporarySkill(assistantId: String, skillId: String, enabled: Boolean) {
-        val perAssistant = _tempSkillOverrides.value[assistantId] ?: emptyMap()
-        val next = perAssistant + (skillId to enabled)
-        _tempSkillOverrides.value = _tempSkillOverrides.value + (assistantId to next)
-    }
+        fun toggleTemporarySkill(conversationId: String, skillId: String, enabled: Boolean) {
+            val perConv = _tempSkillOverrides.value[conversationId] ?: emptyMap()
+            val next = perConv + (skillId to enabled)
+            _tempSkillOverrides.value = _tempSkillOverrides.value + (conversationId to next)
+        }
 
-    /**
-     * Effective (default + temporary) enabled skill ids for an assistant.
-     * Recomputed reactively whenever assistants / temp overrides change, so the
-     * chat page SKILL sheet switches stay in sync without manual invalidation.
-     */
-    fun effectiveSkillIdsFlow(assistantId: String): Flow<Set<String>> =
-        combine(
-            assistants,
-            _tempSkillOverrides,
-        ) { assistantList, overrides ->
-            val assistant = assistantList.firstOrNull { it.id == assistantId }
-                ?: return@combine emptySet()
+        fun effectiveSkillIdsFlow(conversationId: String?): Flow<Set<String>> =
+            combine(
+                conversations,
+                _tempSkillOverrides,
+                assistants,
+                settings,
+            ) { convs, overrides, assistantList, s ->
+                val conv = conversationId?.let { cid -> convs.firstOrNull { it.id == cid } }
+                val assistantId = conv?.assistantId ?: s.activeAssistantId
+                val assistant = assistantList.firstOrNull { it.id == assistantId }
+                    ?: return@combine emptySet()
+                val base = assistant.enabledSkillIds.toSet()
+                val perConv = conversationId?.let { cid -> overrides[cid] } ?: emptyMap()
+                var result = base
+                for ((skillId, enabled) in perConv) {
+                    result = if (enabled) result + skillId else result - skillId
+                }
+                result
+            }
+
+        fun effectiveSkillIds(conversationId: String?): Set<String> {
+            val conv = conversationId?.let { cid -> conversations.value.firstOrNull { it.id == cid } }
+            val assistantId = conv?.assistantId ?: settings.value.activeAssistantId
+            val assistant = assistants.value.firstOrNull { it.id == assistantId } ?: return emptySet()
             val base = assistant.enabledSkillIds.toSet()
-            val perAssistant = overrides[assistantId] ?: emptyMap()
+            val overrides = conversationId?.let { cid -> _tempSkillOverrides.value[cid] } ?: emptyMap()
             var result = base
-            for ((skillId, enabled) in perAssistant) {
+            for ((skillId, enabled) in overrides) {
                 result = if (enabled) result + skillId else result - skillId
             }
-            result
+            return result
         }
-
-    /** Non-reactive read (for one-shot checks inside sendMessage etc.). */
-    fun effectiveSkillIds(assistantId: String): Set<String> {
-        val assistant = assistants.value.firstOrNull { it.id == assistantId } ?: return emptySet()
-        val base = assistant.enabledSkillIds.toSet()
-        val overrides = _tempSkillOverrides.value[assistantId] ?: emptyMap()
-        var result = base
-        for ((skillId, enabled) in overrides) {
-            result = if (enabled) result + skillId else result - skillId
-        }
-        return result
-    }
-
-    fun setAssistantBackground(assistantId: String, path: String?, opacity: Float) {
-        viewModelScope.launch {
-            val list = assistantStore.snapshot().toMutableList()
-            val idx = list.indexOfFirst { it.id == assistantId }
-            if (idx >= 0) {
-                list[idx] = list[idx].copy(backgroundPath = path, backgroundOpacity = opacity)
-                assistantStore.save(list)
-            }
-        }
-    }
 
     private suspend fun activeEnabledSkills(assistant: Assistant?): List<Skill> {
         if (assistant == null) return emptyList()
-        val ids = effectiveSkillIds(assistant.id)
+        val ids = effectiveSkillIds(_activeId.value)
         if (ids.isEmpty()) return emptyList()
-        return skillStore.snapshot().filter { it.id in ids }
+        return skillStore.snapshot().filter { it.id in ids && it.enabled }
     }
 
     fun sendMessage(text: String, attachments: List<com.miniichatNext.carter.data.Attachment> = emptyList()) {
@@ -396,14 +397,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             ?.let { id -> providers.value.firstOrNull { it.id == id } }
             ?: activeProvider()
         if (provider == null) {
-            _error.value = "No provider configured."
+            _error.value = getApplication<Application>()
+                .getString(com.miniichatNext.carter.R.string.error_no_provider)
             return
         }
 
         val model = assistant?.preferredModel?.takeIf { it.isNotBlank() }
             ?: current.activeModel
         if (model.isBlank()) {
-            _error.value = "No model selected."
+            _error.value = getApplication<Application>()
+                .getString(com.miniichatNext.carter.R.string.error_no_model)
             return
         }
 
@@ -411,15 +414,32 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             && !provider.baseUrl.contains("localhost")
             && !provider.baseUrl.contains("10.0.2.2")
         ) {
-            _error.value = "API key is empty for ${provider.name}."
+            _error.value = getApplication<Application>()
+                .getString(
+                    com.miniichatNext.carter.R.string.error_api_key_empty,
+                    provider.name
+                )
             return
         }
 
         val temperature = assistant?.temperature ?: current.temperature
         val activeAssistantId = current.activeAssistantId
 
+        com.miniichatNext.carter.Debug.DebugLog.i(
+            "ChatVM",
+            "sendMessage chars=${trimmed.length} atts=${attachments.size} " +
+                "provider=${provider.name} model=$model stream=${current.stream} " +
+                "assistant=$activeAssistantId temp=$temperature"
+        )
+
         viewModelScope.launch {
+            val activeId = _activeId.value ?: newId().also { _activeId.value = it }
             val enabledSkills = activeEnabledSkills(assistant)
+            com.miniichatNext.carter.Debug.DebugLog.i(
+                "ChatVM",
+                "sendMessage skills=${enabledSkills.joinToString { it.name }} " +
+                    "convId=$activeId assistant=${assistant?.id ?: "null"}"
+            )
             val skillsBlock = if (enabledSkills.isEmpty()) "" else buildString {
                 append("\n\n# Active Skills\n")
                 enabledSkills.forEach { s ->
@@ -437,7 +457,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 assistant = assistant?.name ?: ""
             )
 
-            val activeId = _activeId.value ?: newId().also { _activeId.value = it }
             val existing = store.snapshot().firstOrNull { it.id == activeId && it.assistantId == activeAssistantId }
             val baseTitle = trimmed.take(30).replace("\n", " ")
 
@@ -531,6 +550,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 try {
                     client.chatStream(provider, effectiveSettings, model, historyForApi)
                         .catch { e ->
+                            com.miniichatNext.carter.Debug.DebugLog.e(
+                                "ChatVM", "stream error (regenerate path)", e
+                            )
                             _error.value = e.message ?: "Request failed"
                             val finalContent = if (builder.isEmpty()) "(error: ${e.message})" else builder.toString()
                             appendAssistant(activeId, assistantId, finalContent, lastUsage)
@@ -555,7 +577,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                     _streamingOverlay.value = null
                     _isStreaming.value = false
                     streamingJob = null
-                    // Auto-generate a concise title after the first exchange.
+                    // 再完成一次对话后自动生成标题，不过需要用户已配置标题生成模型
                     generateTitle()
                 }
             }
@@ -563,8 +585,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private suspend fun appendAssistant(convId: String, msgId: String, content: String, usage: TokenUsage?) {
-        // Atomic under ConversationStore's mutex so a background flush cannot clobber
-        // a user edit that lands in the same tick.
         store.updateMessages(convId) { msgs ->
             msgs.map {
                 if (it.id == msgId) it.copy(content = content, usage = usage ?: it.usage) else it
@@ -586,7 +606,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Continue generating: send a continuation request so the model keeps writing. */
     fun continueGenerating() {
         viewModelScope.launch {
             val convId = _activeId.value ?: return@launch
@@ -601,10 +620,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val provider = assistant?.preferredProviderId
                 ?.let { id -> providers.value.firstOrNull { it.id == id } }
                 ?: activeProvider()
-                ?: run { _error.value = "No provider configured."; return@launch }
+                ?: run {
+                    _error.value = getApplication<Application>()
+                        .getString(com.miniichatNext.carter.R.string.error_no_provider)
+                    return@launch
+                }
             val model = assistant?.preferredModel?.takeIf { it.isNotBlank() }
                 ?: current.activeModel
-            if (model.isBlank()) { _error.value = "No model selected."; return@launch }
+            if (model.isBlank()) {
+                _error.value = getApplication<Application>()
+                    .getString(com.miniichatNext.carter.R.string.error_no_model)
+                return@launch
+            }
 
             val temperature = assistant?.temperature ?: current.temperature
             val systemPrompt = PromptVars.render(
@@ -612,7 +639,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 model = model, provider = provider.name, assistant = assistant?.name ?: ""
             )
 
-            // Build history as-is, but append a "continue" instruction.
             val historyForApi = mutableListOf<ChatMessage>()
             if (systemPrompt.isNotBlank()) historyForApi.add(ChatMessage("system", systemPrompt))
             msgs.filter { !(it.role == "assistant" && it.content.isEmpty()) }
@@ -636,6 +662,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 try {
                     client.chatStream(provider, effectiveSettings, model, historyForApi)
                         .catch { e ->
+                            com.miniichatNext.carter.Debug.DebugLog.e(
+                                "ChatVM", "stream error (send path)", e
+                            )
                             _error.value = e.message ?: "Request failed"
                             val finalContent = if (builder.isEmpty()) "(error: ${e.message})" else builder.toString()
                             appendAssistant(convId, assistantId, finalContent, lastUsage)
@@ -695,7 +724,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Auxiliary feature model resolution ----
 
-    /** Resolve an auxiliary feature model reference ("providerId::modelId" or a bare model id). */
+    /** 解析辅助功能模型引用（"providerId::modelId"或单独的模型ID） */
     private fun resolveModelRef(ref: String): Pair<ProviderConfig, String>? {
         if (ref.isBlank()) return null
         if (ref.contains("::")) {
@@ -710,9 +739,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Run a one-shot (non-streamed) completion with an auxiliary feature model.
-     * If the feature model is not configured, returns null so the caller can prompt the user
-     * to configure it in Settings.
+     * 使用辅助功能模型运行一次性（非流式）补全
+     * 如果未配置功能模型，则返回null，以便调用者可以提示用户在设置中进行配置
      */
     private suspend fun runAuxCompletion(
         modelRef: String,
@@ -745,15 +773,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Generate a short conversation title from the first exchange. */
+    /** 完成一次兑换后，根据第一条对话生成标题 */
     fun generateTitle() {
         val convId = _activeId.value ?: return
         val conv = conversations.value.firstOrNull { it.id == convId } ?: return
         if (conv.messages.isEmpty()) return
-        // Only auto-title after the first exchange (one user + one assistant message).
         if (conv.messages.size > 2) return
-        // Skip when the user already renamed the chat manually (heuristic: the
-        // placeholder title is the first 30 chars of the first user message).
         val placeholder = conv.messages.firstOrNull { it.role == "user" }
             ?.content?.take(30)?.replace("\n", " ")
         if (conv.title.isNotBlank() && conv.title != placeholder) return
@@ -784,13 +809,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Generate 4 reply candidates for the current page using the ACTIVE chat model. */
+    /** 回复候选词 */
     fun generateSuggestions(page: Int) {
         val convId = _activeId.value ?: return
         val conv = conversations.value.firstOrNull { it.id == convId } ?: return
         if (conv.messages.isEmpty()) return
-        // Per requirement: candidate replies default to the currently selected
-        // chat model. The dedicated suggestionModel setting remains as an override.
         val assistant = activeAssistant()
         val activeProvider = activeProvider()
         val activeModel = settings.value.activeModel
@@ -855,7 +878,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Compress older messages into a summary, keeping the most recent N messages. */
+    /** 对话压缩 */
     fun compressContext(targetTokens: Int, keepRecentMessages: Int, additionalPrompt: String) {
         val convId = _activeId.value ?: return
         val conv = conversations.value.firstOrNull { it.id == convId } ?: return

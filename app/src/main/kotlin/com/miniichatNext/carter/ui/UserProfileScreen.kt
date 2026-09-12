@@ -1,9 +1,5 @@
 package com.miniichatNext.carter.ui
 
-import android.graphics.Bitmap
-import android.net.Uri
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,7 +16,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -36,11 +31,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,9 +49,7 @@ import com.miniichatNext.carter.data.Avatar
 import com.miniichatNext.carter.data.UserProfile
 import com.miniichatNext.carter.ui.components.AvatarPicker
 import com.miniichatNext.carter.ui.components.AvatarView
-import com.miniichatNext.carter.util.AvatarStorage
-import com.miniichatNext.carter.util.newId
-import kotlinx.coroutines.launch
+
 
 @Composable
 fun UserProfileScreen(
@@ -66,12 +58,10 @@ fun UserProfileScreen(
     onSave: (UserProfile) -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
 
     var name by remember(profile.displayName) { mutableStateOf(profile.displayName) }
     var avatar by remember(profile) { mutableStateOf(profile.avatar) }
     var showPicker by remember { mutableStateOf(false) }
-    var pendingBgUri by remember { mutableStateOf<Uri?>(null) }
 
     LaunchedEffect(profile) {
         if (name != profile.displayName) name = profile.displayName
@@ -101,9 +91,24 @@ fun UserProfileScreen(
             )
             TextButton(
                 onClick = {
+                    // 兜底：图片头像若还指向 cacheDir 临时文件（异步转存未完成就保存），
+                    // 同步复制进 filesDir/avatars，避免之后头像失效
+                    val stableAvatar = when (val a = avatar) {
+                        is Avatar.Image -> Avatar.Image(
+                            com.miniichatNext.carter.util.AvatarStorage
+                                .copyIntoAppStorage(context, a.path) ?: a.path
+                        )
+                        else -> a
+                    }
+                    com.miniichatNext.carter.Debug.DebugLog.i(
+                        "UserProfile",
+                        "save avatar=$stableAvatar exists=" +
+                            ((stableAvatar as? Avatar.Image)?.path
+                                ?.let { java.io.File(it).exists() } ?: "n/a")
+                    )
                     onSave(profile.copy(
                         displayName = name.trim().ifBlank { profile.displayName },
-                        avatar = avatar
+                        avatar = stableAvatar
                     ))
                     onBack()
                 }
@@ -186,16 +191,4 @@ fun UserProfileScreen(
         )
     }
 
-    if (pendingBgUri != null) {
-        com.miniichatNext.carter.ui.components.ImageCropperDialog(
-            sourceUri = pendingBgUri,
-            onCancel = { pendingBgUri = null },
-            onConfirm = { bitmap: Bitmap ->
-                pendingBgUri = null
-                scope.launch {
-                    AvatarStorage.saveBitmap(context, newId(), bitmap)
-                }
-            }
-        )
-    }
 }

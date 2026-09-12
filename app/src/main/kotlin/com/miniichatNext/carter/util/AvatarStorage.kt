@@ -62,7 +62,41 @@ object AvatarStorage {
         runCatching { File(path).takeIf { it.exists() }?.delete() }
     }
 
+    fun isInAppStorage(context: Context, path: String?): Boolean {
+        if (path.isNullOrBlank()) return false
+        val stableDir = dir(context).absolutePath + File.separator
+        return path.startsWith(stableDir)
+    }
+
+    fun copyIntoAppStorage(context: Context, path: String?, id: String = newId()): String? {
+        if (path.isNullOrBlank()) return path
+        val src = File(path)
+        if (!src.isFile) return path
+        if (isInAppStorage(context, src.absolutePath)) return path
+        return runCatching {
+            val target = file(context, id)
+            src.copyTo(target, overwrite = true)
+            target.absolutePath
+        }.getOrNull() ?: path
+    }
+
     fun exists(path: String?): Boolean = !path.isNullOrBlank() && File(path).exists()
+
+    /**
+     * 清理 filesDir/avatars 下**不再被引用**的文件（换头像后的旧文件、被放弃的裁剪产物）
+     *
+     * 安全前提：只删除不在[keepPaths]里且最后修改时间早于[olderThanMs]的文件，这样刚生成的裁剪文件（可能还没写进任何assistant）不会被误删
+     *
+     * @return 实际删除的文件数
+     */
+    fun pruneOrphans(context: Context, keepPaths: Collection<String>, olderThanMs: Long): Int =
+        runCatching {
+            val keep = keepPaths.filter { it.isNotBlank() }.toSet()
+            val cutoff = System.currentTimeMillis() - olderThanMs
+            dir(context).listFiles()?.count { f ->
+                f.isFile && f.absolutePath !in keep && f.lastModified() < cutoff && f.delete()
+            } ?: 0
+        }.getOrDefault(0)
 
     fun uri(path: String): Uri = File(path).toUri()
 

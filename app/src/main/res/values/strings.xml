@@ -13,10 +13,7 @@
     <string name="cancel">Cancel</string>
     <string name="ok">OK</string>
     <string name="save">Save</string>
-    <string name="add">Add</string>
-    <string name="chats">Chats</string>
     <string name="providers">Providers</string>
-    <string name="provider">Provider</string>
     <string name="assistants">Assistants</string>
     <string name="assistant">Assistant</string>
     <string name="active">Active</string>
@@ -36,7 +33,6 @@
     <string name="setting_system">System prompt</string>
     <string name="setting_temperature">Temperature</string>
     <string name="setting_stream">Stream responses</string>
-    <string name="setting_about">About</string>
     <string name="setting_appearance">Appearance</string>
     <string name="setting_dynamic_color">Material You dynamic color</string>
     <string name="setting_dynamic_color_hint">Follow system color (Android 12+)</string>
@@ -55,13 +51,33 @@
     <string name="key">Key</string>
     <string name="value">Value</string>
     <string name="add_row">Add a row</string>
-    <string name="about_text">MiniiChat — an open-source LLM client. MIT licensed.</string>
-    <string name="about_text_intro" translatable="false">本应用/项目（MiniiChat Next）由director_Carter基于MiniiChat项目（MIT开源），新增部分功能基于RikkaHub项目（AGPL-3.0开源）的相关源码</string>
-    <string name="about_text_full" translatable="false">本应用/项目（MiniiChat Next）由director_Carter基于MiniiChat项目（MIT开源），新增部分功能基于RikkaHub项目（AGPL-3.0开源）的相关源码\nMiniiChat(https://github.com/Minis233/miniichat)\nRikkaHub(https://github.com/rikkahub/rikkahub)\nMiniiChat Next</string>
+    <string name="about_text_intro">This app/project (MiniiChat Next) is built by director_Carter on top of MiniiChat (MIT-licensed), with additional features derived from RikkaHub (AGPL-3.0-licensed) source code.</string>
+    <string name="about_subtitle">Version, license &amp; third-party acknowledgements</string>
+    <string name="about_version_label">Version</string>
+    <string name="about_build_label">Build</string>
+    <string name="about_issue_title">Submit a GitHub Issue</string>
+    <string name="about_open_link_failed">Cannot open the link</string>
+    <string name="about_mail_subject">MiniiChat Next feedback</string>
+    <string name="about_issue_sub">Report a bug or request a feature</string>
+    <string name="about_contact_title">Contact the MiniiChat Next developer</string>
+    <string name="about_contact_sub">director4168@163.com</string>
+    <string name="about_export_logs_title">Export logs</string>
+    <string name="about_export_logs_sub">Zip all logs to the system Download folder</string>
+    <string name="about_export_logs_done">Logs saved to %1$s</string>
+    <string name="about_export_logs_failed">Log export failed</string>
+    <string name="about_mail_chooser">Send email with</string>
+    <string name="error_no_model">No model selected.</string>
+    <string name="error_api_key_empty">API key is empty for %1$s.</string>
+    <string name="models_none_returned">No models returned from /models</string>
+    <string name="models_fetched">Fetched %1$d models</string>
+    <string name="error_fetch_models">Fetch models failed: %1$s</string>
+    <string name="avatar_crop_unusable">Avatar selection failed: the crop result is unusable</string>
+    <string name="avatar_crop_fallback_original">Crop result unusable, using the original image instead</string>
+    <string name="avatar_import_failed">Avatar import failed</string>
+    <string name="avatar_decode_failed">Cannot decode the cropped image</string>
+    <string name="avatar_transfer_failed">Avatar save failed: %1$s</string>
     <string name="error_no_provider">No provider configured. Add one in Settings.</string>
-    <string name="stop">Stop</string>
     <string name="regenerate">Regenerate</string>
-    <string name="thinking">Thinking…</string>
     <string name="example_prompt_1">Explain what an LLM is in one paragraph.</string>
     <string name="example_prompt_2">Write a haiku about Android development.</string>
     <string name="example_prompt_3">Give me 5 tips for productive remote work.</string>
@@ -81,9 +97,6 @@
     <string name="collapse_models">Show fewer</string>
     <string name="attach_image">Attach image</string>
     <string name="attach_file">Attach file</string>
-    <string name="attachment_image">Image</string>
-    <string name="attachment_file">File</string>
-    <string name="attachment_unsupported">Provider does not support multimodal input — sent as filename reference only.</string>
     <string name="attachment_too_large">Attachment too large (max %1$d MB)</string>
     <string name="date_today">Today</string>
     <string name="date_yesterday">Yesterday</string>
@@ -92,7 +105,6 @@
     <string name="date_older">Older</string>
     <string name="section_behavior">Behavior</string>
     <string name="section_about">About</string>
-    <string name="error_dialog_title">Something went wrong</string>
     <string name="error_open_providers">Open Providers</string>
     <string name="edit">Edit</string>
     <string name="regenerate_from_here">Regenerate from here</string>
@@ -100,7 +112,6 @@
 
     <!-- Profile -->
     <string name="profile">Profile</string>
-    <string name="profile_subtitle">Your display name and avatar</string>
     <string name="display_name">Display name</string>
     <string name="display_name_default">You</string>
     <string name="tap_avatar_to_change">Tap avatar to change</string>
@@ -108,7 +119,6 @@
 
     <!-- Skills -->
     <string name="skills">Skills</string>
-    <string name="skills_section_hint">Skills are added to the system prompt. Enable per assistant.</string>
     <string name="skills_empty_title">No skills yet</string>
     <string name="skills_empty_hint">Skills inject extra instructions into the system prompt.</string>
     <string name="skills_subtitle_empty">Import .md or create</string>
@@ -117,9 +127,6 @@
     <string name="skills_new">New skill</string>
     <string name="skill_edit_title">Edit skill</string>
     <string name="skill_new_title">New skill</string>
-    <string name="skill_field_name">Name</string>
-    <string name="skill_field_description">Description</string>
-    <string name="skill_field_body">Body (markdown / prompt content)</string>
     <string name="skill_pick_or_crop">Pick / Crop</string>
     <string name="skill_chars_count">%1$d chars</string>
     <string name="skill_imported">Imported skill: %1$s</string>
@@ -139,9 +146,6 @@
     <string name="avatar_picker_reset_emoji">Reset to emoji</string>
 
     <!-- Image cropper -->
-    <string name="cropper_loading">Loading…</string>
-    <string name="cropper_hint">Pinch / drag to adjust</string>
-    <string name="cropper_confirm">Confirm</string>
 
     <string name="action_cancel">Cancel</string>
     <string name="action_save">Save</string>
@@ -161,6 +165,11 @@
     <string name="background_opacity_value">%1$d%%</string>
     <string name="background_pick_image">Pick image</string>
     <string name="background_clear">Clear</string>
+    <string name="background_mode_default">Default</string>
+    <string name="background_mode_image">Image</string>
+    <string name="background_mode_css">CSS</string>
+    <string name="background_css_hint">Custom CSS applied to the chat background (e.g. gradient, image URL, animation). The chat content scrolls over it.</string>
+    <string name="background_css_placeholder" formatted="false">background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);</string>
     <string name="assistant_delete_confirm">Delete assistant \"%1$s\"? Linked chats and skills stay, but the assistant will no longer be selectable.</string>
     <string name="background_short">BG</string>
     <string name="language_restart_toast">Language changed. Restarting…</string>
@@ -180,7 +189,6 @@
     <string name="aux_model_compress">Context compression</string>
     <string name="aux_model_suggestion">Reply candidates</string>
     <string name="aux_model_not_set">Not set</string>
-    <string name="aux_model_using_active">Using active chat model</string>
     <string name="compress_target_tokens">Target tokens</string>
     <string name="compress_keep_recent">Keep recent messages</string>
     <string name="compress_additional_prompt">Additional instructions</string>
@@ -202,16 +210,35 @@
     <string name="thinking_budget_label">budget_tokens = %1$d</string>
     <string name="max_tokens">Max tokens</string>
     <string name="provider_delete_confirm">Delete provider \"%1$s\"?</string>
-    <string name="claude_no_models">Claude API has no model list — type model names manually.</string>
 
     <!-- Misc -->
-    <string name="edit_chat_title">Rename chat</string>
     <string name="untitled">Untitled</string>
     <string name="no_chats_yet">No chats yet</string>
     <string name="no_matches">No matches</string>
-    <string name="pick_image">Pick image</string>
     <string name="clear">Clear</string>
     <string name="profile_default_name">You</string>
     <string name="models_count_configured">%1$d configured</string>
     <string name="server_sent_events">Server-Sent Events</string>
+    <!-- Debug / Crash -->
+    <string name="debug_title">Debug</string>
+    <string name="debug_level_label">Log level(DEBUG_[%1$s].log)</string>
+    <string name="debug_clear">Clear</string>
+    <string name="debug_cleared">Logs cleared</string>
+    <string name="debug_export_share">Export &amp; share</string>
+    <string name="debug_mail_feedback">Feedback to the developer</string>
+    <string name="debug_crash_test">Crash test</string>
+    <string name="debug_crash_main">Crash Test (Main Thread)</string>
+    <string name="debug_crash_bg">Crash Test (Subthread)</string>
+    <string name="debug_note">The recorded logs are saved in &lt;Internal App-specific Directory&gt;/files/log, and this application also provides a DocumentsProvider, allowing direct access/reading of the logs.</string>
+    <string name="debug_export_title">Export debug logs</string>
+    <string name="debug_mail_subject">MiniiChat Next debug log feedback</string>
+    <string name="debug_mail_body">Describe the issue:\n\n(logs are attached)</string>
+    <string name="chooser_send_mail">Send feedback email</string>
+    <string name="crash_title">The application crashed during the last run!</string>
+    <string name="crash_desc">It was detected that the app unexpectedly crashed during the last run. The crash log has been recorded to &lt;Internal App-specific Directory&gt;/files/crase. This app provides a DocumentsProvider, which you can access yourself to read the log or report it to the developer.</string>
+    <string name="crash_export_title">Export crash log</string>
+    <string name="crash_mail_subject">MiniiChat Next crash log feedback</string>
+    <string name="crash_mail_body">Describe what you were doing:\n\n(crash log is attached)</string>
+    <string name="crash_ignore">Ignore and continue</string>
+    <string name="crash_empty">(crash log is empty)</string>
 </resources>

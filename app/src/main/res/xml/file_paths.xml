@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FileProvider 分享路径：Debug 日志与崩溃报告 zip -->
+<paths>
+    <!-- 头像/背景裁剪输出：Android 10+ 上 UCrop 通过 ContentResolver 保存，必须给它
+         content:// 目标 URI，file:// 会在保存阶段失败（RESULT_ERROR 96） -->
+    <files-path name="avatars" path="avatars/" />
+    <files-path name="debug_logs" path="logs/" />
+    <!-- 崩溃日志已挪到 logs/crash/，FileProvider 必须指向新目录才能分享崩溃 zip -->
+    <files-path name="crash" path="logs/crash/" />
+    <cache-path name="shared" path="shared/" />
+</paths>

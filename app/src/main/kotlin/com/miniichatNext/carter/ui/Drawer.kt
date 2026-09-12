@@ -1,7 +1,6 @@
 package com.miniichatNext.carter.ui
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -65,7 +63,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.data.Assistant
 import com.miniichatNext.carter.data.Conversation
+import com.miniichatNext.carter.ui.components.AssistantAvatarBadge
 import java.util.Calendar
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -229,9 +229,11 @@ fun GlassDrawer(
                         .padding(horizontal = 16.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        currentAssistant?.avatar?.ifBlank { "🤖" } ?: "🤖",
-                        fontSize = 20.sp
+                    AssistantAvatarBadge(
+                        avatar = currentAssistant?.avatar,
+                        avatarPath = currentAssistant?.avatarPath,
+                        fallbackName = currentAssistant?.name,
+                        size = 28.dp
                     )
                     Spacer(Modifier.width(10.dp))
                     Text(
@@ -241,11 +243,6 @@ fun GlassDrawer(
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        "⌄",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontSize = 20.sp
                     )
                 }
                 // Right: settings
@@ -331,7 +328,19 @@ fun GlassDrawer(
                         ListItem(
                             headlineContent = { Text(assistant.name) },
                             leadingContent = {
-                                Text(assistant.avatar.ifBlank { assistant.name.take(1) }, fontSize = 22.sp)
+                                if (assistant.hasAvatarImage) {
+                                    AssistantAvatarBadge(
+                                        avatar = assistant.avatar,
+                                        avatarPath = assistant.avatarPath,
+                                        fallbackName = assistant.name,
+                                        size = 40.dp
+                                    )
+                                } else {
+                                    Text(
+                                        assistant.avatar.ifBlank { assistant.name.take(1) },
+                                        fontSize = 22.sp
+                                    )
+                                }
                             },
                             trailingContent = {
                                 if (selected) Icon(Icons.Default.Check, contentDescription = null)

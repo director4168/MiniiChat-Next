@@ -36,6 +36,12 @@ class AssistantStore(private val context: Context) {
     }
 
     suspend fun upsert(a: Assistant) {
+        com.miniichatNext.carter.Debug.DebugLog.d(
+            "Store",
+            "assistant.upsert id=${a.id} name=${a.name} bg=${a.backgroundMode} " +
+                "cssLen=${a.backgroundCss.length} bgPath=${a.backgroundPath ?: "null"} " +
+                "avatar=${a.avatar} avatarPath=${a.avatarPath ?: "null"} skills=${a.enabledSkillIds}"
+        )
         val cur = snapshot().toMutableList()
         val idx = cur.indexOfFirst { it.id == a.id }
         if (idx >= 0) cur[idx] = a else cur.add(a)

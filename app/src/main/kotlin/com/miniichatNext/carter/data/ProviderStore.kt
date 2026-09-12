@@ -17,6 +17,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.builtins.ListSerializer
+import com.miniichatNext.carter.util.ApiKeyCrypto
 
 private val Context.providersDataStore: DataStore<Preferences> by preferencesDataStore(name = "providers")
 
@@ -27,14 +28,21 @@ class ProviderStore(private val context: Context) {
     val providersFlow: Flow<List<ProviderConfig>> =
         context.providersDataStore.data.map { prefs ->
             val raw = prefs[key] ?: return@map emptyList()
-            runCatching { decode(raw) }.getOrDefault(emptyList())
+            runCatching { decode(raw) }
+                .getOrDefault(emptyList())
+                // API Key 在磁盘上是密文，读出来给上层用之前解密
+                .map { it.copy(apiKey = ApiKeyCrypto.decrypt(it.apiKey)) }
         }
 
     suspend fun snapshot(): List<ProviderConfig> = providersFlow.first()
 
     suspend fun save(list: List<ProviderConfig>) {
+        com.miniichatNext.carter.Debug.DebugLog.d(
+            "Store", "providers.save count=${list.size} ids=${list.map { it.id }}"
+        )
+        val encoded = list.map { it.copy(apiKey = ApiKeyCrypto.encrypt(it.apiKey)) }
         context.providersDataStore.edit { prefs ->
-            prefs[key] = json.encodeToString(ListSerializer(ProviderConfig.serializer()), list)
+            prefs[key] = json.encodeToString(ListSerializer(ProviderConfig.serializer()), encoded)
         }
     }
 

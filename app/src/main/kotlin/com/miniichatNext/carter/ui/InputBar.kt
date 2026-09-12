@@ -67,7 +67,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.Attachment
-import com.miniichatNext.carter.data.Skill
+import com.miniichatNext.carter.data.Skills.Skill
 import com.miniichatNext.carter.util.AttachmentLoader
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -86,7 +86,9 @@ fun InputBar(
     onSend: () -> Unit,
     onStop: () -> Unit,
     isStreaming: Boolean,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    // CSS/图片背景模式下让输入栏容器透明（输入框本体仍保留 surfaceVariant 底色）
+    transparent: Boolean = false
 ) {
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -150,7 +152,11 @@ fun InputBar(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
+            .background(
+                MaterialTheme.colorScheme.background.copy(
+                    alpha = if (transparent) 0f else 1f
+                )
+            )
             .padding(WindowInsets.navigationBars.asPaddingValues())
     ) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)

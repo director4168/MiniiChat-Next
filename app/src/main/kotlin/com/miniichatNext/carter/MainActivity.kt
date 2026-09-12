@@ -44,37 +44,35 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        com.miniichatNext.carter.Debug.DebugLog.i(
+            "Activity", "MainActivity.onCreate (savedState=${savedInstanceState != null})"
+        )
         enableEdgeToEdge()
         setContent {
             val s by vm.settings.collectAsState()
 
             val prefs = getSharedPreferences("locale_cache", MODE_PRIVATE)
             val persisted = prefs.getString("language", "system") ?: "system"
-            if (persisted != s.language) {
-                prefs.edit().putString("language", s.language).apply()
-            }
 
-            // Track the language the activity was started with, so the very first
-            // emission from DataStore doesn't trigger a spurious "restart" toast.
-            var initialLanguage by remember { mutableStateOf(persisted) }
-            var hasSeenFirstEmission by remember { mutableStateOf(false) }
+            var primed by remember { mutableStateOf(false) }
+            var prevLang by remember { mutableStateOf<String?>(null) }
             LaunchedEffect(s.language) {
-                if (!hasSeenFirstEmission) {
-                    // First emission after entering the app — no restart needed.
-                    hasSeenFirstEmission = true
-                    initialLanguage = s.language
+                if (!primed) {
+                    primed = true
+                    prevLang = s.language
                     return@LaunchedEffect
                 }
-                if (initialLanguage != s.language) {
-                    initialLanguage = s.language
-                    Toast.makeText(
-                        this@MainActivity,
-                        getString(R.string.language_restart_toast),
-                        Toast.LENGTH_LONG
-                    ).show()
-                    // recreate() re-runs attachBaseContext(), which re-reads locale_cache
-                    // and applies the newly selected language.
-                    recreate()
+                if (s.language != prevLang) {
+                    if (s.language != persisted) {
+                        prefs.edit().putString("language", s.language).apply()
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.language_restart_toast),
+                            Toast.LENGTH_LONG
+                        ).show()
+                        recreate()
+                    }
+                    prevLang = s.language
                 }
             }
 

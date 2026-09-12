@@ -12,13 +12,21 @@ data class Assistant(
     val preferredProviderId: String? = null,
     val preferredModel: String? = null,
     val temperature: Float? = null,
+    // 背景三种模式：default = 不设背景；image = 自定义图片（用 backgroundPath）；
+    // css = 自定义 CSS（用 backgroundCss，由 ChatScreen 用 WebView 渲染）
+    val backgroundMode: String = "default",
     val backgroundPath: String? = null,
+    val backgroundCss: String = "",
     val backgroundOpacity: Float = 1f,
     val enabledSkillIds: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis()
 ) {
     val hasAvatarImage: Boolean get() = !avatarPath.isNullOrBlank()
-    val hasBackground: Boolean get() = !backgroundPath.isNullOrBlank()
+    // 向后兼容：旧数据里没有 backgroundMode 字段（反序列化默认为 "default"）
+    // 但 backgroundPath 已存在，这种情况下仍按"图片模式"判定 hasBackground=true
+    val hasBackground: Boolean
+        get() = if (backgroundMode == "css") backgroundCss.isNotBlank()
+                else !backgroundPath.isNullOrBlank()
 }
 
 object AssistantPresets {

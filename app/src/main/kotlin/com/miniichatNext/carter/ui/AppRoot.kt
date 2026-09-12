@@ -1,5 +1,6 @@
 package com.miniichatNext.carter.ui
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,9 +29,12 @@ import androidx.compose.ui.res.stringResource
 import com.miniichatNext.carter.ChatViewModel
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.ProviderConfig
+import com.miniichatNext.carter.Debug.CrashLogger
+import com.miniichatNext.carter.Debug.CrashReportScreen
+import com.miniichatNext.carter.Debug.DebugScreen
 import kotlinx.coroutines.launch
 
-private enum class Screen { Chat, Settings, Providers, ProviderEdit, Assistants, AssistantEdit, Skills, UserProfile }
+private enum class Screen { Chat, Settings, Providers, ProviderEdit, Assistants, AssistantEdit, Skills, UserProfile, About, Debug }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,9 +43,23 @@ fun AppRoot(vm: ChatViewModel) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     var screen by rememberSaveable { mutableStateOf(Screen.Chat) }
+    // 导航埋点：切换页面记录一条
+    LaunchedEffect(screen) {
+        com.miniichatNext.carter.Debug.DebugLog.v("Nav", "screen -> " + screen.name)
+    }
     var showModelPicker by rememberSaveable { mutableStateOf(false) }
     var editingProvider by remember { mutableStateOf<ProviderConfig?>(null) }
     var editingAssistant by remember { mutableStateOf<com.miniichatNext.carter.data.Assistant?>(null) }
+    // 把Settings滚动状态提升到AppRoot（用rememberSaveable 持久化），导航到关于页再返回时滚动位置不会跳到顶部
+    val settingsScrollState = androidx.compose.runtime.saveable.rememberSaveable(
+        saver = ScrollState.Saver
+    ) { ScrollState(0) }
+    // 滚动位置恢复策略：只有从设置的子页面返回设置时才保留记忆位置
+    // 从聊天等非设置页进入设置时一律回到顶部
+    val gotoSettings: (Boolean) -> Unit = { restoreScroll ->
+        if (!restoreScroll) scope.launch { settingsScrollState.scrollTo(0) }
+        screen = Screen.Settings
+    }
 
     androidx.activity.compose.BackHandler(enabled = drawerState.isOpen) {
         scope.launch { drawerState.close() }
@@ -53,22 +71,28 @@ fun AppRoot(vm: ChatViewModel) {
         screen = Screen.Chat
     }
     androidx.activity.compose.BackHandler(enabled = screen == Screen.Providers) {
-        screen = Screen.Settings
+        gotoSettings(true)
     }
     androidx.activity.compose.BackHandler(enabled = screen == Screen.ProviderEdit) {
         screen = Screen.Providers
     }
     androidx.activity.compose.BackHandler(enabled = screen == Screen.Assistants) {
-        screen = Screen.Settings
+        gotoSettings(true)
     }
     androidx.activity.compose.BackHandler(enabled = screen == Screen.AssistantEdit) {
         screen = Screen.Assistants
     }
     androidx.activity.compose.BackHandler(enabled = screen == Screen.Skills) {
-        screen = Screen.Settings
+        gotoSettings(true)
     }
     androidx.activity.compose.BackHandler(enabled = screen == Screen.UserProfile) {
-        screen = Screen.Settings
+        gotoSettings(true)
+    }
+    androidx.activity.compose.BackHandler(enabled = screen == Screen.About) {
+        gotoSettings(true)
+    }
+    androidx.activity.compose.BackHandler(enabled = screen == Screen.Debug) {
+        screen = Screen.About
     }
 
     val conversations by vm.conversations.collectAsState()
@@ -86,11 +110,8 @@ fun AppRoot(vm: ChatViewModel) {
     val compressDialog by vm.compressDialog.collectAsState()
     val activeAssistant = assistants.firstOrNull { it.id == settings.activeAssistantId }
 
-    // Reactive skill-enable state for the current assistant (drives the chat-page
-    // SKILL sheet switches). Falls back to an empty flow when no assistant is active.
-    val effectiveSkillIds: Set<String> by remember(activeAssistant?.id) {
-        activeAssistant?.let { vm.effectiveSkillIdsFlow(it.id) }
-            ?: kotlinx.coroutines.flow.flowOf(emptySet<String>())
+    val effectiveSkillIds: Set<String> by remember(activeId) {
+        vm.effectiveSkillIdsFlow(activeId)
     }.collectAsState(emptySet<String>())
     val assistantConversations = conversations.filter { it.assistantId == settings.activeAssistantId }
     val activeConv = assistantConversations.firstOrNull { it.id == activeId }
@@ -157,7 +178,7 @@ fun AppRoot(vm: ChatViewModel) {
                                     scope.launch { drawerState.close() }
                                 },
                                 onOpenSettings = {
-                                    screen = Screen.Settings
+                                    gotoSettings(false)
                                     scope.launch { drawerState.close() }
                                 }
                             )
@@ -170,11 +191,14 @@ fun AppRoot(vm: ChatViewModel) {
                             isStreaming = isStreaming,
                             streamingOverlay = streamingOverlay,
                             assistant = activeAssistant,
+                            userProfile = userProfile,
                             assistants = assistants,
                             skills = skills,
                             effectiveSkillIds = effectiveSkillIds,
                             onToggleSkill = { id, en ->
-                                activeAssistant?.let { vm.toggleTemporarySkill(it.id, id, en) }
+                                val cid = activeId
+                                if (cid != null) vm.toggleTemporarySkill(cid, id, en)
+                                else vm.toggleAssistantSkill(settings.activeAssistantId, id, en)
                             },
                             onSelectAssistant = { id -> vm.selectAssistant(id) },
                             onContextCompress = {
@@ -191,7 +215,7 @@ fun AppRoot(vm: ChatViewModel) {
                             onEditMessage = { msgId, newText -> vm.editMessage(msgId, newText) },
                             onContinue = { vm.continueGenerating() },
                             onNew = { vm.newConversation() },
-                            onOpenSettings = { screen = Screen.Settings },
+                            onOpenSettings = { gotoSettings(false) },
                             onPickModel = {
                                 if (providers.isEmpty()) {
                                     editingProvider = null
@@ -213,14 +237,25 @@ fun AppRoot(vm: ChatViewModel) {
                         onOpenProviders = { screen = Screen.Providers },
                         onOpenAssistants = { screen = Screen.Assistants },
                         onOpenSkills = { screen = Screen.Skills },
-                        onOpenUserProfile = { screen = Screen.UserProfile }
+                        onOpenUserProfile = { screen = Screen.UserProfile },
+                        onOpenAbout = { screen = Screen.About },
+                        scrollState = settingsScrollState
                     )
+                }
+                Screen.About -> {
+                    AboutScreen(
+                        onBack = { gotoSettings(true) },
+                        onOpenDebug = { screen = Screen.Debug }
+                    )
+                }
+                Screen.Debug -> {
+                    DebugScreen(onBack = { screen = Screen.About })
                 }
                 Screen.Assistants -> {
                     AssistantsScreen(
                         assistants = assistants,
                         activeId = settings.activeAssistantId,
-                        onBack = { screen = Screen.Settings },
+                        onBack = { gotoSettings(true) },
                         onSelect = { vm.selectAssistant(it) },
                         onUpsert = { vm.upsertAssistant(it) },
                         onDelete = { vm.deleteAssistant(it) },
@@ -244,10 +279,6 @@ fun AppRoot(vm: ChatViewModel) {
                             editingAssistant?.let { vm.deleteAssistant(it.id) }
                             editingAssistant = null
                             screen = Screen.Assistants
-                        },
-                        onToggleSkill = { id, en ->
-                            val target = editingAssistant ?: activeAssistant
-                            if (target != null) vm.toggleAssistantSkill(target.id, id, en)
                         }
                     )
                 }
@@ -257,7 +288,7 @@ fun AppRoot(vm: ChatViewModel) {
                         fetchingId = fetchingId,
                         activeProviderId = settings.activeProviderId,
                         activeModel = settings.activeModel,
-                        onBack = { screen = Screen.Settings },
+                        onBack = { gotoSettings(true) },
                         onCreate = {
                             editingProvider = null
                             screen = Screen.ProviderEdit
@@ -286,7 +317,7 @@ fun AppRoot(vm: ChatViewModel) {
                 Screen.Skills -> {
                     com.miniichatNext.carter.ui.skills.SkillsScreen(
                         skills = skills,
-                        onBack = { screen = Screen.Settings },
+                        onBack = { gotoSettings(true) },
                         onSave = { vm.saveSkill(it) },
                         onDelete = { vm.deleteSkill(it) },
                         onSetEnabled = { id, en -> vm.setSkillEnabled(id, en) },
@@ -300,12 +331,24 @@ fun AppRoot(vm: ChatViewModel) {
                 Screen.UserProfile -> {
                     com.miniichatNext.carter.ui.UserProfileScreen(
                         profile = userProfile,
-                        onBack = { screen = Screen.Settings },
+                        onBack = { gotoSettings(true) },
                         onSave = { newProfile -> vm.updateUserProfile { newProfile } }
                     )
                 }
             }
         }
+    }
+
+    // 如果上次运行发生崩溃，再次启动时优先展示崩溃报告页
+    var pendingCrash by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (CrashLogger.hasCrash(context)) pendingCrash = true
+    }
+    if (pendingCrash) {
+        CrashReportScreen(onDismiss = {
+            CrashLogger.clearLatestCrash(context)
+            pendingCrash = false
+        })
     }
 
     if (showModelPicker) {

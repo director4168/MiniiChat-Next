@@ -1,12 +1,12 @@
 package com.miniichatNext.carter.ui.components
 
-import android.graphics.Bitmap
-import android.net.Uri
+import android.graphics.BitmapFactory
+import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,7 +23,6 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -33,7 +32,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -45,11 +43,15 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.Avatar
 import com.miniichatNext.carter.util.AvatarStorage
-import com.miniichatNext.carter.R
 import com.miniichatNext.carter.util.newId
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+
 
 @Composable
 fun AvatarPicker(
@@ -58,16 +60,105 @@ fun AvatarPicker(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
+    val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
+    val newId = remember { com.miniichatNext.carter.util.newId() }
 
     var emojiDraft by remember { mutableStateOf((current as? Avatar.Emoji)?.content ?: "") }
-    var pendingUri by remember { mutableStateOf<Uri?>(null) }
+
+    var lastPickedUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    val importOriginalImage: () -> Unit = {
+        val uri = lastPickedUri
+        if (uri == null) {
+            com.miniichatNext.carter.Debug.DebugLog.w(
+                "AvatarPicker", "crop unavailable and no source uri to fall back to"
+            )
+            Toast.makeText(
+                context,
+                context.getString(R.string.avatar_crop_unusable),
+                Toast.LENGTH_LONG
+            ).show()
+        } else {
+            scope.launch {
+                val path = AvatarStorage.saveFromUri(context, newId(), uri, maxSide = 1024)
+                if (path != null) {
+                    com.miniichatNext.carter.Debug.DebugLog.i(
+                        "AvatarPicker", "crop unavailable, imported original image: $path"
+                    )
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.avatar_crop_fallback_original),
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    onChange(Avatar.Image(path))
+                } else {
+                    com.miniichatNext.carter.Debug.DebugLog.e(
+                        "AvatarPicker", "import original image failed: $uri"
+                    )
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.avatar_import_failed),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    val cropLauncher = rememberImageCropLauncher(
+        onResult = { path ->
+            val stable = AvatarStorage.isInAppStorage(context, path)
+            onChange(Avatar.Image(path))
+            if (stable) {
+                com.miniichatNext.carter.Debug.DebugLog.i(
+                    "AvatarPicker", "avatar cropped straight into app storage: $path"
+                )
+            } else {
+                scope.launch {
+                    val result = runCatching {
+                        val bm = BitmapFactory.decodeFile(path)
+                            ?: error(context.getString(R.string.avatar_decode_failed))
+                        AvatarStorage.saveBitmap(context, newId, bm) to path
+                    }
+                    result.fold(
+                        onSuccess = { (savedPath, tempPath) ->
+                            com.miniichatNext.carter.Debug.DebugLog.i(
+                                "AvatarPicker", "avatar transferred: temp=$tempPath -> stable=$savedPath"
+                            )
+                            onChange(Avatar.Image(savedPath))
+                        },
+                        onFailure = { e ->
+                            com.miniichatNext.carter.Debug.DebugLog.e(
+                                "AvatarPicker", "avatar transfer failed (path=$path)", e
+                            )
+                            Log.e("AvatarPicker", "image save failed (path=$path)", e)
+                            Toast.makeText(
+                                context,
+                                context.getString(
+                                    R.string.avatar_transfer_failed,
+                                    e.message ?: e.javaClass.simpleName
+                                ),
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    )
+                }
+            }
+        },
+        onCancel = {},
+        onFailure = importOriginalImage,
+        aspectRatio = 1f to 1f,
+        outputDir = AvatarStorage.dir(context),
+        outputPrefix = "avatar_",
+        maxResultSize = 1024
+    )
 
     val imagePicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
     ) { uri ->
         uri ?: return@rememberLauncherForActivityResult
-        pendingUri = uri
+        lastPickedUri = uri
+        cropLauncher(uri)
     }
 
     AlertDialog(
@@ -104,7 +195,7 @@ fun AvatarPicker(
                             icon = Icons.Default.Restore,
                             label = stringResource(R.string.avatar_picker_reset_emoji),
                             onClick = {
-                                onChange(Avatar.Emoji(if (emojiDraft.isBlank()) "🙂" else emojiDraft))
+                                onChange(Avatar.Emoji("🙂"))
                             }
                         )
                     }
@@ -146,19 +237,6 @@ fun AvatarPicker(
         }
     )
 
-    if (pendingUri != null) {
-        ImageCropperDialog(
-            sourceUri = pendingUri,
-            onCancel = { pendingUri = null },
-            onConfirm = { bitmap ->
-                val id = newId()
-                pendingUri = null
-                scope.launch {
-                    onChange(Avatar.Image(AvatarStorage.saveBitmap(context, id, bitmap)))
-                }
-            }
-        )
-    }
 }
 
 @Composable

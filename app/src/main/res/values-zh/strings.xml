@@ -13,10 +13,7 @@
     <string name="cancel">取消</string>
     <string name="ok">确定</string>
     <string name="save">保存</string>
-    <string name="add">添加</string>
-    <string name="chats">对话</string>
     <string name="providers">服务商</string>
-    <string name="provider">服务商</string>
     <string name="assistants">助手</string>
     <string name="assistant">助手</string>
     <string name="active">使用中</string>
@@ -36,7 +33,6 @@
     <string name="setting_system">系统提示词</string>
     <string name="setting_temperature">温度</string>
     <string name="setting_stream">流式输出</string>
-    <string name="setting_about">关于</string>
     <string name="setting_appearance">外观</string>
     <string name="setting_dynamic_color">Material You 动态主题</string>
     <string name="setting_dynamic_color_hint">跟随系统颜色（Android 12+）</string>
@@ -55,13 +51,33 @@
     <string name="key">键</string>
     <string name="value">值</string>
     <string name="add_row">添加一行</string>
-    <string name="about_text">MiniiChat —— MIT 协议的开源 LLM 客户端。</string>
-    <string name="about_text_intro" translatable="false">本应用/项目（MiniiChat Next）由director_Carter基于MiniiChat项目（MIT开源），新增部分功能基于RikkaHub项目（AGPL-3.0开源）的相关源码</string>
-    <string name="about_text_full" translatable="false">本应用/项目（MiniiChat Next）由director_Carter基于MiniiChat项目（MIT开源），新增部分功能基于RikkaHub项目（AGPL-3.0开源）的相关源码\nMiniiChat(https://github.com/Minis233/miniichat)\nRikkaHub(https://github.com/rikkahub/rikkahub)\nMiniiChat Next</string>
+    <string name="about_text_intro">本应用/项目（MiniiChat Next）由 director_Carter 基于 MiniiChat 项目（MIT 开源），新增部分功能基于 RikkaHub 项目（AGPL-3.0 开源）的相关源码。</string>
+    <string name="about_subtitle">版本、许可与第三方致谢</string>
+    <string name="about_version_label">版本</string>
+    <string name="about_build_label">构建信息</string>
+    <string name="about_issue_title">提交 GitHub Issue</string>
+    <string name="about_open_link_failed">无法打开链接</string>
+    <string name="about_mail_subject">MiniiChat Next 反馈</string>
+    <string name="about_issue_sub">反馈 Bug 或提出功能建议</string>
+    <string name="about_contact_title">联系 MiniiChat Next 开发者</string>
+    <string name="about_contact_sub">director4168@163.com</string>
+    <string name="about_export_logs_title">日志导出</string>
+    <string name="about_export_logs_sub">打包全部日志到系统下载目录</string>
+    <string name="about_export_logs_done">日志已保存到 %1$s</string>
+    <string name="about_export_logs_failed">日志导出失败</string>
+    <string name="about_mail_chooser">选择邮件应用</string>
+    <string name="error_no_model">未选择模型。</string>
+    <string name="error_api_key_empty">%1$s 的 API Key 为空。</string>
+    <string name="models_none_returned">未从 /models 返回任何模型</string>
+    <string name="models_fetched">已获取 %1$d 个模型</string>
+    <string name="error_fetch_models">获取模型失败：%1$s</string>
+    <string name="avatar_crop_unusable">头像选择失败：裁剪结果不可用</string>
+    <string name="avatar_crop_fallback_original">裁剪结果不可用，已改用原图</string>
+    <string name="avatar_import_failed">头像导入失败</string>
+    <string name="avatar_decode_failed">无法解码裁剪后的图片</string>
+    <string name="avatar_transfer_failed">头像转存失败：%1$s</string>
     <string name="error_no_provider">未配置服务商，请先到设置里添加。</string>
-    <string name="stop">停止</string>
     <string name="regenerate">重新生成</string>
-    <string name="thinking">思考中…</string>
     <string name="example_prompt_1">用一段话解释什么是大语言模型。</string>
     <string name="example_prompt_2">写一首关于 Android 开发的小诗。</string>
     <string name="example_prompt_3">给我 5 条远程办公的高效率建议。</string>
@@ -81,9 +97,6 @@
     <string name="collapse_models">收起</string>
     <string name="attach_image">添加图片</string>
     <string name="attach_file">添加文件</string>
-    <string name="attachment_image">图片</string>
-    <string name="attachment_file">文件</string>
-    <string name="attachment_unsupported">服务商可能不支持多模态输入，仅按文件名引用发送。</string>
     <string name="attachment_too_large">附件太大（上限 %1$d MB）</string>
     <string name="date_today">今天</string>
     <string name="date_yesterday">昨天</string>
@@ -92,7 +105,6 @@
     <string name="date_older">更早</string>
     <string name="section_behavior">行为</string>
     <string name="section_about">关于</string>
-    <string name="error_dialog_title">出错了</string>
     <string name="error_open_providers">打开服务商设置</string>
     <string name="edit">编辑</string>
     <string name="regenerate_from_here">从此处重新生成</string>
@@ -100,7 +112,6 @@
 
     <!-- Profile -->
     <string name="profile">个人资料</string>
-    <string name="profile_subtitle">你的显示名称与头像</string>
     <string name="display_name">显示名称</string>
     <string name="display_name_default">我</string>
     <string name="tap_avatar_to_change">点击头像更换</string>
@@ -108,7 +119,6 @@
 
     <!-- Skills -->
     <string name="skills">技能</string>
-    <string name="skills_section_hint">技能会附加到系统提示词中，按助手单独启用。</string>
     <string name="skills_empty_title">还没有技能</string>
     <string name="skills_empty_hint">技能会在系统提示词中注入额外指令。</string>
     <string name="skills_subtitle_empty">导入 .md 或新建</string>
@@ -117,9 +127,6 @@
     <string name="skills_new">新建技能</string>
     <string name="skill_edit_title">编辑技能</string>
     <string name="skill_new_title">新建技能</string>
-    <string name="skill_field_name">名称</string>
-    <string name="skill_field_description">描述</string>
-    <string name="skill_field_body">内容（Markdown / 提示词）</string>
     <string name="skill_pick_or_crop">选择 / 裁剪</string>
     <string name="skill_chars_count">%1$d 字</string>
     <string name="skill_imported">已导入技能：%1$s</string>
@@ -139,9 +146,6 @@
     <string name="avatar_picker_reset_emoji">恢复为表情</string>
 
     <!-- Image cropper -->
-    <string name="cropper_loading">加载中…</string>
-    <string name="cropper_hint">双指缩放 / 拖动调整</string>
-    <string name="cropper_confirm">确定</string>
 
     <string name="action_cancel">取消</string>
     <string name="action_save">保存</string>
@@ -161,6 +165,11 @@
     <string name="background_opacity_value">%1$d%%</string>
     <string name="background_pick_image">选择图片</string>
     <string name="background_clear">清除</string>
+    <string name="background_mode_default">默认</string>
+    <string name="background_mode_image">图片</string>
+    <string name="background_mode_css">CSS</string>
+    <string name="background_css_hint">自定义 CSS 用于聊天背景（如渐变、图片 URL、动画），聊天内容会浮在其上滚动。</string>
+    <string name="background_css_placeholder" formatted="false">background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);</string>
     <string name="assistant_delete_confirm">确认删除助手「%1$s」？关联对话和技能会保留，但该助手将不再可选。</string>
     <string name="background_short">背景</string>
     <string name="language_restart_toast">语言已切换，正在重启应用…</string>
@@ -180,7 +189,6 @@
     <string name="aux_model_compress">上下文压缩</string>
     <string name="aux_model_suggestion">候选回复</string>
     <string name="aux_model_not_set">未设置</string>
-    <string name="aux_model_using_active">使用当前对话模型</string>
     <string name="compress_target_tokens">目标 token 数</string>
     <string name="compress_keep_recent">保留最近消息数量</string>
     <string name="compress_additional_prompt">附加说明</string>
@@ -202,16 +210,35 @@
     <string name="thinking_budget_label">budget_tokens = %1$d</string>
     <string name="max_tokens">最大 Token</string>
     <string name="provider_delete_confirm">确认删除服务商「%1$s」？</string>
-    <string name="claude_no_models">Claude API 无模型列表 — 请手动输入模型名。</string>
 
     <!-- Misc -->
-    <string name="edit_chat_title">重命名对话</string>
     <string name="untitled">未命名</string>
     <string name="no_chats_yet">暂无对话</string>
     <string name="no_matches">无匹配</string>
-    <string name="pick_image">选择图片</string>
     <string name="clear">清除</string>
     <string name="profile_default_name">我</string>
     <string name="models_count_configured">已配置 %1$d 个</string>
     <string name="server_sent_events">Server-Sent Events</string>
+    <!-- Debug / Crash -->
+    <string name="debug_title">Debug</string>
+    <string name="debug_level_label">日志等级(DEBUG_[%1$s].log)</string>
+    <string name="debug_clear">清空</string>
+    <string name="debug_cleared">日志已清空</string>
+    <string name="debug_export_share">导出分享</string>
+    <string name="debug_mail_feedback">反馈给开发者</string>
+    <string name="debug_crash_test">崩溃测试</string>
+    <string name="debug_crash_main">崩溃测试（主线程）</string>
+    <string name="debug_crash_bg">崩溃测试（子线程）</string>
+    <string name="debug_note">记录的日志保存在 &lt;Internal App-specific Directory&gt;/files/log ，同时本应用提供DocumentsProvider，可实现直接访问/读取日志</string>
+    <string name="debug_export_title">导出调试日志</string>
+    <string name="debug_mail_subject">MiniiChat Next 调试日志反馈</string>
+    <string name="debug_mail_body">问题描述：\n\n（日志已打包为附件）</string>
+    <string name="chooser_send_mail">发送反馈邮件</string>
+    <string name="crash_title">应用上次运行时发生崩溃！</string>
+    <string name="crash_desc">检测到应用上次在运行时发生意外崩溃，崩溃日志已记录到 &lt;Internal App-specific Directory&gt;/files/crase ，本应用提供DocumentsProvider，您可以自己访问，读取日志或反馈给开发者</string>
+    <string name="crash_export_title">导出崩溃日志</string>
+    <string name="crash_mail_subject">MiniiChat Next 崩溃日志反馈</string>
+    <string name="crash_mail_body">崩溃场景描述：\n\n（崩溃日志已打包为附件）</string>
+    <string name="crash_ignore">忽略并继续</string>
+    <string name="crash_empty">（崩溃日志内容为空）</string>
 </resources>

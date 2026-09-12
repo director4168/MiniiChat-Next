@@ -56,8 +56,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
-import com.miniichatNext.carter.data.Skill
-import com.miniichatNext.carter.data.SkillFrontmatterParser
+import com.miniichatNext.carter.data.Skills.Skill
+import com.miniichatNext.carter.data.Skills.SkillFrontmatterParser
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -490,37 +490,3 @@ private fun SkillEditor(
     )
 }
 
-@Composable
-private fun LabeledField(
-    label: String,
-    value: String,
-    minLines: Int = 1,
-    maxLines: Int = 1,
-    onChange: (String) -> Unit
-) {
-    Column {
-        Text(label, style = MaterialTheme.typography.labelLarge)
-        Spacer(Modifier.height(4.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
-                .padding(horizontal = 12.dp, vertical = 10.dp)
-        ) {
-            BasicTextField(
-                value = value,
-                onValueChange = onChange,
-                modifier = Modifier.fillMaxWidth(),
-                textStyle = LocalTextStyle.current.copy(
-                    color = LocalContentColor.current,
-                    fontSize = 14.sp
-                ),
-                singleLine = minLines == 1 && maxLines == 1,
-                minLines = minLines,
-                maxLines = maxLines,
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary)
-            )
-        }
-    }
-}

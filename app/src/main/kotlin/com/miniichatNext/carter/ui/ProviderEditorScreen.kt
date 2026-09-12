@@ -131,6 +131,8 @@ fun ProviderEditorScreen(
                         name = name.trim(),
                         baseUrl = normalizedUrl,
                         apiKey = apiKey.trim()
+                        // 新建 provider 不预填模型，由 ChatViewModel.fetchModels
+                        // 按钮点击后自动拉取（或用户用"手动添加"补）
                     )).copy(
                         name = name.trim(),
                         baseUrl = normalizedUrl,
@@ -366,6 +368,10 @@ fun ProviderEditorScreen(
                                     presetBaseUrl = preset.baseUrl
                                     baseUrl = preset.baseUrl
                                     providerType = preset.type
+                                    // 预设可以自带非标端点路径（如 xAI → /responses），
+                                    // 选中后同步到 Chat Completions 路径字段；用户
+                                    // 在 UI 里清空该字段会回退到默认 /chat/completions
+                                    chatCompletionsPath = preset.path
                                     presetSheetOpen = false
                                 }
                                 .padding(vertical = 8.dp, horizontal = 4.dp)

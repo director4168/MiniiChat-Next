@@ -58,9 +58,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.ProviderConfig
-import com.miniichatNext.carter.data.ProviderPresets
-import com.miniichatNext.carter.util.BaseUrlNormalizer
-import com.miniichatNext.carter.util.newId
 
 private const val MODELS_COLLAPSED_LIMIT = 5
 

@@ -38,10 +38,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.AutoAwesome
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -73,6 +71,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -91,8 +90,9 @@ fun ChatScreen(
     isStreaming: Boolean,
     streamingOverlay: Pair<String, String>? = null,
     assistant: com.miniichatNext.carter.data.Assistant? = null,
+    userProfile: com.miniichatNext.carter.data.UserProfile = com.miniichatNext.carter.data.UserProfile(),
     assistants: List<com.miniichatNext.carter.data.Assistant> = emptyList(),
-    skills: List<com.miniichatNext.carter.data.Skill> = emptyList(),
+    skills: List<com.miniichatNext.carter.data.Skills.Skill> = emptyList(),
     onToggleSkill: (String, Boolean) -> Unit = { _, _ -> },
     onContextCompress: () -> Unit = {},
     onSuggestions: (Int) -> Unit = {},
@@ -137,9 +137,43 @@ fun ChatScreen(
         if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
     }
 
+    val backgroundMode = assistant?.backgroundMode ?: "default"
     val backgroundPath = assistant?.backgroundPath
+    val backgroundCss = assistant?.backgroundCss ?: ""
     val backgroundOpacity = assistant?.backgroundOpacity ?: 1f
-    val backgroundBitmap = rememberBackgroundBitmap(backgroundPath)
+    // 图片模式：渲染图片
+    // CSS模式：直接渲染 WebView背景层
+    // default：无背景
+    val backgroundBitmap = if (backgroundMode == "css") null
+                           else rememberBackgroundBitmap(backgroundPath)
+    val cssHtml = if (backgroundMode == "css" && backgroundCss.isNotBlank()) {
+        "<html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
+            "<meta name=\"color-scheme\" content=\"light dark\">" +
+            "<style>" +
+            "html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden}" +
+            backgroundCss + "\n" +
+            "</style></head><body></body></html>"
+    } else null
+
+    val cssFallbackColors = remember(backgroundCss) {
+        if (backgroundMode == "css" && backgroundCss.isNotBlank()) {
+            parseCssFallbackColors(backgroundCss)
+        } else null
+    }
+
+    val hasBackgroundLayer = cssHtml != null ||
+        backgroundBitmap != null ||
+        (backgroundMode == "image" && !backgroundPath.isNullOrBlank())
+
+    LaunchedEffect(assistant?.id, assistant?.avatarPath, backgroundMode, backgroundPath, backgroundCss, cssHtml) {
+        com.miniichatNext.carter.Debug.DebugLog.i(
+            "ChatBg",
+            "assistant=${assistant?.id ?: "null"}/${assistant?.name ?: "-"} " +
+                "avatar=${assistant?.avatar} avatarPath=${assistant?.avatarPath ?: "null"} " +
+                "mode=$backgroundMode cssLen=${backgroundCss.length} " +
+                "path=${backgroundPath ?: "null"} cssHtmlLen=${cssHtml?.length ?: 0}"
+        )
+    }
 
     Box(
         modifier = Modifier
@@ -151,7 +185,117 @@ fun ChatScreen(
                 )
             }
     ) {
-        if (backgroundBitmap != null) {
+        // CSS模式：用WebView渲染CSS背景
+        if (cssHtml != null) {
+            cssFallbackColors?.let { colors ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            if (colors.size >= 2) {
+                                androidx.compose.ui.graphics.Brush.linearGradient(colors)
+                            } else {
+                                androidx.compose.ui.graphics.SolidColor(colors.first())
+                            }
+                        )
+                )
+            }
+            AndroidView(
+                factory = { ctx ->
+                    android.webkit.WebView(ctx).apply {
+                        runCatching {
+                            settings.javaClass
+                                .getMethod("setJavaScriptEnabled", Boolean::class.javaPrimitiveType!!)
+                                .invoke(settings, false)
+                        }
+                        runCatching {
+                            settings.javaClass
+                                .getMethod("setSupportZoom", Boolean::class.javaPrimitiveType!!)
+                                .invoke(settings, false)
+                        }
+                        runCatching {
+                            settings.javaClass
+                                .getMethod("setBuiltInZoomControls", Boolean::class.javaPrimitiveType!!)
+                                .invoke(settings, false)
+                        }
+                        runCatching {
+                            settings.javaClass
+                                .getMethod("setDisplayZoomControls", Boolean::class.javaPrimitiveType!!)
+                                .invoke(settings, false)
+                        }
+                        runCatching {
+                            settings.javaClass
+                                .getMethod("setForceDark", Int::class.javaPrimitiveType!!)
+                                .invoke(settings, 0)
+                        }
+                        runCatching {
+                            settings.javaClass
+                                .getMethod("setAlgorithmicDarkeningAllowed", Boolean::class.javaPrimitiveType!!)
+                                .invoke(settings, false)
+                        }
+                        isClickable = false
+                        isFocusable = false
+                        isLongClickable = false
+                        // 不消费触摸：让事件继续冒泡到上层Compose Box的detectTapGestures，否则CSS背景层会吞掉"双击空白进沉浸/单击退出沉浸"的手势
+                        // 本HTML是静态背景（overflow:hidden、无链接），不消费也不会有副作用
+                        setOnTouchListener { _, _ -> false }
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                        overScrollMode = android.view.View.OVER_SCROLL_NEVER
+                        postDelayed({
+                            com.miniichatNext.carter.Debug.DebugLog.i(
+                                "ChatBgWeb",
+                                "webview state: attached=$isAttachedToWindow enabled=$isEnabled " +
+                                    "size=${width}x${height} visibility=$visibility"
+                            )
+                        }, 800L)
+                        webViewClient = object : android.webkit.WebViewClient() {
+                            override fun onPageFinished(view: android.webkit.WebView?, url: String?) {
+                                com.miniichatNext.carter.Debug.DebugLog.i(
+                                    "ChatBgWeb",
+                                    "background page finished: $url " +
+                                        "size=${view?.width ?: 0}x${view?.height ?: 0}"
+                                )
+                            }
+
+                            override fun onReceivedError(
+                                view: android.webkit.WebView?,
+                                request: android.webkit.WebResourceRequest?,
+                                error: android.webkit.WebResourceError?
+                            ) {
+                                val mainFrame = request?.isForMainFrame ?: true
+                                com.miniichatNext.carter.Debug.DebugLog.e(
+                                    "ChatBgWeb",
+                                    "background load error: mainFrame=$mainFrame " +
+                                        "code=${error?.errorCode} ${error?.description}"
+                                )
+                                if (mainFrame) {
+                                    view?.visibility = android.view.View.INVISIBLE
+                                }
+                            }
+                        }
+                        tag = cssHtml
+                        com.miniichatNext.carter.Debug.DebugLog.d(
+                            "ChatBgWeb",
+                            "loading html(${cssHtml.length} chars): " + cssHtml.take(800).replace("\n", " ")
+                        )
+                        loadDataWithBaseURL(null, cssHtml, "text/html", "utf-8", null)
+                    }
+                },
+                update = { wv ->
+
+                    if (wv.tag != cssHtml) {
+                        wv.tag = cssHtml
+                        wv.loadDataWithBaseURL(null, cssHtml, "text/html", "utf-8", null)
+                    }
+                },
+                onRelease = { wv ->
+                    // 离开组合时销毁WebView，避免泄漏
+                    wv.stopLoading()
+                    wv.destroy()
+                },
+                modifier = Modifier.fillMaxSize()
+            )
+        } else if (backgroundBitmap != null) {
             androidx.compose.foundation.Image(
                 bitmap = backgroundBitmap,
                 contentDescription = null,
@@ -167,7 +311,8 @@ fun ChatScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background.copy(alpha = if (backgroundBitmap != null) 0.0f else 1f))
+            // CSS模式下同样要把聊天内容的背景设为透明，让WebView的CSS透出来
+            .background(MaterialTheme.colorScheme.background.copy(alpha = if (hasBackgroundLayer) 0f else 1f))
             .imePadding()
             .graphicsLayer { alpha = immersiveAlpha }
     ) {
@@ -179,7 +324,8 @@ fun ChatScreen(
                 renameDraft = conversation?.title ?: ""
                 showRenameDialog = true
             },
-            onNew = onNew
+            onNew = onNew,
+            transparent = false
         )
 
         if (messages.isEmpty()) {
@@ -187,6 +333,9 @@ fun ChatScreen(
                 onPick = { onSend(it, emptyList()) },
                 onOpenSettings = onOpenSettings,
                 showSettingsHint = activeProvider == null,
+                assistantAvatar = com.miniichatNext.carter.data.Avatar.fromLegacy(
+                    assistant?.avatar ?: "🤖", assistant?.avatarPath
+                ),
                 modifier = Modifier.weight(1f)
             )
         } else {
@@ -197,8 +346,14 @@ fun ChatScreen(
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 items(messages, key = { it.id }) { msg ->
+                    val isUserMsg = msg.role == "user"
                     MessageItem(
                         message = msg,
+                        // 消息行头像
+                        avatar = if (isUserMsg) userProfile.avatar
+                        else com.miniichatNext.carter.data.Avatar.fromLegacy(
+                            assistant?.avatar ?: "🤖", assistant?.avatarPath
+                        ),
                         senderLabel = if (msg.role == "user") stringResource(R.string.profile_default_name)
                         else settings.activeModel.ifBlank { activeProvider?.name ?: stringResource(R.string.assistant) },
                         isLastAssistant = msg.id == messages.lastOrNull()?.id && msg.role == "assistant",
@@ -303,7 +458,9 @@ fun ChatScreen(
             },
             onStop = onStop,
             isStreaming = isStreaming,
-            enabled = activeProvider != null && settings.activeModel.isNotBlank()
+            enabled = activeProvider != null && settings.activeModel.isNotBlank(),
+            // 同上：底栏保持自身背景，不被自定义背景影响
+            transparent = false
         )
     }
 
@@ -364,15 +521,90 @@ fun ChatScreen(
     
 }
 
+/** 背景图解码后的最长边上限：屏幕最大也就~1440px，没必要按原图解码 */
+private const val BG_MAX_DECODE_PX = 1600
+
+
 @Composable
 private fun rememberBackgroundBitmap(path: String?): androidx.compose.ui.graphics.ImageBitmap? {
-    if (path.isNullOrBlank()) return null
-    if (!java.io.File(path).exists()) return null
-    return androidx.compose.runtime.remember(path) {
-        runCatching {
-            android.graphics.BitmapFactory.decodeFile(path)?.asImageBitmap()
-        }.getOrNull()
+    var bitmap by remember(path) { mutableStateOf<androidx.compose.ui.graphics.ImageBitmap?>(null) }
+    LaunchedEffect(path) {
+        if (path.isNullOrBlank()) {
+            bitmap = null
+            return@LaunchedEffect
+        }
+        val file = java.io.File(path)
+        var decoded: androidx.compose.ui.graphics.ImageBitmap? = null
+        for (attempt in 0 until 3) {
+            if (!file.exists() || file.length() <= 0L) {
+                kotlinx.coroutines.delay(140L)
+                continue
+            }
+            decoded = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching { decodeBackground(path)?.asImageBitmap() }.getOrNull()
+            }
+            if (decoded != null) break
+            kotlinx.coroutines.delay(180L)
+        }
+        if (decoded == null) {
+            com.miniichatNext.carter.Debug.DebugLog.w(
+                "ChatBg",
+                "background image unusable: $path exists=${file.exists()} bytes=${file.length()}"
+            )
+        } else {
+            com.miniichatNext.carter.Debug.DebugLog.i(
+                "ChatBg",
+                "background image loaded: $path ${decoded.width}x${decoded.height}"
+            )
+        }
+        bitmap = decoded
     }
+    return bitmap
+}
+
+/**
+ * 从CSS里提取背景颜色
+ * 仅作为WebView渲染失败时的兜底：解析不出来就返回null，完全不影响正常CSS渲染
+ */
+private fun parseCssFallbackColors(css: String): List<androidx.compose.ui.graphics.Color>? {
+    val declaration = Regex("""background(?:-color|-image)?\s*:\s*([^;}]+)""", RegexOption.IGNORE_CASE)
+        .find(css)?.groupValues?.getOrNull(1)?.trim()
+        ?: return null
+    val colors = Regex("""#([0-9a-fA-F]{3,8})""").findAll(declaration)
+        .mapNotNull { parseHexColor(it.groupValues[1]) }
+        .toList()
+    return colors.ifEmpty { null }
+}
+
+private fun parseHexColor(hex: String): androidx.compose.ui.graphics.Color? = runCatching {
+    val expanded = when (hex.length) {
+        3, 4 -> hex.map { "$it$it" }.joinToString("")
+        else -> hex
+    }
+    val value = expanded.toLong(16)
+    when (expanded.length) {
+        6 -> androidx.compose.ui.graphics.Color((0xFF000000L or value).toInt())
+        8 -> androidx.compose.ui.graphics.Color(value.toInt())
+        else -> null
+    }
+}.getOrNull()
+
+/** 按最长边不超过[BG_MAX_DECODE_PX]计算inSampleSize后解码 */
+private fun decodeBackground(path: String): android.graphics.Bitmap? {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    var sample = 1
+    while (bounds.outWidth / (sample * 2) >= BG_MAX_DECODE_PX ||
+        bounds.outHeight / (sample * 2) >= BG_MAX_DECODE_PX
+    ) {
+        sample *= 2
+    }
+    val options = android.graphics.BitmapFactory.Options().apply {
+        inSampleSize = sample
+        inPreferredConfig = android.graphics.Bitmap.Config.ARGB_8888
+    }
+    return android.graphics.BitmapFactory.decodeFile(path, options)
 }
 
 @Composable
@@ -380,12 +612,18 @@ private fun ChatTopBar(
     title: String,
     onMenu: () -> Unit,
     onEditTitle: () -> Unit,
-    onNew: () -> Unit
+    onNew: () -> Unit,
+    // CSS/图片背景模式下让顶栏透明，渐变/图片能从顶栏区域透出来
+    transparent: Boolean = false
 ) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
+            .background(
+                MaterialTheme.colorScheme.background.copy(
+                    alpha = if (transparent) 0f else 1f
+                )
+            )
             .padding(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding())
     ) {
         Row(
@@ -421,6 +659,7 @@ private fun ChatTopBar(
 @Composable
 private fun MessageItem(
     message: Message,
+    avatar: com.miniichatNext.carter.data.Avatar,
     senderLabel: String,
     isLastAssistant: Boolean,
     isStreaming: Boolean,
@@ -438,6 +677,7 @@ private fun MessageItem(
     if (isUser) {
         UserBubble(
             message = message,
+            avatar = avatar,
             editing = editing,
             editingDraft = editingDraft,
             onEditingDraftChange = onEditingDraftChange,
@@ -450,6 +690,7 @@ private fun MessageItem(
     } else {
         AssistantRow(
             message = message,
+            avatar = avatar,
             senderLabel = senderLabel,
             isLastAssistant = isLastAssistant,
             isStreaming = isStreaming,
@@ -469,6 +710,7 @@ private fun MessageItem(
 @Composable
 private fun UserBubble(
     message: Message,
+    avatar: com.miniichatNext.carter.data.Avatar,
     editing: Boolean,
     editingDraft: String,
     onEditingDraftChange: (String) -> Unit,
@@ -486,7 +728,7 @@ private fun UserBubble(
         horizontalArrangement = Arrangement.End
     ) {
         Column(
-            modifier = Modifier.fillMaxWidth(0.82f),
+            modifier = Modifier.fillMaxWidth(0.78f),
             horizontalAlignment = Alignment.End
         ) {
             if (message.attachments.isNotEmpty()) {
@@ -626,6 +868,13 @@ private fun UserBubble(
                 }
             }
         }
+        Spacer(Modifier.width(8.dp))
+        // 用户消息头像：渲染真实的用户资料头像
+        com.miniichatNext.carter.ui.components.AvatarView(
+            avatar = avatar,
+            fallbackInitial = "U",
+            size = 22.dp
+        )
     }
 }
 
@@ -633,6 +882,7 @@ private fun UserBubble(
 @Composable
 private fun AssistantRow(
     message: Message,
+    avatar: com.miniichatNext.carter.data.Avatar,
     senderLabel: String,
     isLastAssistant: Boolean,
     isStreaming: Boolean,
@@ -650,7 +900,12 @@ private fun AssistantRow(
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            AvatarChip(isUser = false)
+            // 助手消息头像：渲染真实助手头像
+            com.miniichatNext.carter.ui.components.AvatarView(
+                avatar = avatar,
+                fallbackInitial = "M",
+                size = 22.dp
+            )
             Spacer(Modifier.width(8.dp))
             Text(
                 senderLabel,
@@ -663,7 +918,7 @@ private fun AssistantRow(
         }
         Spacer(Modifier.height(8.dp))
         if (editing) {
-            // Inline edit for the assistant message (last one only).
+            // 仅对助手消息可编辑
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -768,8 +1023,7 @@ private fun AssistantRow(
                 }
             }
         }
-        // Only the very last assistant message gets the "continue" / "edit" chips.
-        // Earlier assistant messages just expose copy.
+        // 只有最后一条助手的消息会显示继续和编辑按钮
         if (message.content.isNotEmpty() && !editing && !isStreaming) {
             Spacer(Modifier.height(8.dp))
             AssistantActionBar(
@@ -826,60 +1080,6 @@ private fun ActionChip(
 }
 
 @Composable
-private fun AvatarChip(isUser: Boolean) {
-    val bg = if (isUser) MaterialTheme.colorScheme.primary
-    else MaterialTheme.colorScheme.surfaceVariant
-    val fg = if (isUser) MaterialTheme.colorScheme.onPrimary
-    else MaterialTheme.colorScheme.onSurface
-    Box(
-        modifier = Modifier
-            .size(22.dp)
-            .clip(RoundedCornerShape(7.dp))
-            .background(bg),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            if (isUser) "U" else "M",
-            color = fg,
-            fontWeight = FontWeight.Bold,
-            fontSize = 12.sp
-        )
-    }
-}
-
-@Composable
-private fun CopyButton(content: String) {
-    val clipboard = LocalClipboardManager.current
-    var copied by remember { mutableStateOf(false) }
-    LaunchedEffect(copied) { if (copied) { kotlinx.coroutines.delay(1200); copied = false } }
-
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .clickable {
-                clipboard.setText(AnnotatedString(content))
-                copied = true
-            }
-            .padding(horizontal = 6.dp, vertical = 4.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(
-                imageVector = if (copied) Icons.Default.Check else Icons.Default.ContentCopy,
-                contentDescription = "copy",
-                modifier = Modifier.size(14.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Spacer(Modifier.width(4.dp))
-            Text(
-                if (copied) stringResource(R.string.copy) + " ✓" else stringResource(R.string.copy),
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
 private fun TypingDots() {
     val infinite = rememberInfiniteTransition(label = "typing")
     val alpha by infinite.animateFloat(
@@ -911,6 +1111,7 @@ private fun EmptyState(
     onPick: (String) -> Unit,
     onOpenSettings: () -> Unit,
     showSettingsHint: Boolean,
+    assistantAvatar: com.miniichatNext.carter.data.Avatar = com.miniichatNext.carter.data.Avatar.None,
     modifier: Modifier = Modifier
 ) {
     val examples = listOf(
@@ -926,13 +1127,15 @@ private fun EmptyState(
     ) {
         Box(
             modifier = Modifier
-                .size(72.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .size(72.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text("M", color = MaterialTheme.colorScheme.onSurface,
-                fontSize = 30.sp, fontWeight = FontWeight.Bold)
+            com.miniichatNext.carter.ui.components.AvatarView(
+                avatar = assistantAvatar,
+                fallbackInitial = "M",
+                size = 64.dp,
+                background = MaterialTheme.colorScheme.surfaceVariant
+            )
         }
         Spacer(Modifier.height(18.dp))
         Text(stringResource(R.string.empty_title), style = MaterialTheme.typography.titleLarge)
@@ -1006,14 +1209,14 @@ private fun SuggestionPanel(
         ?: if ((current?.suggestionSeed ?: -1) == page) current?.chatSuggestions.orEmpty() else emptyList()
     val showStored = stored.isNotEmpty()
 
-    // Editable drafts, initialised from stored suggestions when the page matches.
+    // 114514
     var drafts by remember(stored, page, showStored) {
         mutableStateOf(
             if (showStored) stored else List(4) { "" }
         )
     }
 
-    // Auto-generate on first entering the page (only this page's 4 candidates).
+    // 首次进入页面时自动生成
     LaunchedEffect(page, showStored) {
         if (!showStored) onGenerate(page)
     }
