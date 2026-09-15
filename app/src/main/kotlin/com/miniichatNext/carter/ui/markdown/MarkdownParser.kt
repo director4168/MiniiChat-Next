@@ -99,7 +99,8 @@ internal fun parseBlocks(text: String): List<Block> {
 
 private fun isTableSeparator(line: String): Boolean {
     val s = line.trim()
-    if (!s.startsWith("|")) return false
+    // 至少要 "|x|" 才能取中间段：s = "|" 会同时startsWith/endsWith，substring(1, 0)直接崩
+    if (s.length < 3 || !s.startsWith("|")) return false
     val inner = if (s.endsWith("|")) s.substring(1, s.length - 1) else s.substring(1)
     if (inner.isBlank()) return false
     return inner.split("|").all { it.trim().matches(Regex("^:?-{1,}:?$")) }
@@ -108,7 +109,7 @@ private fun isTableSeparator(line: String): Boolean {
 private fun splitTableRow(line: String): List<String> {
     val s = line.trim()
     val core = when {
-        s.startsWith("|") && s.endsWith("|") -> s.substring(1, s.length - 1)
+        s.length >= 2 && s.startsWith("|") && s.endsWith("|") -> s.substring(1, s.length - 1)
         s.startsWith("|") -> s.substring(1)
         else -> s
     }

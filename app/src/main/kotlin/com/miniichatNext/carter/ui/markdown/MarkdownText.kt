@@ -34,7 +34,11 @@ fun MarkdownText(
 
     val palette = BubblePalette
 
-    val blocks = remember(text) { parseBlocks(text) }
+    // 流式输出时会在半截markdown上反复解析，任何解析异常都不该让整条消息崩掉
+    val blocks = remember(text) {
+        runCatching { parseBlocks(text) }
+            .getOrElse { listOf(Block.Paragraph(text)) }
+    }
     MarkdownBlocks(blocks, palette, color) { pendingUrl = it }
 
     pendingUrl?.let { url ->

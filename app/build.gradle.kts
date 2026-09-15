@@ -21,8 +21,8 @@ android {
         applicationId = "com.miniichatNext.carter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 26091508
-        versionName = "1.3.0"
+        versionCode = 26091509
+        versionName = "1.3.1"
         vectorDrawables { useSupportLibrary = true }
     }
 
