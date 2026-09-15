@@ -27,7 +27,7 @@ data class AppSettings(
     val language: String = "system",
     val dynamicColor: Boolean = true,
     val themeMode: String = "system",
-    // "providerId::modelId" references for auxiliary features.
+    // providerId::modelId引用辅助功能
     val ocrModel: String = "",
     val titleModel: String = "",
     val compressModel: String = "",
@@ -38,8 +38,7 @@ data class AppSettings(
 
 class SettingsRepository(private val context: Context) {
 
-    // Guards read-modify-write against concurrent updates (e.g. two coroutines
-    // adjusting different settings at once would otherwise clobber each other).
+    // Guard对并发更新进行读-改-写（例如两个协程同时调整不同的设置，否则会互相覆盖）
     private val updateMutex = Mutex()
 
     private object Keys {

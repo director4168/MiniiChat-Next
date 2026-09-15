@@ -33,7 +33,7 @@ class ProviderStore(private val context: Context) {
             val raw = prefs[key] ?: return@map emptyList()
             runCatching { decode(raw) }
                 .getOrDefault(emptyList())
-                // API Key 在磁盘上是密文，读出来给上层用之前解密
+                // API Key在磁盘上是密文，读出来给上层用之前解密
                 .map { it.copy(apiKey = ApiKeyCrypto.decrypt(it.apiKey)) }
         }
 

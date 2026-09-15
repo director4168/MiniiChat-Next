@@ -23,7 +23,7 @@ private val Context.conversationsDataStore: DataStore<Preferences> by preference
 /**
  * 会话存储
  *
- * 存储布局：**每个会话一个 preference key**（`conv_<id>`），而不是把所有会话塞进一个JSON大blob
+ * 存储布局：每个会话一个preference key（conv_<id>），而不是把所有会话塞进一个JSON大blob
  * 流式回复每800ms就会flush一次，单会话写入因此只需encode那一个会话
  *
  * 读取侧用内存缓存（[MutableStateFlow]）作为UI数据源，避免每次flush都重新解码全部会话；
@@ -43,7 +43,7 @@ class ConversationStore(private val context: Context) {
 
     private fun keyFor(id: String) = stringPreferencesKey(KEY_PREFIX + id)
 
-    // ---------- read ----------
+    // ---------- 读 ----------
 
     suspend fun snapshot(): List<Conversation> = mutex.withLock {
         hydrateLocked()
@@ -83,9 +83,9 @@ class ConversationStore(private val context: Context) {
             .filter { it.key.name.startsWith(KEY_PREFIX) }
             .mapNotNull { (_, value) -> (value as? String)?.let(::decodeOne) }
 
-    // ---------- write ----------
+    // ---------- 写 ----------
 
-    /** 全量替换（慎用，会重写每个会话的key） */
+    /** 全量替换（会重写每个会话的key） */
     suspend fun save(list: List<Conversation>) = mutex.withLock {
         hydrateLocked()
         val previousIds = _cache.value.map { it.id }.toSet()
@@ -155,7 +155,7 @@ class ConversationStore(private val context: Context) {
         if (migrated != list) save(migrated)
     }
 
-    // ---------- codec ----------
+    // ---------- 编解码器 ----------
 
     private fun encodeOne(conv: Conversation): String =
         json.encodeToString(Conversation.serializer(), conv)

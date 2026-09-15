@@ -42,8 +42,8 @@ object AttachmentLoader {
         if (size > MAX_ATTACHMENT_BYTES) throw AttachmentTooLargeException(MAX_ATTACHMENT_BYTES)
         val mime = resolver.getType(uri) ?: mimeFallback
 
-        // Stream-copy with a running size guard so we also catch attachments where
-        // SIZE column isn't reported.
+        // 具有运行大小保护的流复制，因此我们还可以捕获附件
+        // 不报告SIZE列
         val out = ByteArrayOutputStream()
         resolver.openInputStream(uri).use { input ->
             requireNotNull(input) { "Cannot open input stream for $uri" }
@@ -67,7 +67,6 @@ object AttachmentLoader {
         )
     }
 
-    /** Byte-count formatter with one decimal. */
     fun formatBytes(b: Long): String {
         if (b <= 0) return "—"
         val kb = 1024.0

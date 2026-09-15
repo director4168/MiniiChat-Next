@@ -213,7 +213,7 @@ fun AboutScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
                 }
             }
 
-            // ---- 反馈与支持：GitHub Issue / 联系开发者 / 日志导出 ----
+            // GitHub Issue/联系开发者/日志导出
             Spacer(Modifier.height(8.dp))
             SectionCard {
                 Column {
@@ -304,7 +304,7 @@ fun AboutScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
     }
 }
 
-/** GitHub 反馈邮箱（与项目 GitHub 账号同名） */
+/** 邮箱 */
 private const val MAIL_ADDRESS = "director4168@163.com"
 
 @Composable

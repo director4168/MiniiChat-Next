@@ -91,7 +91,7 @@ fun AppRoot(vm: ChatViewModel) {
     var showModelPicker by rememberSaveable { mutableStateOf(false) }
     var editingProvider by remember { mutableStateOf<ProviderConfig?>(null) }
     var editingAssistant by remember { mutableStateOf<com.miniichatNext.carter.data.model.Assistant?>(null) }
-    // 把Settings滚动状态提升到AppRoot（用rememberSaveable 持久化），导航到关于页再返回时滚动位置不会跳到顶部
+    // 把Settings滚动状态提升到AppRoot（用rememberSaveable持久化），导航到关于页再返回时滚动位置不会跳到顶部
     val settingsScrollState = androidx.compose.runtime.saveable.rememberSaveable(
         saver = ScrollState.Saver
     ) { ScrollState(0) }
@@ -162,8 +162,7 @@ fun AppRoot(vm: ChatViewModel) {
     val snackbar = remember { SnackbarHostState() }
     val openProvidersLabel = stringResource(R.string.error_open_providers)
     val skillImportedFmt = stringResource(R.string.skill_imported)
-    // 服务商/模型类错误改用对话框展示：snackbar 的 action 在部分机型上点了没反应，
-    // 而 AlertDialog 是模态的、按钮一定可点，也能保证跳转真的发生
+    // 服务商/模型类错误改用对话框展示：snackbar的action在部分机型上点了没反应，而AlertDialog是模态的、按钮一定可点，也能保证跳转真的发生
     var providerFixDialog by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(toast) {
         toast?.let {

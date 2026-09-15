@@ -333,8 +333,7 @@ internal fun ChatViewModel.regenerateFrom(messageId: String) {
         }
         if (anchorIdx < 0) return@launch
         val anchor = msgs[anchorIdx]
-        // 从 anchor 处整体截断（连它一起），再重新发送一次：
-        // 之前截到 anchor+1 又 sendMessage，会导致列表里出现两条一模一样的用户消息
+        // 从anchor处整体截断（连它一起），再重新发送一次
         store.upsert(
             conv.copy(messages = msgs.subList(0, anchorIdx), updatedAt = System.currentTimeMillis())
         )

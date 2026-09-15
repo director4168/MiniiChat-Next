@@ -19,7 +19,7 @@ import java.util.Base64
  * 说明：
  * - 只暴露[android.content.pm.ApplicationInfo.dataDir]这棵子树，且做canonical前缀校验阻止任何路径逃逸
  * - 只读实现（openDocument 仅允许 mode == "r"），不提供写入/删除/创建
- * - 通过android:permission="android.permission.MANAGE_DOCUMENTS"保护，只有系统DocumentsUI 才有权访问
+ * - 通过android:permission="android.permission.MANAGE_DOCUMENTS"保护，只有系统DocumentsUI才有权访问
  */
 class AppDataDocumentsProvider : DocumentsProvider() {
 
@@ -120,7 +120,7 @@ class AppDataDocumentsProvider : DocumentsProvider() {
             child == parent || child.path.startsWith(parent.path + File.separator)
         }.getOrDefault(false)
 
-    // ---------- internals ----------
+    // ---------- 内部结构 ----------
 
     private fun MatrixCursor.includeFile(file: File, cols: Array<out String>) {
         val root = runCatching { appDataRoot.canonicalFile }.getOrNull()

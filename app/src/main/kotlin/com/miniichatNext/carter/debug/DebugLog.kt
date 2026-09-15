@@ -46,7 +46,7 @@ object DebugLog {
     private const val MAX_FILE_BYTES = 512 * 1024
     private const val MANIFEST_NAME = "manifest.txt"
 
-    /** 导出 zip 里额外附带的内存缓冲快照文件名（放在 logs/ 下，前缀下划线表示是合成文件） */
+    /** 导出 zip 里额外附带的内存缓冲快照文件名（放在logs/下，前缀下划线表示是合成文件） */
     private const val SESSION_BUFFER_NAME = "_session_buffer.log"
     private const val SESSION_BUFFER_HEADER =
         "# In-memory session buffer (up to 600 recent lines).\n" +
@@ -70,11 +70,11 @@ object DebugLog {
     private var appContext: Context? = null
 
     @Volatile
-    // 默认WARN
+    // 日志等级默认WARN
     var level: DebugLevel = DebugLevel.WARN
         private set
 
-    // ---------- lifecycle ----------
+    // ---------- 生命周期 ----------
 
     fun restore(context: Context) {
         appContext = context.applicationContext
@@ -92,7 +92,7 @@ object DebugLog {
         i("DebugLog", "log level changed to " + lvl.name)
     }
 
-    // ---------- paths ----------
+    // ---------- 路径 ----------
 
     fun dir(context: Context): File = File(context.filesDir, DIR).apply { mkdirs() }
 
@@ -101,7 +101,7 @@ object DebugLog {
 
     private fun logFileSafe(): File? = appContext?.let { logFile(it) }
 
-    // ---------- logging ----------
+    // ---------- 记录 ----------
 
     fun v(tag: String, msg: String) = log(DebugLevel.VERBOSE, tag, msg, null)
     fun d(tag: String, msg: String) = log(DebugLevel.DEBUG, tag, msg, null)
@@ -138,7 +138,7 @@ object DebugLog {
         }
     }
 
-    // ---------- read / export ----------
+    // ---------- 读取/导出 ----------
 
     fun bufferText(): String = synchronized(buffer) { buffer.joinToString("\n") }
 
@@ -174,7 +174,7 @@ object DebugLog {
             }
         }
 
-    /** 打包 logs 目录全部文件到 cacheDir/shared 下的 zip（分享/邮件用，文件名与下载目录统一） */
+    /** 打包logs目录全部文件到cacheDir/shared下的zip */
     fun exportZip(context: Context): File {
         val shared = File(context.cacheDir, "shared").apply { mkdirs() }
         val out = File(shared, exportFileName())
@@ -184,20 +184,16 @@ object DebugLog {
     }
 
     /**
-     * 打包全部日志到**系统下载目录**（Download/）
+     * 打包全部日志到系统默认下载目录
      *
-     * 先在 `cacheDir/shared` 生成完整 zip，再整体拷贝到目标位置 —— 这样即使写目标
-     * 中途失败，也不会在下载目录里留下"只有前几个条目"的半包
-     *
-     * - API 29+：走 MediaStore.Downloads，不需要任何存储权限
-     * - API <29：写公共 Download 需要 WRITE_EXTERNAL_STORAGE，失败时退到应用专属外部目录
+     * 先在cacheDir/shared生成完整zip，再整体拷贝到目标位置，这样即使写目标中途失败，也不会在下载目录里留下只有前几个条目的半包
      *
      * @return 展示用的保存位置（成功）或 null（失败）
      */
     fun exportZipToDownloads(context: Context): String? {
         val name = exportFileName()
 
-        // 1) 先在 cacheDir 生成完整 zip（写日志 zip + 清理已归档的崩溃 zip 都在这一步完成）
+        // 先在cacheDir生成完整 zip（写日志zip和清理已归档的崩溃zip都在这一步完成）
         val staging = File(File(context.cacheDir, "shared").apply { mkdirs() }, name)
         val staged = runCatching {
             staging.outputStream().use { writeLogZip(context, it) }
@@ -208,7 +204,7 @@ object DebugLog {
             return null
         }
 
-        // 2) 整体拷到目标位置
+        // 整体拷到目标位置
         val attempt = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = context.contentResolver
@@ -242,7 +238,7 @@ object DebugLog {
         }
 
         val result = attempt.getOrElse { e ->
-            // 注意：w(tag, msg) 没有 Throwable 参数，带异常要用 e(tag, msg, tr)
+            // 注意：w(tag, msg) 没有Throwable参数，带异常要用e(tag, msg, tr)
             e("DebugLog", "export to Downloads failed, trying app-specific dir: ${e.message}", e)
             runCatching {
                 val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
@@ -368,7 +364,7 @@ object DebugLog {
             }
         }
 
-        // 只删除写进本次 zip的崩溃归档zip
+        // 只删除写进本次zip的崩溃归档zip
         var removed = 0
         deletableCrashZips.forEach { (entryName, file) ->
             if (entryName in written) {

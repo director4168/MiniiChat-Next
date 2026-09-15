@@ -29,11 +29,10 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Compact avatar badge for the drawer's "current assistant" row.
+ * 抽屉当前助手行的紧凑头像
  *
- * - If [avatarPath] points to an existing image file, render it.
- * - Otherwise, fall back to an emoji (if [avatar] is non-blank)
- *   or to the first character of [fallbackName].
+ * 如果[avatarPath]指向现有图像文件，则渲染它
+ * 否则退回到表情符号（如果[avatar]非空白）或[fallbackName]的第一个字符
  */
 @Composable
 fun AssistantAvatarBadge(

@@ -116,7 +116,7 @@ fun InputBar(
     LaunchedEffect(imeVisible) {
         if (imeVisible) onDismissPanels()
     }
-    // 候选回复点编辑"：把内容放进输入框后聚焦并拉起键盘
+    // 候选回复点编辑：把内容放进输入框后聚焦并拉起键盘
     LaunchedEffect(focusInputRequest) {
         if (focusInputRequest > 0) {
             runCatching { inputFocus.requestFocus() }
@@ -466,5 +466,3 @@ fun InputBar(
         )
     }
 }
-
-/** 容器内的图标按钮：候选回复/加号菜单按钮/图片选择共用 */

@@ -87,7 +87,6 @@ fun GlassDrawer(
     var query by remember { mutableStateOf("") }
     var showAssistantPicker by remember { mutableStateOf(false) }
 
-    // Current assistant entry (matches RikkaHub's drawer assistant label).
     val currentAssistant = assistants.firstOrNull { it.id == activeAssistantId }
 
     val filtered = remember(conversations, query) {
@@ -105,7 +104,7 @@ fun GlassDrawer(
                 .fillMaxSize()
                 .padding(WindowInsets.statusBars.asPaddingValues())
         ) {
-            // Header
+            // 标头
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -131,7 +130,7 @@ fun GlassDrawer(
                 }
             }
 
-            // Search box
+            // 搜索框
             Box(
                 modifier = Modifier
                     .padding(horizontal = 12.dp, vertical = 4.dp)
@@ -221,7 +220,6 @@ fun GlassDrawer(
                     .fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                // Left: switch assistant (RikkaHub-style sheet picker)
                 Row(
                     modifier = Modifier
                         .weight(1f)
@@ -245,7 +243,7 @@ fun GlassDrawer(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                // Right: settings
+                // 设置
                 Row(
                     modifier = Modifier
                         .clickable(onClick = onOpenSettings)

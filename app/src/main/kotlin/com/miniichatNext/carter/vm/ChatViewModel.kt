@@ -170,7 +170,4 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { settingsRepo.update(transform) }
     }
 
-    // ---- Auxiliary feature model resolution ----
-
-    /** 解析辅助功能模型引用（"providerId::modelId"或单独的模型ID） */
 }

@@ -84,11 +84,11 @@ object AvatarStorage {
     fun exists(path: String?): Boolean = !path.isNullOrBlank() && File(path).exists()
 
     /**
-     * 清理 filesDir/avatars 下**不再被引用**的文件（换头像后的旧文件、被放弃的裁剪产物）
+     * 清理filesDir/avatars下不再被引用的文件（换头像后的旧文件、被放弃的裁剪产物）
      *
      * 安全前提：只删除不在[keepPaths]里且最后修改时间早于[olderThanMs]的文件，这样刚生成的裁剪文件（可能还没写进任何assistant）不会被误删
      *
-     * @return 实际删除的文件数
+     * @return实际删除的文件数
      */
     fun pruneOrphans(context: Context, keepPaths: Collection<String>, olderThanMs: Long): Int =
         runCatching {
