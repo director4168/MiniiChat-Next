@@ -20,10 +20,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.height
-import com.miniichatNext.carter.R
 import androidx.compose.ui.unit.dp
+import com.miniichatNext.carter.R
 
 @Composable
 fun MarkdownText(
@@ -34,22 +32,7 @@ fun MarkdownText(
     var pendingUrl by remember { mutableStateOf<String?>(null) }
     val ctx = LocalContext.current
 
-    val colorScheme = MaterialTheme.colorScheme
-    val palette = remember(colorScheme) {
-        InlinePalette(
-            codeBg = colorScheme.surfaceContainer,
-            codeFg = colorScheme.onSurface,
-            langFg = colorScheme.onSurfaceVariant,
-            link = colorScheme.primary,
-            quoteBar = colorScheme.outline,
-            quoteFg = colorScheme.onSurfaceVariant,
-            divider = colorScheme.outline,
-            headerBg = colorScheme.surfaceContainerHigh,
-            headerFg = colorScheme.onSurface,
-            cellFg = colorScheme.onSurface,
-            outline = colorScheme.outline,
-        )
-    }
+    val palette = BubblePalette
 
     val blocks = remember(text) { parseBlocks(text) }
     MarkdownBlocks(blocks, palette, color) { pendingUrl = it }

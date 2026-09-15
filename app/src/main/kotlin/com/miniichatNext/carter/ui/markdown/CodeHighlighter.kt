@@ -56,7 +56,11 @@ private fun scan(code: String, rules: LangRules, palette: HighlightPalette): Lis
 
         if (ch in rules.stringDelims) {
             val finish = scanString(code, i, ch)
-            spans.add(Span(i, finish, SpanStyle(color = palette.string)))
+            // 后面紧跟冒号的字符串按键上色，其余按字符串
+            var k = finish
+            while (k < len && code[k] == ' ') k++
+            val isKey = k < len && code[k] == ':'
+            spans.add(Span(i, finish, SpanStyle(color = if (isKey) palette.property else palette.string)))
             i = finish
             continue
         }

@@ -3,11 +3,12 @@ package com.miniichatNext.carter.ui.markdown
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -194,8 +195,8 @@ private fun RenderCodeBlock(
                     .background(palette.outline)
             )
         }
-        val highlightPalette =
-            if (isSystemInDarkTheme()) HighlightPalette.Dark else HighlightPalette.Light
+        // 代码块背景固定深色（BubblePalette.codeBg），配套用深色高亮
+        val highlightPalette = HighlightPalette.Dark
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -226,8 +227,14 @@ private fun RenderTable(
             .clip(RoundedCornerShape(8.dp))
             .border(1.dp, palette.outline, RoundedCornerShape(8.dp))
     ) {
-        Row(modifier = Modifier.fillMaxWidth().background(palette.headerBg)) {
-            block.headers.forEach { cell ->
+        // 表头：加底色和列间竖线
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(palette.headerBg)
+                .height(IntrinsicSize.Min)
+        ) {
+            block.headers.forEachIndexed { i, cell ->
                 Box(
                     modifier = Modifier
                         .weight(1f)
@@ -239,12 +246,18 @@ private fun RenderTable(
                         style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
                     )
                 }
+                if (i < block.headers.lastIndex) CellDivider(palette)
             }
         }
         Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(palette.outline))
+        // 数据行：行间横线和列间竖线
         block.rows.forEachIndexed { rowIdx, row ->
-            Row(modifier = Modifier.fillMaxWidth()) {
-                row.forEach { cell ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(IntrinsicSize.Min)
+            ) {
+                row.forEachIndexed { i, cell ->
                     Box(
                         modifier = Modifier
                             .weight(1f)
@@ -256,6 +269,7 @@ private fun RenderTable(
                             style = MaterialTheme.typography.bodyMedium
                         )
                     }
+                    if (i < row.lastIndex) CellDivider(palette)
                 }
             }
             if (rowIdx < block.rows.lastIndex) {
@@ -263,4 +277,14 @@ private fun RenderTable(
             }
         }
     }
+}
+
+@Composable
+private fun CellDivider(palette: InlinePalette) {
+    Box(
+        modifier = Modifier
+            .fillMaxHeight()
+            .width(1.dp)
+            .background(palette.outline)
+    )
 }
