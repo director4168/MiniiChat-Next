@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  思考等级 / 候选回复图标：灯泡轮廓 + 内部闪电。
+  用 Icon(painter, tint = ...) 渲染时整体会被 tint 覆盖，所以这里颜色写死为黑。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+
+    <!-- 灯泡外轮廓（描边圆） -->
+    <path
+        android:pathData="M6,9 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"
+        android:fillColor="#00000000"
+        android:strokeColor="#000000"
+        android:strokeWidth="1.7" />
+
+    <!-- 灯颈 + 底座 -->
+    <path
+        android:pathData="M9.5,14.0 L14.5,14.0 L14.5,16.2 L9.5,16.2 Z"
+        android:fillColor="#000000" />
+    <path
+        android:pathData="M10.3,17.4 L13.7,17.4 L13.7,19.2 L10.3,19.2 Z"
+        android:fillColor="#000000" />
+
+    <!-- 灯泡内部的闪电 -->
+    <path
+        android:pathData="M12.9,4.4 L10.0,9.3 L12.3,9.3 L11.1,13.4 L14.5,8.3 L12.1,8.3 Z"
+        android:fillColor="#000000" />
+</vector>

@@ -21,8 +21,8 @@ android {
         applicationId = "com.miniichatNext.carter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 26091218
-        versionName = "1.2.0"
+        versionCode = 26091506
+        versionName = "1.2.1"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -58,8 +58,8 @@ android {
             versionNameSuffix = "-debug"
         }
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = if (file("release.keystore").exists()) {
                 signingConfigs.getByName("release")
             } else {
@@ -75,8 +75,7 @@ android {
     // 关于页面要显示构建方式（debug/release）和构建日期
     buildTypes.all {
         buildConfigField("String", "BUILD_TYPE", "\"${this.name}\"")
-        // buildConfigField 的 value 参数永远是 String（要嵌进 BuildConfig.java 字面量），
-        // System.currentTimeMillis() 是 Long，必须 .toString()
+        // buildConfigField的value参数永远是 String（要嵌进BuildConfig.java字面量），/ System.currentTimeMillis()是Long，必须.toString()
         buildConfigField("long", "BUILD_TIMESTAMP", System.currentTimeMillis().toString())
     }
 
@@ -125,8 +124,9 @@ dependencies {
 
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
-    implementation(libs.androidx.compose.ui.tooling.preview)
-    implementation(libs.androidx.compose.ui.tooling)
+    // 预览工具链只在debug需要；放在implementation会把整包tooling打进release包、dex
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.tooling.preview)
     androidTestImplementation(libs.androidx.compose.ui.test.manifest)
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons.extended)

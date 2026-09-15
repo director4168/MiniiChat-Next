@@ -4,6 +4,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -12,7 +13,8 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -26,13 +28,52 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import com.miniichatNext.carter.ChatViewModel
+import com.miniichatNext.carter.vm.ChatViewModel
 import com.miniichatNext.carter.R
-import com.miniichatNext.carter.data.ProviderConfig
-import com.miniichatNext.carter.Debug.CrashLogger
-import com.miniichatNext.carter.Debug.CrashReportScreen
-import com.miniichatNext.carter.Debug.DebugScreen
+import com.miniichatNext.carter.data.model.ProviderConfig
+import com.miniichatNext.carter.debug.CrashLogger
+import com.miniichatNext.carter.debug.ui.CrashReportScreen
+import com.miniichatNext.carter.debug.ui.DebugScreen
 import kotlinx.coroutines.launch
+import com.miniichatNext.carter.data.model.Assistant
+import com.miniichatNext.carter.data.model.UserProfile
+import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.ui.assistant.AssistantEditorScreen
+import com.miniichatNext.carter.ui.assistant.AssistantsScreen
+import com.miniichatNext.carter.ui.chat.ChatScreen
+import com.miniichatNext.carter.ui.chat.CompressContextDialog
+import com.miniichatNext.carter.ui.chat.ModelPickerSheet
+import com.miniichatNext.carter.ui.provider.ProviderEditorScreen
+import com.miniichatNext.carter.ui.provider.ProvidersScreen
+import com.miniichatNext.carter.ui.settings.AboutScreen
+import com.miniichatNext.carter.ui.settings.SettingsScreen
+import com.miniichatNext.carter.ui.settings.UserProfileScreen
+import com.miniichatNext.carter.ui.skills.SkillsScreen
+import com.miniichatNext.carter.vm.addManualModel
+import com.miniichatNext.carter.vm.compressContext
+import com.miniichatNext.carter.vm.continueGenerating
+import com.miniichatNext.carter.vm.deleteAssistant
+import com.miniichatNext.carter.vm.deleteMessage
+import com.miniichatNext.carter.vm.deleteProvider
+import com.miniichatNext.carter.vm.deleteSkill
+import com.miniichatNext.carter.vm.editMessage
+import com.miniichatNext.carter.vm.fetchModels
+import com.miniichatNext.carter.vm.generateSuggestions
+import com.miniichatNext.carter.vm.regenerateFrom
+import com.miniichatNext.carter.vm.removeModel
+import com.miniichatNext.carter.vm.saveSkill
+import com.miniichatNext.carter.vm.saveSkillFiles
+import com.miniichatNext.carter.vm.selectAssistant
+import com.miniichatNext.carter.vm.selectModel
+import com.miniichatNext.carter.vm.sendMessage
+import com.miniichatNext.carter.vm.setSkillEnabled
+import com.miniichatNext.carter.vm.toggleAssistantSkill
+import com.miniichatNext.carter.vm.updateUserProfile
+import com.miniichatNext.carter.vm.upsertAssistant
+import com.miniichatNext.carter.vm.upsertProvider
+import com.miniichatNext.carter.vm.effectiveSkillIds
+import com.miniichatNext.carter.vm.effectiveSkillIdsFlow
+import com.miniichatNext.carter.vm.toggleTemporarySkill
 
 private enum class Screen { Chat, Settings, Providers, ProviderEdit, Assistants, AssistantEdit, Skills, UserProfile, About, Debug }
 
@@ -45,11 +86,11 @@ fun AppRoot(vm: ChatViewModel) {
     var screen by rememberSaveable { mutableStateOf(Screen.Chat) }
     // 导航埋点：切换页面记录一条
     LaunchedEffect(screen) {
-        com.miniichatNext.carter.Debug.DebugLog.v("Nav", "screen -> " + screen.name)
+        com.miniichatNext.carter.debug.DebugLog.v("Nav", "screen -> " + screen.name)
     }
     var showModelPicker by rememberSaveable { mutableStateOf(false) }
     var editingProvider by remember { mutableStateOf<ProviderConfig?>(null) }
-    var editingAssistant by remember { mutableStateOf<com.miniichatNext.carter.data.Assistant?>(null) }
+    var editingAssistant by remember { mutableStateOf<com.miniichatNext.carter.data.model.Assistant?>(null) }
     // 把Settings滚动状态提升到AppRoot（用rememberSaveable 持久化），导航到关于页再返回时滚动位置不会跳到顶部
     val settingsScrollState = androidx.compose.runtime.saveable.rememberSaveable(
         saver = ScrollState.Saver
@@ -108,6 +149,7 @@ fun AppRoot(vm: ChatViewModel) {
     val skills by vm.skills.collectAsState()
     val userProfile by vm.userProfile.collectAsState()
     val compressDialog by vm.compressDialog.collectAsState()
+    val suggestionsGenerating by vm.suggestionsGenerating.collectAsState()
     val activeAssistant = assistants.firstOrNull { it.id == settings.activeAssistantId }
 
     val effectiveSkillIds: Set<String> by remember(activeId) {
@@ -120,6 +162,9 @@ fun AppRoot(vm: ChatViewModel) {
     val snackbar = remember { SnackbarHostState() }
     val openProvidersLabel = stringResource(R.string.error_open_providers)
     val skillImportedFmt = stringResource(R.string.skill_imported)
+    // 服务商/模型类错误改用对话框展示：snackbar 的 action 在部分机型上点了没反应，
+    // 而 AlertDialog 是模态的、按钮一定可点，也能保证跳转真的发生
+    var providerFixDialog by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(toast) {
         toast?.let {
             snackbar.showSnackbar(it, duration = SnackbarDuration.Short)
@@ -133,15 +178,30 @@ fun AppRoot(vm: ChatViewModel) {
             || msg.contains("model", ignoreCase = true)
             || msg.contains("401")
             || msg.contains("403")
-        val result = snackbar.showSnackbar(
-            message = msg,
-            actionLabel = if (needsProviderFix) openProvidersLabel else null,
-            duration = SnackbarDuration.Long
-        )
-        vm.clearError()
-        if (result == SnackbarResult.ActionPerformed) {
-            screen = Screen.Providers
+        if (needsProviderFix) {
+            providerFixDialog = msg
+        } else {
+            snackbar.showSnackbar(msg, duration = SnackbarDuration.Short)
         }
+        vm.clearError()
+    }
+
+    providerFixDialog?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { providerFixDialog = null },
+            text = { Text(msg) },
+            confirmButton = {
+                TextButton(onClick = {
+                    providerFixDialog = null
+                    screen = Screen.Providers
+                }) { Text(openProvidersLabel) }
+            },
+            dismissButton = {
+                TextButton(onClick = { providerFixDialog = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
     }
 
     Scaffold(
@@ -205,11 +265,11 @@ fun AppRoot(vm: ChatViewModel) {
                                 vm.requestCompressDialog()
                             },
                             onSuggestions = { page -> vm.generateSuggestions(page) },
+                            suggestionsGenerating = suggestionsGenerating,
                             onRenameChat = { newTitle -> vm.renameConversation(activeId ?: "", newTitle) },
                             onMenu = { scope.launch { drawerState.open() } },
                             onSend = { text, atts -> vm.sendMessage(text, atts) },
                             onStop = { vm.stopStreaming() },
-                            onRegenerate = { vm.regenerate() },
                             onRegenerateFrom = { msgId -> vm.regenerateFrom(msgId) },
                             onDeleteMessage = { msgId -> vm.deleteMessage(msgId) },
                             onEditMessage = { msgId, newText -> vm.editMessage(msgId, newText) },
@@ -329,7 +389,7 @@ fun AppRoot(vm: ChatViewModel) {
                     )
                 }
                 Screen.UserProfile -> {
-                    com.miniichatNext.carter.ui.UserProfileScreen(
+                    com.miniichatNext.carter.ui.settings.UserProfileScreen(
                         profile = userProfile,
                         onBack = { gotoSettings(true) },
                         onSave = { newProfile -> vm.updateUserProfile { newProfile } }

@@ -63,8 +63,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
-import com.miniichatNext.carter.data.Assistant
-import com.miniichatNext.carter.data.Conversation
+import com.miniichatNext.carter.data.model.Assistant
+import com.miniichatNext.carter.data.model.Conversation
 import com.miniichatNext.carter.ui.components.AssistantAvatarBadge
 import java.util.Calendar
 @OptIn(ExperimentalMaterial3Api::class)
@@ -72,7 +72,7 @@ import java.util.Calendar
 fun GlassDrawer(
     conversations: List<Conversation>,
     activeId: String?,
-    assistants: List<com.miniichatNext.carter.data.Assistant>,
+    assistants: List<com.miniichatNext.carter.data.model.Assistant>,
     activeAssistantId: String,
     onSelectAssistant: (String) -> Unit,
     onSelect: (String) -> Unit,

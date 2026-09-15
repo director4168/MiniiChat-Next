@@ -183,6 +183,7 @@
     <string name="aux_generation_failed">Generation failed</string>
     <string name="compress_not_enough">Not enough messages to compress while keeping recent ones.</string>
     <string name="suggestion_generate_hint">Enter the page to generate candidates</string>
+    <string name="suggestion_generating">Generating suggestions…</string>
     <string name="section_aux_features">Auxiliary feature models</string>
     <string name="aux_model_ocr">OCR model</string>
     <string name="aux_model_title">Title generation</string>
@@ -241,4 +242,8 @@
     <string name="crash_mail_body">Describe what you were doing:\n\n(crash log is attached)</string>
     <string name="crash_ignore">Ignore and continue</string>
     <string name="crash_empty">(crash log is empty)</string>
+    <string name="open">Open</string>
+    <string name="markdown_open_link_title">Open external link?</string>
+    <string name="markdown_open_link_hint">You will leave the app. Check the URL carefully before opening.</string>
+    <string name="markdown_open_link_failed">No app available to open this link</string>
 </resources>

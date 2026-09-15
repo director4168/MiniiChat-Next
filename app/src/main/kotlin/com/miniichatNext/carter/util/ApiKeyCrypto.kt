@@ -8,6 +8,7 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
+import com.miniichatNext.carter.debug.DebugLog
 
 // 存储格式：enc1:<base64(iv)>:<base64(ciphertext)>
 object ApiKeyCrypto {
@@ -37,7 +38,7 @@ object ApiKeyCrypto {
             gen.generateKey()
         }
     }.onFailure { e ->
-        com.miniichatNext.carter.Debug.DebugLog.w(
+        com.miniichatNext.carter.debug.DebugLog.w(
             "ApiKeyCrypto", "keystore unavailable: ${e.message}"
         )
     }.getOrNull()
@@ -54,7 +55,7 @@ object ApiKeyCrypto {
                 Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + ":" +
                 Base64.encodeToString(cipherText, Base64.NO_WRAP)
         }.getOrElse { e ->
-            com.miniichatNext.carter.Debug.DebugLog.w(
+            com.miniichatNext.carter.debug.DebugLog.w(
                 "ApiKeyCrypto", "encrypt failed, storing plaintext: ${e.message}"
             )
             value
@@ -75,7 +76,7 @@ object ApiKeyCrypto {
             cipher.init(Cipher.DECRYPT_MODE, key, GCMParameterSpec(TAG_BITS, iv))
             String(cipher.doFinal(cipherText), Charsets.UTF_8)
         }.getOrElse { e ->
-            com.miniichatNext.carter.Debug.DebugLog.e(
+            com.miniichatNext.carter.debug.DebugLog.e(
                 "ApiKeyCrypto", "decrypt failed (key needs re-entry): ${e.message}", e
             )
             ""

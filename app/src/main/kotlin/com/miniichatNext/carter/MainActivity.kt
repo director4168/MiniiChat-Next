@@ -17,6 +17,8 @@ import androidx.compose.runtime.setValue
 import com.miniichatNext.carter.ui.AppRoot
 import com.miniichatNext.carter.ui.theme.MiniiChatTheme
 import java.util.Locale
+import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.vm.ChatViewModel
 
 class MainActivity : ComponentActivity() {
 
@@ -44,7 +46,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        com.miniichatNext.carter.Debug.DebugLog.i(
+        com.miniichatNext.carter.debug.DebugLog.i(
             "Activity", "MainActivity.onCreate (savedState=${savedInstanceState != null})"
         )
         enableEdgeToEdge()

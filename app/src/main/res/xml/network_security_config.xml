@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  允许明文(HTTP)流量。
+
+  LLM 客户端经常要连用户自建/局域网里的服务端，例如：
+    http://192.168.1.10:11434   (Ollama)
+    http://192.168.1.10:1234    (LM Studio)
+    http://10.0.2.2:8000        (本机反代 / one-api)
+  Android 9(API 28) 起系统默认禁止明文流量，会直接抛：
+    CLEARTEXT communication to <host> not permitted by network security policy
+
+  这里用网络安全策略显式放行（比 android:usesCleartextTraffic="true" 更规范，
+  且对 OkHttp/Ktor 等走 NetworkSecurityPolicy 判断的库同样生效）。
+  如需收紧，可把 base-config 改成 cleartextTrafficPermitted="false"，
+  再用 domain-config 逐个列出允许的域名/IP。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

@@ -183,6 +183,7 @@
     <string name="aux_generation_failed">生成失败</string>
     <string name="compress_not_enough">消息不足以压缩（需保留最近消息）</string>
     <string name="suggestion_generate_hint">进入页面后生成候选</string>
+    <string name="suggestion_generating">正在生成候选词…</string>
     <string name="section_aux_features">辅助功能模型</string>
     <string name="aux_model_ocr">OCR 模型</string>
     <string name="aux_model_title">标题生成</string>
@@ -241,4 +242,8 @@
     <string name="crash_mail_body">崩溃场景描述：\n\n（崩溃日志已打包为附件）</string>
     <string name="crash_ignore">忽略并继续</string>
     <string name="crash_empty">（崩溃日志内容为空）</string>
+    <string name="open">打开</string>
+    <string name="markdown_open_link_title">打开外部链接？</string>
+    <string name="markdown_open_link_hint">将离开本应用，打开前请确认链接来源可信。</string>
+    <string name="markdown_open_link_failed">没有可打开链接的应用</string>
 </resources>

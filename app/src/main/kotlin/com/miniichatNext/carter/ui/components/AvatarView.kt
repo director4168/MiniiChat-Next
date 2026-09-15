@@ -26,10 +26,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.miniichatNext.carter.data.Avatar
+import com.miniichatNext.carter.data.avatar.Avatar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import com.miniichatNext.carter.debug.DebugLog
 
 @Composable
 fun AvatarView(
@@ -46,7 +47,7 @@ fun AvatarView(
             .background(background),
         contentAlignment = Alignment.Center
     ) {
-        // 按实际显示尺寸采样解码：22dp 的列表头像没必要解码 4096px 的原图
+        // 按实际显示尺寸采样解码：22dp的列表头像没必要解码4096px的原图
         val targetPx = with(androidx.compose.ui.platform.LocalDensity.current) { size.roundToPx() }
         when (avatar) {
             is Avatar.Image -> {
@@ -110,8 +111,8 @@ private fun rememberBitmap(path: String?, targetPx: Int): ImageBitmap? {
         }
         val file = java.io.File(path)
         var decoded: ImageBitmap? = null
-        // 重试 3 次：刚写盘的图片偶发"文件已存在但还没 flush 完"，
-        // 之前这里一次失败就永久显示首字母，看起来就像"头像没生效"
+        // 重试3次，刚写盘的图片偶发文件已存在但还没flush完
+        // 之前这里一次失败就永久显示首字母，看起来就像头像没生效
         for (attempt in 0 until 3) {
             if (!file.exists() || file.length() <= 0L) {
                 delay(140L)
@@ -125,16 +126,16 @@ private fun rememberBitmap(path: String?, targetPx: Int): ImageBitmap? {
         }
         if (decoded == null) {
             if (!file.exists()) {
-                com.miniichatNext.carter.Debug.DebugLog.w(
+                com.miniichatNext.carter.debug.DebugLog.w(
                     "AvatarView", "avatar file missing: $path"
                 )
             } else {
-                com.miniichatNext.carter.Debug.DebugLog.e(
+                com.miniichatNext.carter.debug.DebugLog.e(
                     "AvatarView", "avatar decode failed: $path (${file.length()} bytes, target=${targetPx}px)"
                 )
             }
         } else {
-            com.miniichatNext.carter.Debug.DebugLog.v(
+            com.miniichatNext.carter.debug.DebugLog.v(
                 "AvatarView", "avatar loaded: $path (${file.length()} bytes, ${decoded.width}x${decoded.height})"
             )
         }

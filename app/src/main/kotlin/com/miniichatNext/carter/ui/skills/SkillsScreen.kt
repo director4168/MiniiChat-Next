@@ -56,14 +56,15 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
-import com.miniichatNext.carter.data.Skills.Skill
-import com.miniichatNext.carter.data.Skills.SkillFrontmatterParser
+import com.miniichatNext.carter.data.skills.Skill
+import com.miniichatNext.carter.data.skills.SkillFrontmatterParser
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.util.zip.ZipInputStream
+import com.miniichatNext.carter.ui.chat.EmptyState
 
 @Composable
 fun SkillsScreen(

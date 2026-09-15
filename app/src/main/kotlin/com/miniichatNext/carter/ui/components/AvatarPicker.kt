@@ -44,13 +44,14 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
-import com.miniichatNext.carter.data.Avatar
-import com.miniichatNext.carter.util.AvatarStorage
+import com.miniichatNext.carter.data.avatar.Avatar
+import com.miniichatNext.carter.data.avatar.AvatarStorage
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import com.miniichatNext.carter.debug.DebugLog
 
 
 @Composable
@@ -70,7 +71,7 @@ fun AvatarPicker(
     val importOriginalImage: () -> Unit = {
         val uri = lastPickedUri
         if (uri == null) {
-            com.miniichatNext.carter.Debug.DebugLog.w(
+            com.miniichatNext.carter.debug.DebugLog.w(
                 "AvatarPicker", "crop unavailable and no source uri to fall back to"
             )
             Toast.makeText(
@@ -82,7 +83,7 @@ fun AvatarPicker(
             scope.launch {
                 val path = AvatarStorage.saveFromUri(context, newId(), uri, maxSide = 1024)
                 if (path != null) {
-                    com.miniichatNext.carter.Debug.DebugLog.i(
+                    com.miniichatNext.carter.debug.DebugLog.i(
                         "AvatarPicker", "crop unavailable, imported original image: $path"
                     )
                     Toast.makeText(
@@ -92,7 +93,7 @@ fun AvatarPicker(
                     ).show()
                     onChange(Avatar.Image(path))
                 } else {
-                    com.miniichatNext.carter.Debug.DebugLog.e(
+                    com.miniichatNext.carter.debug.DebugLog.e(
                         "AvatarPicker", "import original image failed: $uri"
                     )
                     Toast.makeText(
@@ -110,7 +111,7 @@ fun AvatarPicker(
             val stable = AvatarStorage.isInAppStorage(context, path)
             onChange(Avatar.Image(path))
             if (stable) {
-                com.miniichatNext.carter.Debug.DebugLog.i(
+                com.miniichatNext.carter.debug.DebugLog.i(
                     "AvatarPicker", "avatar cropped straight into app storage: $path"
                 )
             } else {
@@ -122,13 +123,13 @@ fun AvatarPicker(
                     }
                     result.fold(
                         onSuccess = { (savedPath, tempPath) ->
-                            com.miniichatNext.carter.Debug.DebugLog.i(
+                            com.miniichatNext.carter.debug.DebugLog.i(
                                 "AvatarPicker", "avatar transferred: temp=$tempPath -> stable=$savedPath"
                             )
                             onChange(Avatar.Image(savedPath))
                         },
                         onFailure = { e ->
-                            com.miniichatNext.carter.Debug.DebugLog.e(
+                            com.miniichatNext.carter.debug.DebugLog.e(
                                 "AvatarPicker", "avatar transfer failed (path=$path)", e
                             )
                             Log.e("AvatarPicker", "image save failed (path=$path)", e)
