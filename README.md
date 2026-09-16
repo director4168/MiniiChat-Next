@@ -102,4 +102,4 @@ MiniiChat Next主要修改了以下方面：
 ## 打赏
 
 您可选择通过 微信/支付宝 向我打赏，这将有助于我对该项目的开发
-[打赏](https://director4168.github.io/jpg/IMG 20260916_170059_260916170231.png)
+[打赏(https://director4168.github.io/jpg/IMG 20260916_170059_260916170231.png)]
