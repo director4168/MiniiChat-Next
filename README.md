@@ -18,6 +18,7 @@
 
 本应用/项目(MiniiChat Next)由*director_Carter*基于*MiniiChat*项目(MIT开源)，新增部分功能基于RikkaHub项目(AGPL-3.0开源）的相关源码  
 本项目将使用AGPL-3.0进行开源  
+**如有bug反馈或功能建议，可提交*Github Issus*或通过邮箱联系**
 
 本项目使用了以下项目内容:  
 - **[Mini233/miniichat](https://github.com/Minis233/miniichat)** ———来自Github *Minis233* 大佬的MiniiChat 安卓开源（**MIT**）免费LLM客户端，作为本二次项目的主体  
