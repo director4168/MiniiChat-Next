@@ -142,7 +142,6 @@ fun DebugScreen(onBack: () -> Unit) {
                 }
             }
 
-            // 操作行
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = {
                     DebugLog.clear(context)
@@ -175,7 +174,6 @@ fun DebugScreen(onBack: () -> Unit) {
 
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
 
-            // Java层崩溃测试
             Text(stringResource(R.string.debug_crash_test), style = MaterialTheme.typography.labelLarge)
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 TextButton(onClick = {

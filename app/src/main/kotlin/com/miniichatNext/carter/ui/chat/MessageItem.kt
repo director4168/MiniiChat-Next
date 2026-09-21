@@ -57,9 +57,13 @@ internal fun MessageItem(
     onCancelEdit: () -> Unit = {},
     onContinue: () -> Unit = {},
     onDelete: () -> Unit = {},
-    onRegenerateFrom: () -> Unit = {}
+    onRegenerateFrom: () -> Unit = {},
+    onApproveTool: ((com.miniichatNext.carter.data.model.ToolInvocation, String?) -> Unit)? = null,
+    onRejectTool: ((com.miniichatNext.carter.data.model.ToolInvocation) -> Unit)? = null
 ) {
     val isUser = message.role == "user"
+    // 工具结果已内嵌在assistant消息的toolInvocations中，独立的tool角色消息不渲染
+    if (message.role == "tool") return
     if (isUser) {
         UserBubble(
             message = message,
@@ -87,7 +91,10 @@ internal fun MessageItem(
             onCommitEdit = onCommitEdit,
             onCancelEdit = onCancelEdit,
             onContinue = onContinue,
-            onDelete = onDelete
+            onDelete = onDelete,
+            onRegenerateFrom = onRegenerateFrom,
+            onApproveTool = onApproveTool,
+            onRejectTool = onRejectTool
         )
     }
 }
@@ -201,10 +208,10 @@ internal fun UserBubble(
                             .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
                         SelectionContainer {
-                            Text(
+                            // 用户消息也走markdown渲染（与助手侧一致）
+                            com.miniichatNext.carter.ui.markdown.MarkdownText(
                                 text = message.content,
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                style = MaterialTheme.typography.bodyLarge
+                                color = MaterialTheme.colorScheme.onPrimary
                             )
                         }
                     }

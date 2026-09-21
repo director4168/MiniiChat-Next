@@ -16,6 +16,14 @@ import com.miniichatNext.carter.data.skills.Skill
 import com.miniichatNext.carter.data.skills.SkillStore
 import com.miniichatNext.carter.data.model.UserProfile
 import com.miniichatNext.carter.data.model.UserProfileStore
+import com.miniichatNext.carter.data.mcp.BuiltInFileTools
+import com.miniichatNext.carter.data.mcp.McpServerConfig
+import com.miniichatNext.carter.data.mcp.McpStore
+import com.miniichatNext.carter.data.mcp.McpTool
+import com.miniichatNext.carter.data.mcp.McpToolPermission
+import com.miniichatNext.carter.data.workspace.WorkspaceEntity
+import com.miniichatNext.carter.data.workspace.WorkspaceRepository
+import com.miniichatNext.carter.data.workspace.WorkspaceStore
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,6 +47,21 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     internal val userProfileStore = UserProfileStore(app)
     internal val client = LlmClient()
 
+    /** MCP服务器/工具/权限（纯JDK JSON-RPC客户端，不再依赖MCP SDK与Ktor） */
+    internal val mcpStore = McpStore(app)
+
+    /** 多工作区：一个助手绑定一个workspaceId */
+    internal val workspaceStore = WorkspaceStore(app)
+    internal val workspaceRepository = WorkspaceRepository(app, workspaceStore)
+    internal val mcpClient = com.miniichatNext.carter.data.mcp.McpClient()
+
+    init {
+        BuiltInFileTools.init(
+            filesDir = app.filesDir,
+            externalFilesDir = runCatching { app.getExternalFilesDir(null) }.getOrNull()
+        )
+    }
+
     val settings: StateFlow<AppSettings> = settingsRepo.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
 
@@ -55,6 +78,18 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, UserProfile())
 
     val conversations: StateFlow<List<Conversation>> = store.conversationsFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val workspaces: StateFlow<List<WorkspaceEntity>> = workspaceRepository.workspacesFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val mcpServers: StateFlow<List<McpServerConfig>> = mcpStore.serversFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val mcpTools: StateFlow<List<McpTool>> = mcpStore.toolsFlow
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    val mcpPerms: StateFlow<List<McpToolPermission>> = mcpStore.permsFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     internal val _streamingOverlay = MutableStateFlow<Pair<String, String>?>(null)
@@ -91,36 +126,52 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             store.migrateAssistantId(settings.value.activeAssistantId)
             skillStore.refresh()
+            workspaceRepository.checkIntegrity()
         }
         pruneOrphanAvatars()
     }
 
     /**
-     * 清理不再被引用的头像文件
-     * 安全前提：等助手列表真正加载完（非空）后才执行，且只删24小时前的文件，避免把正在使用的头像或刚裁好还没保存的文件删掉
+     * 清理不再被引用的头像文件。
+     *
+     * 两个前提都必须满足，否则会误删用户正在用的头像：
+     *  1) 助手列表真正加载完（非空）
+     *  2) 用户资料真正加载完 —— `userProfile` 是StateFlow，初值是空UserProfile()，
+     *     直接读 .value会拿不到头像路径，把它当孤儿删掉。所以走store.snapshot()。
+     * 另外只删24小时前的文件，刚裁剪出来还没写进任何配置的不会被误删。
      */
     internal fun pruneOrphanAvatars() {
         viewModelScope.launch {
             val loaded = kotlinx.coroutines.withTimeoutOrNull(10_000L) {
                 assistants.first { it.isNotEmpty() }
             } ?: return@launch
+
+            // 关键：从DataStore读一次快照，而不是读StateFlow的当前值
+            val profile = runCatching { userProfileStore.snapshot() }
+                .getOrElse { return@launch }
+
             val keep = buildSet {
                 loaded.forEach { a ->
                     a.avatarPath?.takeIf { it.isNotBlank() }?.let { add(it) }
                     a.backgroundPath?.takeIf { it.isNotBlank() }?.let { add(it) }
                 }
-                (userProfile.value.avatar as? com.miniichatNext.carter.data.avatar.Avatar.Image)
+                (profile.avatar as? com.miniichatNext.carter.data.avatar.Avatar.Image)
                     ?.path?.takeIf { it.isNotBlank() }?.let { add(it) }
             }
-            val removed = com.miniichatNext.carter.data.avatar.AvatarStorage.pruneOrphans(
+
+            // 保险：一条路径都没收集到时不做任何删除（宁可留垃圾也不要误删）
+            if (keep.isEmpty()) {
+                DebugLog.w("AvatarStorage", "prune skipped: keep set is empty")
+                return@launch
+            }
+
+            val removed = AvatarStorage.pruneOrphans(
                 getApplication(),
                 keep,
                 olderThanMs = 24L * 60 * 60 * 1000
             )
             if (removed > 0) {
-                com.miniichatNext.carter.debug.DebugLog.i(
-                    "AvatarStorage", "pruned $removed orphan avatar file(s)"
-                )
+                DebugLog.i("AvatarStorage", "pruned $removed orphan avatar file(s)")
             }
         }
     }
@@ -169,5 +220,4 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun updateSettings(transform: (AppSettings) -> AppSettings) {
         viewModelScope.launch { settingsRepo.update(transform) }
     }
-
 }

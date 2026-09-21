@@ -122,7 +122,6 @@ internal fun ChatViewModel.generateSuggestions(page: Int) {
             append("Keep each suggestion very short (about 10 characters in Chinese, ")
             append("or under 6 words in English).\n")
             append("Imitate the user's style. Do not add formatting or list markers.\n")
-            // 跟随对话本身的语言，而不是设备语言，否则会出现例如明明是英文对话却给出中文候选
             append("Reply in the SAME language as the chat content above ")
             append("(if the chat is in English, reply in English; never switch language).\n")
             append("Seed for variety: page ").append(page).append("\n\n")

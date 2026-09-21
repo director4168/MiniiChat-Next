@@ -21,8 +21,8 @@ android {
         applicationId = "com.miniichatNext.carter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 26091509
-        versionName = "1.3.1"
+        versionCode = 26092117
+        versionName = "1.4.0-rc.1"
         vectorDrawables { useSupportLibrary = true }
     }
 
@@ -98,6 +98,9 @@ android {
     sourceSets["main"].java.srcDirs("src/main/kotlin")
 
     packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
         resources {
             excludes += setOf(
                 "/META-INF/{AL2.0,LGPL2.1}",
@@ -107,6 +110,14 @@ android {
                 "/META-INF/NOTICE",
                 "/META-INF/NOTICE.txt"
             )
+        }
+    }
+}
+
+configurations.all {
+    resolutionStrategy.eachDependency {
+        if (requested.group == "io.ktor") {
+            useVersion(libs.versions.ktor.get())
         }
     }
 }
@@ -143,9 +154,13 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
 
+    testImplementation(libs.junit)
+
     implementation(libs.ucrop)
     implementation(libs.androidx.transition)
     implementation(libs.androidx.appcompat)
+    implementation(libs.androidx.documentfile)
+    implementation(libs.xz)
 }
 
 val copyAndRenameReleaseApks = tasks.register("copyAndRenameReleaseApks") {

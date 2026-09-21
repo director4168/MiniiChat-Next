@@ -79,7 +79,19 @@ fun ChatScreen(
     onContinue: () -> Unit = {},
     onNew: () -> Unit,
     onOpenSettings: () -> Unit,
-    onPickModel: () -> Unit
+    onPickModel: () -> Unit,
+    // 对话级工具开关（「+」菜单→工作区 / MCP弹窗）
+    workspaces: List<com.miniichatNext.carter.data.workspace.WorkspaceEntity> = emptyList(),
+    effectiveWorkspaceId: String? = null,
+    onPickWorkspace: (String?) -> Unit = {},
+    mcpServers: List<com.miniichatNext.carter.data.mcp.McpServerConfig> = emptyList(),
+    effectiveMcpServerIds: Set<String> = emptySet(),
+    onToggleMcpServer: (String, Boolean) -> Unit = { _, _ -> },
+    onResetToolOverrides: () -> Unit = {},
+    onManageWorkspaces: () -> Unit = {},
+    onManageMcp: () -> Unit = {},
+    onApproveTool: ((com.miniichatNext.carter.data.model.ToolInvocation, String?) -> Unit)? = null,
+    onRejectTool: ((com.miniichatNext.carter.data.model.ToolInvocation) -> Unit)? = null
 ) {
     var input by rememberSaveable { mutableStateOf("") }
     var pendingAttachments by remember { mutableStateOf<List<com.miniichatNext.carter.data.model.Attachment>>(emptyList()) }
@@ -92,6 +104,8 @@ fun ChatScreen(
     }
     var editingMessageId by rememberSaveable { mutableStateOf<String?>(null) }
     var editingDraft by rememberSaveable { mutableStateOf("") }
+    // 重说：先确认，再截断重生成
+    var retellTargetId by remember { mutableStateOf<String?>(null) }
     var showRenameDialog by rememberSaveable { mutableStateOf(false) }
     var renameDraft by rememberSaveable { mutableStateOf("") }
     // 两个内嵌面板：+ 面板 与 候选回复面板（互斥，点空白处统一收起）
@@ -115,9 +129,6 @@ fun ChatScreen(
     val backgroundPath = assistant?.backgroundPath
     val backgroundCss = assistant?.backgroundCss ?: ""
     val backgroundOpacity = assistant?.backgroundOpacity ?: 1f
-    // 图片模式：渲染图片
-    // CSS模式：直接渲染WebView背景层
-    // default：无背景
     val backgroundBitmap = if (backgroundMode == "css") null
                            else rememberBackgroundBitmap(backgroundPath)
     val cssHtml = if (backgroundMode == "css" && backgroundCss.isNotBlank()) {
@@ -354,7 +365,9 @@ fun ChatScreen(
                         },
                         onContinue = onContinue,
                         onDelete = { onDeleteMessage(msg.id) },
-                        onRegenerateFrom = { onRegenerateFrom(msg.id) }
+                        onRegenerateFrom = { retellTargetId = msg.id },
+                        onApproveTool = onApproveTool,
+                        onRejectTool = onRejectTool
                     )
                 }
             }
@@ -397,6 +410,15 @@ fun ChatScreen(
             enabledSkillIds = effectiveSkillIds,
             onToggleSkill = onToggleSkill,
             onContextCompress = onContextCompress,
+            workspaces = workspaces,
+            effectiveWorkspaceId = effectiveWorkspaceId,
+            onPickWorkspace = onPickWorkspace,
+            mcpServers = mcpServers,
+            effectiveMcpServerIds = effectiveMcpServerIds,
+            onToggleMcpServer = onToggleMcpServer,
+            onResetToolOverrides = onResetToolOverrides,
+            onManageWorkspaces = onManageWorkspaces,
+            onManageMcp = onManageMcp,
             onSend = {
                 val text = input
                 val atts = pendingAttachments
@@ -455,7 +477,7 @@ fun ChatScreen(
         )
     }
 
-    // 双击空白区域以隐藏界面，仅显示背景，这样可以更好的观看老婆😆，这段注释就当做彩蛋2
+    // 双击空白区域以隐藏界面，仅显示背景（沉浸式看壁纸）
     if (immersive) {
         Box(
             modifier = Modifier
@@ -494,5 +516,23 @@ fun ChatScreen(
         )
     }
 
-    
+    // 重说确认弹窗：确认后从该消息处截断并重新生成
+    retellTargetId?.let { targetId ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { retellTargetId = null },
+            title = { Text(stringResource(R.string.retell_confirm_title)) },
+            text = { Text(stringResource(R.string.retell_confirm_message)) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    retellTargetId = null
+                    onRegenerateFrom(targetId)
+                }) { Text(stringResource(R.string.ok)) }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { retellTargetId = null }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            }
+        )
+    }
 }

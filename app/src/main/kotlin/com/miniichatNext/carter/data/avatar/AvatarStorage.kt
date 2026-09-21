@@ -88,7 +88,7 @@ object AvatarStorage {
      *
      * 安全前提：只删除不在[keepPaths]里且最后修改时间早于[olderThanMs]的文件，这样刚生成的裁剪文件（可能还没写进任何assistant）不会被误删
      *
-     * @return实际删除的文件数
+     * @return 实际删除的文件数
      */
     fun pruneOrphans(context: Context, keepPaths: Collection<String>, olderThanMs: Long): Int =
         runCatching {

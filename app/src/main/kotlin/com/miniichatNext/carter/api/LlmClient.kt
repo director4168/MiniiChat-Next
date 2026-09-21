@@ -2,6 +2,9 @@ package com.miniichatNext.carter.api
 
 import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.model.ProviderType
+import kotlinx.serialization.json.JsonObjectBuilder
+import com.miniichatNext.carter.data.model.ProviderOverride
+import com.miniichatNext.carter.data.model.PromptCacheTtl
 import com.miniichatNext.carter.data.model.ThinkingLevel
 import com.miniichatNext.carter.data.model.TokenUsage
 import com.miniichatNext.carter.data.store.AppSettings
@@ -42,49 +45,69 @@ import kotlinx.serialization.json.putJsonObject
 class LlmClient {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
-    private val client = HttpClient(OkHttp) {
-        install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
-        install(HttpTimeout) {
-            requestTimeoutMillis = 180_000
-            connectTimeoutMillis = 30_000
-            socketTimeoutMillis = 180_000
+    private val client by lazy {
+        HttpClient(OkHttp) {
+            install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
+            install(HttpTimeout) {
+                requestTimeoutMillis = 180_000
+                connectTimeoutMillis = 30_000
+                socketTimeoutMillis = 180_000
+            }
         }
     }
+
+    /** 工具JSON Schema原文 -> JsonElement；解析失败时退回空object schema */
+    private fun toolSchema(raw: String): kotlinx.serialization.json.JsonElement =
+        runCatching { json.parseToJsonElement(raw) }
+            .getOrElse {
+                kotlinx.serialization.json.buildJsonObject {
+                    put("type", "object")
+                    put("properties", kotlinx.serialization.json.buildJsonObject { })
+                }
+            }
 
     internal fun buildRequestBody(
         provider: ProviderConfig,
         modelId: String,
         messages: List<ChatMessage>,
         stream: Boolean,
-        temperature: Float
+        temperature: Float,
+        tools: List<ToolSpec> = emptyList(),
+        override: ProviderOverride? = null,
+        thinking: ThinkingLevel = ThinkingLevel.AUTO,
     ): String {
-        val modelCfg = provider.model(modelId)
         return when {
             provider.type() == ProviderType.CLAUDE ->
-                buildClaudeBody(provider, modelId, messages, stream, temperature)
-            modelCfg?.useResponseApi == true ->
-                buildResponseBody(provider, modelId, messages, stream, temperature)
+                buildClaudeBody(provider, modelId, messages, stream, temperature, tools, override, thinking)
+            provider.effectiveResponseApi(override?.responseApi) ->
+                buildResponseBody(provider, modelId, messages, stream, temperature, tools, thinking)
             else ->
-                buildOpenAiBody(provider, modelId, messages, stream, temperature)
+                buildOpenAiBody(provider, modelId, messages, stream, temperature, tools, thinking)
         }
     }
     fun chatStream(
         provider: ProviderConfig,
         settings: AppSettings,
         modelId: String,
-        messages: List<ChatMessage>
+        messages: List<ChatMessage>,
+        tools: List<ToolSpec> = emptyList(),
+        override: ProviderOverride? = null,
+        thinking: ThinkingLevel = ThinkingLevel.AUTO,
     ): Flow<StreamDelta> = flow {
         val bodyText = buildRequestBody(
             provider = provider,
             modelId = modelId,
             messages = messages,
             stream = settings.stream,
-            temperature = settings.temperature
+            temperature = settings.temperature,
+            tools = tools,
+            override = override,
+            thinking = thinking
         )
         val isClaude = provider.type() == ProviderType.CLAUDE
         val endpoint = when {
             isClaude -> claudeMessagesEndpoint(provider.baseUrl)
-            provider.model(modelId)?.useResponseApi == true -> responsesEndpoint(provider.baseUrl)
+            provider.effectiveResponseApi(override?.responseApi) -> responsesEndpoint(provider.baseUrl)
             else -> chatEndpoint(provider.baseUrl, provider.chatCompletionsPath)
         }
         val fallbackEndpoint = if (isClaude && claudeNeedsV1Fallback(provider.baseUrl)) {
@@ -167,10 +190,16 @@ class LlmClient {
         modelId: String,
         messages: List<ChatMessage>,
         stream: Boolean,
-        temperature: Float
+        temperature: Float,
+        tools: List<ToolSpec> = emptyList(),
+        thinking: ThinkingLevel = ThinkingLevel.AUTO,
     ): String {
         val modelCfg = provider.model(modelId)
         val effTemp = modelCfg?.temperature ?: temperature
+        // 思考等级：对话级唯一来源（item 1：服务商/模型不再有这条设置）
+        val effThinking = thinking
+        val reasoningOk = provider.supportsReasoning(modelId)
+        val host = hostOf(provider.baseUrl)
         val msgsJson = kotlinx.serialization.json.buildJsonArray {
             for (m in messages) {
                 add(kotlinx.serialization.json.buildJsonObject {
@@ -184,15 +213,35 @@ class LlmClient {
                     } else {
                         put("content", m.content)
                     }
+                    if (!m.toolCalls.isNullOrEmpty()) {
+                        put("tool_calls", kotlinx.serialization.json.buildJsonArray {
+                            for (tc in m.toolCalls) {
+                                add(buildJsonObject {
+                                    put("id", tc.id)
+                                    put("type", "function")
+                                    putJsonObject("function") {
+                                        put("name", tc.name)
+                                        put("arguments", tc.arguments)
+                                    }
+                                })
+                            }
+                        })
+                    }
+                    if (m.toolCallId != null) {
+                        put("tool_call_id", m.toolCallId)
+                    }
                 })
             }
         }
         val obj = buildJsonObject {
             put("model", modelId)
             put("stream", stream)
-            put("temperature", effTemp)
+            // 开了推理就别带temperature：o系列 / DeepSeek等会直接报错
+            if (effThinking == ThinkingLevel.OFF) put("temperature", effTemp)
             put("messages", msgsJson)
             modelCfg?.maxTokens?.let { put("max_tokens", it) }
+            // 各家的推理参数形状不同，按host特判（见applyReasoning）
+            if (reasoningOk) applyReasoning(host, effThinking)
             for ((k, v) in provider.extraBody) {
                 if (k.isBlank()) continue
                 put(k, coerceToJson(v))
@@ -200,6 +249,20 @@ class LlmClient {
             for ((k, v) in modelCfg?.extraBody ?: emptyMap()) {
                 if (k.isBlank()) continue
                 put(k, coerceToJson(v))
+            }
+            if (tools.isNotEmpty()) {
+                put("tools", kotlinx.serialization.json.buildJsonArray {
+                    for (t in tools) {
+                        add(buildJsonObject {
+                            put("type", "function")
+                            putJsonObject("function") {
+                                put("name", t.name)
+                                put("description", t.description)
+                                put("parameters", toolSchema(t.inputSchema))
+                            }
+                        })
+                    }
+                })
             }
         }
         return json.encodeToString(JsonObject.serializer(), obj)
@@ -209,7 +272,9 @@ class LlmClient {
         modelId: String,
         messages: List<ChatMessage>,
         stream: Boolean,
-        temperature: Float
+        temperature: Float,
+        tools: List<ToolSpec> = emptyList(),
+        thinking: ThinkingLevel = ThinkingLevel.AUTO,
     ): String {
         val modelCfg = provider.model(modelId)
         val effTemp = modelCfg?.temperature ?: temperature
@@ -228,12 +293,18 @@ class LlmClient {
                 }
             }
         }
+        // 思考等级：对话级唯一来源（item 1：服务商/模型不再有这条设置）
+        val effThinking = thinking
         val obj = buildJsonObject {
             put("model", modelId)
             put("stream", stream)
-            put("temperature", effTemp)
+            if (effThinking == ThinkingLevel.OFF) put("temperature", effTemp)
             put("input", input)
             modelCfg?.maxTokens?.let { put("max_output_tokens", it) }
+            // Response API的推理强度走reasoning.effort
+            if (provider.supportsReasoning(modelId)) effThinking.effort?.let { effort ->
+                putJsonObject("reasoning") { put("effort", effort) }
+            }
             for ((k, v) in modelCfg?.extraBody ?: emptyMap()) {
                 if (k.isBlank()) continue
                 put(k, coerceToJson(v))
@@ -270,6 +341,7 @@ class LlmClient {
     private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamDelta>.readOpenAiStream(
         channel: ByteReadChannel
     ) {
+        val pendingTools = mutableMapOf<Int, PendingToolCall>()
         while (true) {
             val line = channel.readUTF8Line() ?: break
             if (line.isEmpty()) continue
@@ -277,14 +349,27 @@ class LlmClient {
             val payload = line.removePrefix("data:").trim()
             if (payload == "[DONE]") break
             if (payload.isEmpty()) continue
+            // 有些网关200里塞{"error":{...}}，解析后看有没有顶层error字段
+            // 不要用字符串匹配，否则模型正文里出现error字样会被误判
+            val element = runCatching { json.parseToJsonElement(payload) }.getOrNull() ?: continue
+            (element as? JsonObject)?.get("error")?.let { errEl ->
+                val errMsg = (errEl as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull
+                throw RuntimeException((errMsg ?: errEl.toString()).take(500))
+            }
             val chunk = runCatching {
-                json.decodeFromString(ChatChunk.serializer(), payload)
+                json.decodeFromJsonElement(ChatChunk.serializer(), element)
             }.getOrNull() ?: continue
             val delta = chunk.choices.firstOrNull()?.delta
             val text = delta?.content.orEmpty()
             val reasoning = delta?.reasoningContent.orEmpty()
             if (text.isNotEmpty() || reasoning.isNotEmpty()) {
                 emit(StreamDelta(text = text, reasoning = reasoning))
+            }
+            delta?.toolCalls?.forEach { tc ->
+                val p = pendingTools.getOrPut(tc.index) { PendingToolCall() }
+                if (tc.id != null) p.id = tc.id
+                if (tc.function?.name != null) p.name = tc.function.name
+                if (tc.function != null) p.args.append(tc.function.arguments)
             }
             chunk.usage?.let {
                 emit(StreamDelta(usage = TokenUsage(
@@ -294,7 +379,18 @@ class LlmClient {
                 )))
             }
         }
+        if (pendingTools.isNotEmpty()) {
+            emit(StreamDelta(toolCalls = pendingTools.values
+                .filter { it.name.isNotBlank() }
+                .map { ToolCallDelta(id = it.id, name = it.name, argumentsJson = it.args.toString()) }))
+        }
     }
+
+    private class PendingToolCall(
+        var id: String = "",
+        var name: String = "",
+        val args: StringBuilder = StringBuilder(),
+    )
     private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamDelta>.readOpenAiNonStream(
         response: io.ktor.client.statement.HttpResponse
     ) {
@@ -302,8 +398,16 @@ class LlmClient {
         val parsed = runCatching {
             json.decodeFromString(ChatResponse.serializer(), text)
         }.getOrNull()
-        val content = parsed?.choices?.firstOrNull()?.message?.content
+        val msg = parsed?.choices?.firstOrNull()?.message
+        val content = msg?.content
         if (!content.isNullOrEmpty()) emit(StreamDelta(text = content))
+        msg?.toolCalls?.takeIf { it.isNotEmpty() }?.let { tcs ->
+            emit(StreamDelta(toolCalls = tcs.map { ToolCallDelta(
+                id = it.id ?: "",
+                name = it.function?.name ?: "",
+                argumentsJson = it.function?.arguments ?: ""
+            ) }))
+        }
         parsed?.usage?.let {
             emit(StreamDelta(usage = TokenUsage(
                 promptTokens = it.promptTokens,
@@ -327,12 +431,19 @@ internal fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, Stri
         modelId: String,
         messages: List<ChatMessage>,
         stream: Boolean,
-        temperature: Float
+        temperature: Float,
+        tools: List<ToolSpec> = emptyList(),
+        override: ProviderOverride? = null,
+        thinking: ThinkingLevel = ThinkingLevel.AUTO,
     ): String {
         val modelCfg = provider.model(modelId)
         val effTemp = modelCfg?.temperature ?: temperature
-        val effThinking = modelCfg?.thinking() ?: provider.thinking()
-        val effMaxTokens = if (effThinking != ThinkingLevel.OFF) {
+        // 思考等级：对话级唯一来源（item 1：服务商/模型不再有这条设置）
+        val effThinking = thinking
+        val reasoningOk = provider.supportsReasoning(modelId)
+        val effCache = provider.effectivePromptCache(override?.promptCache)
+        val cacheTtl = provider.effectiveCacheTtl(override?.promptCacheTtl)
+        val effMaxTokens = if (effThinking.budgetTokens > 0) {
             maxOf(modelCfg?.maxTokens ?: provider.maxTokens, effThinking.budgetTokens + 1024)
         } else {
             modelCfg?.maxTokens ?: provider.maxTokens
@@ -350,8 +461,32 @@ internal fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, Stri
         val msgsJson = kotlinx.serialization.json.buildJsonArray {
             for (m in convMsgs) {
                 add(kotlinx.serialization.json.buildJsonObject {
-                    put("role", m.role)
-                    if (m.isMultipart()) {
+                    if (m.role == "tool") {
+                        put("role", "user")
+                        put("content", kotlinx.serialization.json.buildJsonArray {
+                            add(buildJsonObject {
+                                put("type", "tool_result")
+                                m.toolCallId?.let { put("tool_use_id", it) }
+                                put("content", m.content)
+                            })
+                        })
+                    } else if (!m.toolCalls.isNullOrEmpty()) {
+                        put("role", "assistant")
+                        put("content", kotlinx.serialization.json.buildJsonArray {
+                            if (m.content.isNotBlank()) {
+                                add(buildJsonObject { put("type", "text"); put("text", m.content) })
+                            }
+                            for (tc in m.toolCalls) {
+                                add(buildJsonObject {
+                                    put("type", "tool_use")
+                                    put("id", tc.id)
+                                    put("name", tc.name)
+                                    put("input", toolSchema(tc.arguments.ifBlank { "{}" }))
+                                })
+                            }
+                        })
+                    } else if (m.isMultipart()) {
+                        put("role", m.role)
                         val parts = mutableListOf<JsonObject>()
                         if (m.content.isNotBlank()) {
                             parts.add(buildJsonObject {
@@ -360,18 +495,35 @@ internal fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, Stri
                             })
                         }
                         for (att in m.parts!!) {
-                            val url = att.imageUrl?.url ?: continue
-                            val match = Regex("^data:([^;]+);base64,(.+)$").matchEntire(url)
-                            if (match != null) {
-                                val mime = match.groupValues[1]
-                                val data = match.groupValues[2]
-                                parts.add(buildJsonObject {
-                                    put("type", "image")
-                                    putJsonObject("source") {
-                                        put("type", "base64")
-                                        put("media_type", mime)
-                                        put("data", data)
+                            when (att) {
+                                is ChatPart.Text -> parts.add(buildJsonObject {
+                                    put("type", "text"); put("text", att.text)
+                                })
+                                is ChatPart.ImageUrl -> {
+                                    val url = att.imageUrl.url
+                                    val match = Regex("^data:([^;]+);base64,(.+)$").matchEntire(url)
+                                    if (match != null) {
+                                        parts.add(buildJsonObject {
+                                            put("type", "image")
+                                            putJsonObject("source") {
+                                                put("type", "base64")
+                                                put("media_type", match.groupValues[1])
+                                                put("data", match.groupValues[2])
+                                            }
+                                        })
                                     }
+                                }
+                                is ChatPart.ToolUse -> parts.add(buildJsonObject {
+                                    put("type", "tool_use")
+                                    put("id", att.id)
+                                    put("name", att.name)
+                                    put("input", att.input)
+                                })
+                                is ChatPart.ToolResultPart -> parts.add(buildJsonObject {
+                                    put("type", "tool_result")
+                                    put("tool_use_id", att.toolUseId)
+                                    put("content", att.content)
+                                    if (att.isError) put("is_error", true)
                                 })
                             }
                         }
@@ -379,22 +531,45 @@ internal fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, Stri
                             parts.forEach { add(it) }
                         })
                     } else {
+                        put("role", m.role)
                         put("content", m.content)
                     }
                 })
             }
         }
+        val finalMsgs = if (effCache) withMessagesCacheControl(msgsJson, cacheTtl) else msgsJson
         val obj = buildJsonObject {
             put("model", modelId)
             put("stream", stream)
             put("max_tokens", effMaxTokens)
             if (effThinking == ThinkingLevel.OFF) put("temperature", effTemp)
-            put("messages", msgsJson)
-            if (!systemText.isNullOrBlank()) put("system", systemText)
-            if (effThinking != ThinkingLevel.OFF) {
+            put("messages", finalMsgs)
+            // 顶层cache_control：让Anthropic自动管理缓存断点
+            if (effCache) put("cache_control", cacheControlOf(cacheTtl))
+            if (!systemText.isNullOrBlank()) {
+                if (effCache) {
+                    put("system", kotlinx.serialization.json.buildJsonArray {
+                        add(buildJsonObject {
+                            put("type", "text")
+                            put("text", systemText)
+                            put("cache_control", cacheControlOf(cacheTtl))
+                        })
+                    })
+                } else {
+                    put("system", systemText)
+                }
+            }
+            if (reasoningOk && effThinking != ThinkingLevel.OFF) {
                 putJsonObject("thinking") {
-                    put("type", "enabled")
-                    put("budget_tokens", effThinking.budgetTokens)
+                    if (effThinking == ThinkingLevel.AUTO) {
+                        // AUTO -> 新API的adaptive，让模型自己决定强度
+                        put("type", "adaptive")
+                        put("display", "summarized")
+                    } else {
+                        // 显式档位 -> 旧API形状，兼容Claude 3.7/4
+                        put("type", "enabled")
+                        put("budget_tokens", effThinking.budgetTokens)
+                    }
                 }
             }
             for ((k, v) in provider.extraBody) {
@@ -405,8 +580,122 @@ internal fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, Stri
                 if (k.isBlank()) continue
                 put(k, coerceToJson(v))
             }
+            if (tools.isNotEmpty()) {
+                put("tools", kotlinx.serialization.json.buildJsonArray {
+                    for ((i, t) in tools.withIndex()) {
+                        val base = buildJsonObject {
+                            put("name", t.name)
+                            put("description", t.description)
+                            put("input_schema", toolSchema(t.inputSchema))
+                        }
+                        // 缓存断点打在最后一个工具上
+                        add(if (effCache && i == tools.lastIndex) {
+                            JsonObject(base + ("cache_control" to cacheControlOf(cacheTtl)))
+                        } else base)
+                    }
+                })
+            }
         }
         return json.encodeToString(JsonObject.serializer(), obj)
+    }
+
+    /** 从baseUrl取出host（容忍没写scheme的写法） */
+    private fun hostOf(baseUrl: String): String {
+        val t = baseUrl.trim()
+        val withScheme = if (t.startsWith("http://") || t.startsWith("https://")) t else "https://$t"
+        return runCatching { java.net.URI(withScheme).host ?: "" }
+            .getOrDefault("")
+            .lowercase()
+    }
+
+    /**
+     * 写推理参数。
+     *
+     * 各家形状并不统一 —— 一律发reasoning_effort是行不通的：服务端会**静默忽略**
+     * 未知参数，用户以为开了思考其实没开。所以按host特判，未命中的才用通用写法。
+     */
+    private fun JsonObjectBuilder.applyReasoning(host: String, level: ThinkingLevel) {
+        // AUTO = 不干预：一个参数都不发，让服务端/模型按自己的默认走。
+        // 这样新对话（thinkingLevel未设置）不会因为塞了服务端不认的参数而400。
+        if (level == ThinkingLevel.AUTO) return
+        val on = level != ThinkingLevel.OFF
+        when {
+            // https://openrouter.ai/docs/use-cases/reasoning-tokens
+            host.endsWith("openrouter.ai") -> put("reasoning", buildJsonObject {
+                when (level) {
+                    ThinkingLevel.OFF -> put("effort", "none")
+                    ThinkingLevel.AUTO -> put("enabled", true)
+                    else -> put("effort", level.effort ?: "medium")
+                }
+            })
+
+            // 阿里云百炼
+            host.endsWith("dashscope.aliyuncs.com") -> {
+                put("enable_thinking", on)
+                if (level != ThinkingLevel.AUTO) put("thinking_budget", level.budgetTokens)
+            }
+
+            // 火山方舟（豆包）
+            host.endsWith("ark.cn-beijing.volces.com") ->
+                put("thinking", buildJsonObject { put("type", if (on) "enabled" else "disabled") })
+
+            // 智谱
+            host.endsWith("open.bigmodel.cn") ->
+                put("thinking", buildJsonObject { put("type", if (on) "enabled" else "disabled") })
+
+            // 书生
+            host.endsWith("chat.intern-ai.org.cn") -> put("thinking_mode", on)
+
+            // 硅基流动
+            host.endsWith("api.siliconflow.cn") -> {
+                put("enable_thinking", on)
+                if (level != ThinkingLevel.AUTO) put("thinking_budget", level.budgetTokens)
+            }
+
+            // DeepSeek
+            host.endsWith("api.deepseek.com") -> {
+                if (on) {
+                    put("thinking", buildJsonObject { put("type", "enabled") })
+                    level.effort?.let { put("reasoning_effort", it) }
+                }
+            }
+
+            // 通用（o系列 / 其他兼容网关）
+            else -> level.effort?.let { put("reasoning_effort", it) }
+        }
+    }
+
+    private fun cacheControlOf(ttl: PromptCacheTtl): JsonObject = buildJsonObject {
+        put("type", "ephemeral")
+        ttl.apiValue?.let { put("ttl", it) }
+    }
+
+    /**
+     * 在倒数第二条「非tool_result」的user消息的最后一个content block上打缓存断点。
+     * 这是Anthropic多轮对话缓存的标准做法：前面的历史被缓存，最后一条保持新鲜。
+     */
+    private fun withMessagesCacheControl(msgs: JsonArray, ttl: PromptCacheTtl): JsonArray {
+        val realUserIdx = msgs.mapIndexedNotNull { i, m ->
+            val o = m as? JsonObject ?: return@mapIndexedNotNull null
+            if (o["role"]?.jsonPrimitive?.contentOrNull != "user") return@mapIndexedNotNull null
+            val arr = o["content"] as? JsonArray ?: return@mapIndexedNotNull null
+            val isToolResult = arr.any {
+                (it as? JsonObject)?.get("type")?.jsonPrimitive?.contentOrNull == "tool_result"
+            }
+            if (isToolResult) null else i
+        }
+        if (realUserIdx.size < 2) return msgs
+        val target = realUserIdx[realUserIdx.size - 2]
+        return JsonArray(msgs.mapIndexed { i, m ->
+            if (i != target) return@mapIndexed m
+            val o = m.jsonObject
+            val arr = o["content"] as? JsonArray ?: return@mapIndexed m
+            val last = arr.lastIndex
+            JsonObject(o + ("content" to JsonArray(arr.mapIndexed { j, b ->
+                if (j == last) JsonObject(b.jsonObject + ("cache_control" to cacheControlOf(ttl)))
+                else b
+            })))
+        })
     }
     private suspend fun listClaudeModels(provider: ProviderConfig): List<String> {
         val fallback = if (claudeNeedsV1Fallback(provider.baseUrl)) {
@@ -444,6 +733,7 @@ internal fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, Stri
     ) {
         var usageInput = 0
         var usageOutput = 0
+        val pendingTools = mutableMapOf<Int, PendingToolCall>()
         while (true) {
             val raw = channel.readUTF8Line() ?: break
             if (raw.isEmpty()) continue
@@ -451,15 +741,23 @@ internal fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, Stri
             if (colon <= 0) continue
             val field = raw.substring(0, colon).trim()
             val data = raw.substring(colon + 1).trim()
-            // 只关心 data: 行；事件的类型在 JSON payload 的 "type" 字段里
-            //（Claude 的 data JSON 自带 type，与 SSE event: 行同名，
-            // 照 RikkaHub ClaudeStreamDecoder 按 payload type 分发）
             if (field != "data" || data.isEmpty() || data == "[DONE]") continue
             val obj = runCatching { json.parseToJsonElement(data).jsonObject }.getOrNull() ?: continue
             when (obj["type"]?.jsonPrimitive?.contentOrNull) {
+                "content_block_start" -> {
+                    val start = obj["content_block"]?.jsonObject ?: continue
+                    val type = start["type"]?.jsonPrimitive?.contentOrNull
+                    val idx = obj["index"]?.jsonPrimitive?.intOrNull ?: continue
+                    if (type == "tool_use") {
+                        val id = start["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                        val name = start["name"]?.jsonPrimitive?.contentOrNull ?: ""
+                        pendingTools[idx] = PendingToolCall(id = id, name = name)
+                    }
+                }
                 "content_block_delta" -> {
                     val delta = obj["delta"]?.jsonObject ?: continue
-                    when (delta["type"]?.jsonPrimitive?.contentOrNull) {
+                    val deltaType = delta["type"]?.jsonPrimitive?.contentOrNull
+                    when (deltaType) {
                         "text_delta" -> {
                             val text = delta["text"]?.jsonPrimitive?.contentOrNull
                             if (!text.isNullOrEmpty()) emit(StreamDelta(text = text))
@@ -467,6 +765,11 @@ internal fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, Stri
                         "thinking_delta" -> {
                             val think = delta["thinking"]?.jsonPrimitive?.contentOrNull
                             if (!think.isNullOrEmpty()) emit(StreamDelta(reasoning = think))
+                        }
+                        "input_json_delta" -> {
+                            val idx = obj["index"]?.jsonPrimitive?.intOrNull ?: continue
+                            val partial = delta["partial_json"]?.jsonPrimitive?.contentOrNull ?: ""
+                            pendingTools[idx]?.args?.append(partial)
                         }
                     }
                 }
@@ -496,8 +799,12 @@ internal fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, Stri
                     val msg = err?.get("message")?.jsonPrimitive?.contentOrNull ?: obj.toString()
                     throw RuntimeException(msg.take(500))
                 }
-                // hello，EasterEgg文件content.7z密码：2705722903
             }
+        }
+        if (pendingTools.isNotEmpty()) {
+            emit(StreamDelta(toolCalls = pendingTools.values
+                .filter { it.name.isNotBlank() }
+                .map { ToolCallDelta(id = it.id, name = it.name, argumentsJson = it.args.toString()) }))
         }
     }
     private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamDelta>.readClaudeNonStream(
@@ -519,6 +826,13 @@ internal fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, Stri
                 }
                 "thinking" -> bObj["thinking"]?.jsonPrimitive?.contentOrNull?.let {
                     if (it.isNotEmpty()) emit(StreamDelta(reasoning = it))
+                }
+                "tool_use" -> {
+                    val id = bObj["id"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val name = bObj["name"]?.jsonPrimitive?.contentOrNull ?: ""
+                    val input = bObj["input"] ?: kotlinx.serialization.json.JsonObject(emptyMap())
+                    val argsJson = input.toString()
+                    emit(StreamDelta(toolCalls = listOf(ToolCallDelta(id, name, argsJson))))
                 }
             }
         }

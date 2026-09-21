@@ -23,6 +23,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Extension
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Storage
@@ -76,9 +78,12 @@ fun SettingsScreen(
     onOpenSkills: () -> Unit,
     onOpenUserProfile: () -> Unit,
     onOpenAbout: () -> Unit,
-    // 外部传入的滚动状态（AppRoot 用 rememberSaveable 持有，跳转到关于再返回时保留位置）
+    onOpenWorkspace: () -> Unit = {},
+    onOpenMcp: () -> Unit = {},
+    // 外部传入的滚动状态（AppRoot用rememberSaveable持有，跳转到关于再返回时保留位置）
     scrollState: ScrollState? = null
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var system by rememberSaveable { mutableStateOf(settings.systemPrompt) }
     var temperature by rememberSaveable { mutableStateOf(settings.temperature) }
     val stream = settings.stream
@@ -100,14 +105,13 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                // 用 AppRoot 传入的 ScrollState（如果提供），导航到关于页再返回时滚动位置保留
+                // 用AppRoot传入的ScrollState（如果提供），导航到关于页再返回时滚动位置保留
                 .verticalScroll(scrollState ?: rememberScrollState())
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Spacer(Modifier.height(4.dp))
 
-            // Profile
             SectionCard {
                 Row(
                     modifier = Modifier
@@ -136,35 +140,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Skills
-            SectionCard {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onOpenSkills)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Extension, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface)
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(stringResource(R.string.skills),
-                            style = MaterialTheme.typography.titleMedium)
-                        val enabledCount = skills.count { it.enabled }
-                        Text(
-                            if (skills.isEmpty()) stringResource(R.string.skills_subtitle_empty)
-                            else stringResource(R.string.skills_subtitle_count, enabledCount),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Icon(Icons.Default.ChevronRight, contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-
-            // Providers entry
             SectionCard {
                 Row(
                     modifier = Modifier
@@ -188,7 +163,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Assistants entry
             SectionCard {
                 Row(
                     modifier = Modifier
@@ -220,7 +194,6 @@ fun SettingsScreen(
                 }
             }
 
-            // Behavior
             SectionHeader(stringResource(R.string.section_behavior))
             SectionCard {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
@@ -358,39 +331,87 @@ fun SettingsScreen(
                 }
             }
 
+            SectionHeader(stringResource(R.string.section_advanced))
+            SectionCard {
+                // SectionCard是Box：多子元素必须套Column
+                Column {
+                    SettingsNavRow(
+                        icon = Icons.Default.Storage,
+                        title = stringResource(R.string.workspace_title),
+                        subtitle = stringResource(R.string.workspace_hint),
+                        onClick = onOpenWorkspace,
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    SettingsNavRow(
+                        icon = Icons.Default.Hub,
+                        title = stringResource(R.string.mcp_title),
+                        subtitle = stringResource(R.string.mcp_hint),
+                        onClick = onOpenMcp,
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    SettingsNavRow(
+                        icon = Icons.Default.Extension,
+                        title = stringResource(R.string.skills),
+                        subtitle = if (skills.isEmpty()) stringResource(R.string.skills_subtitle_empty)
+                        else stringResource(R.string.skills_subtitle_count, skills.count { it.enabled }),
+                        onClick = onOpenSkills,
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    // 用系统文件管理器直接打开应用私有目录（走本应用的DocumentsProvider）
+                    SettingsNavRow(
+                        icon = Icons.Default.FolderOpen,
+                        title = stringResource(R.string.setting_open_private_dir),
+                        subtitle = stringResource(R.string.setting_open_private_dir_hint),
+                        onClick = {
+                            val ok = com.miniichatNext.carter.AppDataDocumentsProvider.openRoot(context)
+                            if (!ok) {
+                                android.widget.Toast.makeText(
+                                    context,
+                                    context.getString(R.string.setting_open_private_dir_failed),
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        },
+                    )
+                }
+            }
+
             SectionHeader(stringResource(R.string.section_about))
             // 关于入口：从内联展开改成独立页面跳转，关于文本 / 链接 / 版本号
-            // 都在 AboutScreen 里展示，这里只保留一个导航行
+            // 都在AboutScreen里展示，这里只保留一个导航行
             SectionCard {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable(onClick = onOpenAbout)
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            stringResource(R.string.section_about),
-                            style = MaterialTheme.typography.titleMedium
+                // 注意：SectionCard内部是Box（不是Column），多个子元素会互相叠画→必须自己套Column
+                Column {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onOpenAbout)
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Info,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface
                         )
-                        Text(
-                            stringResource(R.string.about_subtitle),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.section_about),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                stringResource(R.string.about_subtitle),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(
+                            Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Icon(
-                        Icons.Default.ChevronRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
 
@@ -610,4 +631,37 @@ private fun AuxModelPickerDialog(
             }
         }
     )
+}
+
+/** 设置页的一行导航项（图标 + 标题 + 副标题 + 箭头）。 */
+@Composable
+private fun SettingsNavRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Icon(
+            Icons.Default.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
 }

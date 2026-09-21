@@ -93,8 +93,8 @@ fun UserProfileScreen(
             )
             TextButton(
                 onClick = {
-                    // 兜底：图片头像若还指向 cacheDir 临时文件（异步转存未完成就保存），
-                    // 同步复制进 filesDir/avatars，避免之后头像失效
+                    // 兜底：图片头像若还指向cacheDir临时文件（异步转存未完成就保存），
+                    // 同步复制进filesDir/avatars，避免之后头像失效
                     val stableAvatar = when (val a = avatar) {
                         is Avatar.Image -> Avatar.Image(
                             com.miniichatNext.carter.data.avatar.AvatarStorage

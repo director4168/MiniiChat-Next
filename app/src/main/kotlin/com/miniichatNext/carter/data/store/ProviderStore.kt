@@ -43,7 +43,26 @@ class ProviderStore(private val context: Context) {
         com.miniichatNext.carter.debug.DebugLog.d(
             "Store", "providers.save count=${list.size} ids=${list.map { it.id }}"
         )
-        val encoded = list.map { it.copy(apiKey = ApiKeyCrypto.encrypt(it.apiKey)) }
+
+        // 解密失败（Keystore密钥丢失或变更）时decrypt会返回空串。若直接回写，
+        // 就会用空值覆盖掉原来的密文 —— 用户只是改个别的设置，API Key就被永久毁掉了。
+        // 所以这里对「新值为空、旧密文非空」的项保留旧密文。
+        val storedById: Map<String, ProviderConfig> = runCatching {
+            val raw = context.providersDataStore.data.first()[key]
+            if (raw.isNullOrBlank()) emptyMap() else decode(raw).associateBy { it.id }
+        }.getOrDefault(emptyMap())
+
+        val encoded = list.map { p ->
+            val previous = storedById[p.id]?.apiKey
+            if (p.apiKey.isEmpty() && !previous.isNullOrEmpty()) {
+                com.miniichatNext.carter.debug.DebugLog.w(
+                    "Store", "providers.save keep stored cipher for id=${p.id} (plaintext empty)"
+                )
+                p.copy(apiKey = previous)
+            } else {
+                p.copy(apiKey = ApiKeyCrypto.encrypt(p.apiKey))
+            }
+        }
         context.providersDataStore.edit { prefs ->
             prefs[key] = json.encodeToString(ListSerializer(ProviderConfig.serializer()), encoded)
         }

@@ -147,7 +147,7 @@ private fun rememberBitmap(path: String?, targetPx: Int): ImageBitmap? {
 /**
  * 采样解码：按最长边不超过[targetPx]计算inSampleSize
  * 原实现直接decodeFile全尺寸图（头像裁剪原图可达12MP/48MB）
- * 低端机上decode返回null或OOM → 头像静默退回首字母
+ * 低端机上decode返回null或OOM →头像静默退回首字母
  */
 private fun decodeSampled(path: String, targetPx: Int): android.graphics.Bitmap? {
     if (targetPx <= 0) return BitmapFactory.decodeFile(path)

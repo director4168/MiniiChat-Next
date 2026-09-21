@@ -19,7 +19,11 @@ import androidx.compose.ui.unit.dp
 import com.miniichatNext.carter.R
 
 @Composable
-fun SettingsTopBar(title: String, onBack: () -> Unit) {
+fun SettingsTopBar(
+    title: String,
+    onBack: () -> Unit,
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
+) {
     Column {
         Row(
             modifier = Modifier
@@ -34,8 +38,11 @@ fun SettingsTopBar(title: String, onBack: () -> Unit) {
                 title,
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.weight(1f)
+                modifier = Modifier.weight(1f),
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
+            actions()
         }
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
     }

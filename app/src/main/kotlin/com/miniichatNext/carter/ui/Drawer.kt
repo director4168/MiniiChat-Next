@@ -104,7 +104,6 @@ fun GlassDrawer(
                 .fillMaxSize()
                 .padding(WindowInsets.statusBars.asPaddingValues())
         ) {
-            // 标头
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -130,7 +129,6 @@ fun GlassDrawer(
                 }
             }
 
-            // 搜索框
             Box(
                 modifier = Modifier
                     .padding(horizontal = 12.dp, vertical = 4.dp)

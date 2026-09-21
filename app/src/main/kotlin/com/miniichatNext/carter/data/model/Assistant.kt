@@ -18,6 +18,10 @@ data class Assistant(
     val backgroundCss: String = "",
     val backgroundOpacity: Float = 1f,
     val enabledSkillIds: List<String> = emptyList(),
+    /** 绑定的工作区id（设置→工作区里创建，可为空 = 不使用工具） */
+    val workspaceId: String? = null,
+    /** 启用哪些全局MCP服务器（存id，配置在「设置→高级功能→ MCP服务」里管理） */
+    val mcpServerIds: Set<String> = emptySet(),
     val createdAt: Long = System.currentTimeMillis()
 ) {
     val hasAvatarImage: Boolean get() = !avatarPath.isNullOrBlank()

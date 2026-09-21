@@ -8,6 +8,8 @@
     <uses-permission
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+    <!-- 内置文件工具需要读写公共存储；Android 11+ 需在系统设置里手动授予“所有文件访问” -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <application
         android:name=".MiniiChatApplication"

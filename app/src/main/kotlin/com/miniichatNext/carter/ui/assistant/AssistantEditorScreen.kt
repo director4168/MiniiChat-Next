@@ -60,6 +60,7 @@ import com.miniichatNext.carter.data.avatar.Avatar
 import com.miniichatNext.carter.data.skills.Skill
 import com.miniichatNext.carter.ui.components.AvatarPicker
 import com.miniichatNext.carter.ui.components.AvatarView
+import com.miniichatNext.carter.ui.components.Select
 import com.miniichatNext.carter.data.avatar.AvatarStorage
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.launch
@@ -70,6 +71,8 @@ fun AssistantEditorScreen(
     initial: Assistant?,
     availableSkills: List<Skill>,
     onCancel: () -> Unit,
+    availableMcpServers: List<com.miniichatNext.carter.data.mcp.McpServerConfig> = emptyList(),
+    availableWorkspaces: List<com.miniichatNext.carter.data.workspace.WorkspaceEntity> = emptyList(),
     onSave: (Assistant) -> Unit,
     onDelete: () -> Unit = {}
 ) {
@@ -84,7 +87,6 @@ fun AssistantEditorScreen(
     var temp by remember(initial?.id) { mutableStateOf(initial?.temperature ?: 0.7f) }
     var backgroundPath by remember(initial?.id) { mutableStateOf(initial?.backgroundPath) }
     var backgroundOpacity by remember(initial?.id) { mutableStateOf(initial?.backgroundOpacity ?: 1f) }
-    // 三种背景模式：默认/图片/CSS
     var backgroundMode by remember(initial?.id) { mutableStateOf(initial?.backgroundMode ?: "default") }
     var backgroundCss by remember(initial?.id) { mutableStateOf(initial?.backgroundCss ?: "") }
     var enabledSkills by remember(initial?.id) {
@@ -92,6 +94,18 @@ fun AssistantEditorScreen(
     }
     var showAvatarPicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
+    // 绑定的工作区（在 设置→工作区 里创建/管理，可绑定多个工作区之一）
+    var workspaceId by remember(initial?.id) { mutableStateOf(initial?.workspaceId) }
+    // 下拉选项：第一项是“不使用工作区”
+    val workspaceOptions = remember(availableWorkspaces) {
+        listOf<com.miniichatNext.carter.data.workspace.WorkspaceEntity?>(null) + availableWorkspaces
+    }
+    val selectedWorkspace = availableWorkspaces.firstOrNull { it.id == workspaceId }
+    // 本助手启用哪些全局MCP服务器（服务器本身在 设置→高级功能→ MCP服务 里管理）
+    var mcpServerIds by remember(initial?.id) {
+        mutableStateOf(initial?.mcpServerIds ?: emptySet<String>())
+    }
+
 
     val bgPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickVisualMedia()
@@ -165,7 +179,9 @@ fun AssistantEditorScreen(
                             backgroundPath = if (backgroundMode == "image") backgroundPath else null,
                             backgroundCss = if (backgroundMode == "css") backgroundCss else "",
                             backgroundOpacity = backgroundOpacity,
-                            enabledSkillIds = validSkillIds.toList()
+                            enabledSkillIds = validSkillIds.toList(),
+                            workspaceId = workspaceId,
+                            mcpServerIds = mcpServerIds
                         )
                     onSave(a)
                 }
@@ -292,7 +308,6 @@ fun AssistantEditorScreen(
 
             SectionLabel(stringResource(R.string.assistant_background))
 
-            // 三种背景模式切换：默认/图片/CSS
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -319,7 +334,7 @@ fun AssistantEditorScreen(
                     selected = backgroundMode == "css",
                     onClick = {
                         backgroundMode = "css"
-                        // 切到css时清掉 image，避免同时存在两个source
+                        // 切到css时清掉image，避免同时存在两个source
                         if (backgroundPath != null) {
                             backgroundPath?.let { AvatarStorage.delete(context, it) }
                             backgroundPath = null
@@ -444,7 +459,6 @@ fun AssistantEditorScreen(
                         }
                     }
                 }
-                // default: 不显示任何控件
                 else -> Unit
             }
 
@@ -490,6 +504,91 @@ fun AssistantEditorScreen(
                                 enabledSkills = if (en) enabledSkills + s.id else enabledSkills - s.id
                             }
                         )
+                    }
+                }
+            }
+
+            // Agent工作区（在 设置→工作区 里创建与管理；下拉选择，与RikkaHub设置页的颜色模式选择同款）
+            FieldBox {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.assistant_workspace_title),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                stringResource(R.string.assistant_workspace_hint),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Select(
+                            options = workspaceOptions,
+                            selectedOption = selectedWorkspace,
+                            onOptionSelected = { workspaceId = it?.id },
+                            optionToString = { it?.name ?: "不使用工作区" },
+                            modifier = Modifier.width(150.dp)
+                        )
+                    }
+                    if (availableWorkspaces.isEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "还没有工作区，去 设置 → 工作区 创建一个",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // MCP服务器（选择全局配置里的哪些对当前助手生效）
+            FieldBox {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Text(
+                        stringResource(R.string.mcp_servers_section),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    if (availableMcpServers.isEmpty()) {
+                        Text(
+                            stringResource(R.string.mcp_none_configured),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        availableMcpServers.forEach { srv ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 2.dp),
+                                verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                            ) {
+                                androidx.compose.material3.Switch(
+                                    checked = srv.id in mcpServerIds,
+                                    onCheckedChange = { on ->
+                                        mcpServerIds = if (on) mcpServerIds + srv.id else mcpServerIds - srv.id
+                                    }
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        srv.name.ifBlank { srv.url },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        srv.url,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -5,7 +5,7 @@
 **一个开源的安卓LLM聊天客户端**  
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.1.0-7F52FF.svg)](https://kotlinlang.org)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.3.21-7F52FF.svg)](https://kotlinlang.org)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-2024.12-4285F4.svg)](https://developer.android.com/jetpack/compose)
 [![minSdk](https://img.shields.io/badge/minSdk-26-7B61FF.svg)](https://developer.android.com)
 [![targetSdk](https://img.shields.io/badge/targetSdk-35-7B61FF.svg)](https://developer.android.com)
@@ -93,6 +93,15 @@ MiniiChat Next主要修改了以下方面：
 - **自动标题**: 在完成第一轮对话后，使用所选的标题辅助模型，自动命名当前对话  
 - **沉浸模式**: 双击空白处沉浸、渐隐（可以用来看背景图片）  
 - **AI气泡**: AI回复的内容也有气泡  
-- **设置**: 辅助模型、助手SKILL等  
+- **设置**: 辅助模型、助手SKILL等
+- **MCP/工具**: 内置文件工具、外部MCP工具调用
+- **工作区**: 支持创建多个独立工作区，每个助手可绑定其中一个  
 - **语言切换**: 优化了语言切换逻辑，切换语言后软件将自动重启与应用语言，原版本需要手动将软件后台划掉才可以应用新语言  
 - ……  
+
+---
+
+## 打赏
+
+您可选择通过 微信/支付宝 向我打赏，这将有助于我对该项目的开发
+<img src="https://director4168.page.gd/DSM.png" alt="打赏收款码">

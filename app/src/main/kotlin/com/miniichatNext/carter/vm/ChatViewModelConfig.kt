@@ -19,6 +19,30 @@ internal fun ChatViewModel.selectModel(providerId: String, model: String) {
     }
 }
 
+/**
+ * 就地修改某个已配置模型的设置
+ *
+ * 只改models列表里已有的那一项；如果这个模型还没被加到服务商配置里（比如刚fetch完还没保存），就自动补一条，否则用户在模型选择页改不动任何东西
+ */
+internal fun ChatViewModel.updateModelConfig(
+    providerId: String,
+    modelId: String,
+    transform: (ModelConfig) -> ModelConfig
+) {
+    if (providerId.isBlank() || modelId.isBlank()) return
+    viewModelScope.launch {
+        val provider = providerStore.snapshot().firstOrNull { it.id == providerId } ?: return@launch
+        val models = provider.models.toMutableList()
+        val idx = models.indexOfFirst { it.modelId == modelId || it.displayName == modelId }
+        if (idx >= 0) {
+            models[idx] = transform(models[idx])
+        } else {
+            models += transform(ModelConfig(modelId = modelId))
+        }
+        providerStore.upsert(provider.copy(models = models))
+    }
+}
+
 internal fun ChatViewModel.selectAssistant(id: String) {
     viewModelScope.launch {
         settingsRepo.update { it.copy(activeAssistantId = id) }
@@ -83,15 +107,18 @@ internal fun ChatViewModel.fetchModels(providerId: String) {
                 _toast.value = getApplication<Application>()
                     .getString(com.miniichatNext.carter.R.string.models_none_returned)
             } else {
+                // 代理/聚合API常返回重名模型；不去重会让modelIds() 出现重复项，
+                // 模型选择器的LazyColumn key冲突直接崩（同类崩溃见挂载重复附件）
+                val incoming = models.distinct()
                 val existingIds = provider.modelIds().toSet()
-                val newConfigs = models.filter { it !in existingIds }
+                val newConfigs = incoming.filter { it !in existingIds }
                     .map { ModelConfig(modelId = it, displayName = it) }
                 val updated = provider.copy(models = provider.models + newConfigs)
                 providerStore.upsert(updated)
                 _toast.value = getApplication<Application>()
                     .getString(
                         com.miniichatNext.carter.R.string.models_fetched,
-                        models.size
+                        incoming.size
                     )
             }
         } catch (e: Exception) {

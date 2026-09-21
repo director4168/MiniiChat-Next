@@ -72,10 +72,10 @@ fun ProviderEditorScreen(
     var providerType by remember(initial?.id) {
         mutableStateOf(initial?.type() ?: com.miniichatNext.carter.data.model.ProviderType.OPENAI)
     }
-    var thinkingLevel by remember(initial?.id) {
-        mutableStateOf(initial?.thinking() ?: com.miniichatNext.carter.data.model.ThinkingLevel.OFF)
+    var promptCache by remember(initial?.id) { mutableStateOf(initial?.promptCache ?: false) }
+    var promptCacheTtl by remember(initial?.id) {
+        mutableStateOf(initial?.cacheTtl() ?: com.miniichatNext.carter.data.model.PromptCacheTtl.FIVE_MINUTES)
     }
-    var maxTokens by remember(initial?.id) { mutableStateOf((initial?.maxTokens ?: 8192).toString()) }
     var headerRows by remember(initial?.id) {
         mutableStateOf<List<Pair<String, String>>>(
             initial?.customHeaders?.map { it.key to it.value } ?: emptyList()
@@ -133,7 +133,7 @@ fun ProviderEditorScreen(
                         name = name.trim(),
                         baseUrl = normalizedUrl,
                         apiKey = apiKey.trim()
-                        // 新建 provider 不预填模型，由 ChatViewModel.fetchModels
+                        // 新建provider不预填模型，由ChatViewModel.fetchModels
                         // 按钮点击后自动拉取（或用户用"手动添加"补）
                     )).copy(
                         name = name.trim(),
@@ -142,10 +142,10 @@ fun ProviderEditorScreen(
                         customHeaders = headers,
                         extraBody = body,
                         providerType = providerType.name,
-                        thinkingLevel = thinkingLevel.name,
-                        maxTokens = maxTokens.toIntOrNull() ?: 8192,
                         chatCompletionsPath = chatCompletionsPath.trim().ifBlank { "/chat/completions" },
-                        useResponseApi = useResponseApi
+                        useResponseApi = useResponseApi,
+                        promptCache = promptCache,
+                        promptCacheTtl = promptCacheTtl.name
                     )
                     onSave(p)
                 }
@@ -204,59 +204,60 @@ fun ProviderEditorScreen(
                 }
             }
 
+            // 提示缓存：仅Anthropic协议支持，服务商级默认值（单模型可在加号菜单覆盖）
             if (providerType == com.miniichatNext.carter.data.model.ProviderType.CLAUDE) {
-                FieldSection(stringResource(R.string.thinking_level)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant)
-                            .padding(3.dp)
-                    ) {
-                        com.miniichatNext.carter.data.model.ThinkingLevel.entries.forEach { lvl ->
-                            val selected = thinkingLevel == lvl
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(
-                                        if (selected) MaterialTheme.colorScheme.surface
-                                        else androidx.compose.ui.graphics.Color.Transparent
+                FieldSection(stringResource(R.string.prompt_cache)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.prompt_cache_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = promptCache,
+                            onCheckedChange = { promptCache = it }
+                        )
+                    }
+                    if (promptCache) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant)
+                                .padding(3.dp)
+                        ) {
+                            com.miniichatNext.carter.data.model.PromptCacheTtl.entries.forEach { ttl ->
+                                val selected = promptCacheTtl == ttl
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (selected) MaterialTheme.colorScheme.surface
+                                            else androidx.compose.ui.graphics.Color.Transparent
+                                        )
+                                        .clickable { promptCacheTtl = ttl }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        when (ttl) {
+                                            com.miniichatNext.carter.data.model.PromptCacheTtl.FIVE_MINUTES ->
+                                                stringResource(R.string.prompt_cache_5m)
+                                            com.miniichatNext.carter.data.model.PromptCacheTtl.ONE_HOUR ->
+                                                stringResource(R.string.prompt_cache_1h)
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (selected) MaterialTheme.colorScheme.onSurface
+                                        else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
-                                    .clickable { thinkingLevel = lvl }
-                                    .padding(vertical = 8.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    when (lvl) {
-                                        com.miniichatNext.carter.data.model.ThinkingLevel.OFF -> stringResource(R.string.thinking_off)
-                                        com.miniichatNext.carter.data.model.ThinkingLevel.LOW -> stringResource(R.string.thinking_low)
-                                        com.miniichatNext.carter.data.model.ThinkingLevel.MEDIUM -> stringResource(R.string.thinking_medium)
-                                        com.miniichatNext.carter.data.model.ThinkingLevel.HIGH -> stringResource(R.string.thinking_high)
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = if (selected) MaterialTheme.colorScheme.onSurface
-                                    else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                }
                             }
                         }
                     }
-                    if (thinkingLevel != com.miniichatNext.carter.data.model.ThinkingLevel.OFF) {
-                        Text(
-                            stringResource(R.string.thinking_budget_label, thinkingLevel.budgetTokens),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(top = 4.dp, start = 4.dp)
-                        )
-                    }
-                }
-
-                FieldSection(stringResource(R.string.max_tokens)) {
-                    EditableValue(
-                        value = maxTokens,
-                        placeholder = "8192",
-                        monospace = true
-                    ) { maxTokens = it }
                 }
             }
 
@@ -370,9 +371,9 @@ fun ProviderEditorScreen(
                                     presetBaseUrl = preset.baseUrl
                                     baseUrl = preset.baseUrl
                                     providerType = preset.type
-                                    // 预设可以自带非标端点路径（如 xAI → /responses），
-                                    // 选中后同步到 Chat Completions 路径字段；用户
-                                    // 在 UI 里清空该字段会回退到默认 /chat/completions
+                                    // 预设可以自带非标端点路径（如xAI → /responses），
+                                    // 选中后同步到Chat Completions路径字段；用户
+                                    // 在UI里清空该字段会回退到默认 /chat/completions
                                     chatCompletionsPath = preset.path
                                     presetSheetOpen = false
                                 }

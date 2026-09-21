@@ -84,7 +84,6 @@ object CrashLogger {
             if (source.isFile) source.inputStream().use { it.copyTo(zip) }
             zip.closeEntry()
         }
-        // 每次分享/发邮件都会生成一份，不设上限会无限堆积（日志打包会收走内容后删除，但从不导出日志的用户会一直攒），所以这里保留最近KEEP_CRASH_ZIPS份
         pruneCrashZips(context, keep = out)
         return out
     }

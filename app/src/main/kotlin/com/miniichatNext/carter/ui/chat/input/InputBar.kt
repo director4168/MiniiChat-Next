@@ -1,6 +1,11 @@
 package com.miniichatNext.carter.ui.chat.input
 
 import android.net.Uri
+import android.widget.Toast
+import com.miniichatNext.carter.util.AttachmentImporter
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -27,10 +32,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
@@ -51,6 +59,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -68,8 +77,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.data.mcp.McpServerConfig
 import com.miniichatNext.carter.data.model.Attachment
 import com.miniichatNext.carter.data.skills.Skill
+import com.miniichatNext.carter.data.workspace.WorkspaceEntity
+import com.miniichatNext.carter.data.workspace.WorkspaceShellStatus
 import com.miniichatNext.carter.util.AttachmentLoader
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -85,6 +97,16 @@ fun InputBar(
     enabledSkillIds: Set<String>,
     onToggleSkill: (String, Boolean) -> Unit,
     onContextCompress: () -> Unit,
+    // 对话级工具开关（与「助手技能」同一套交互：弹窗里逐个开关）
+    workspaces: List<WorkspaceEntity> = emptyList(),
+    effectiveWorkspaceId: String? = null,
+    onPickWorkspace: (String?) -> Unit = {},
+    mcpServers: List<McpServerConfig> = emptyList(),
+    effectiveMcpServerIds: Set<String> = emptySet(),
+    onToggleMcpServer: (String, Boolean) -> Unit = { _, _ -> },
+    onResetToolOverrides: () -> Unit = {},
+    onManageWorkspaces: () -> Unit = {},
+    onManageMcp: () -> Unit = {},
     onSend: () -> Unit,
     onStop: () -> Unit,
     isStreaming: Boolean,
@@ -108,8 +130,9 @@ fun InputBar(
     val ctx = LocalContext.current
     val inputFocus = remember { FocusRequester() }
     var skillSheetOpen by remember { mutableStateOf(false) }
+    var workspaceDialogOpen by remember { mutableStateOf(false) }
+    var mcpDialogOpen by remember { mutableStateOf(false) }
     val imeVisible = WindowInsets.isImeVisible
-    // 二级容器在这些情况下展开
     val expanded = imeVisible || addPanelOpen || candidatesOpen
 
     // 键盘弹出→收起面板（避免面板+键盘同时占屏把内容挤没）
@@ -124,57 +147,69 @@ fun InputBar(
         }
     }
 
-    val pickImage = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val (name, size) = AttachmentLoader.queryNameSize(ctx.contentResolver, uri)
-            if (size in 1..AttachmentLoader.MAX_ATTACHMENT_BYTES || size <= 0) {
-                ctx.contentResolver.runCatching {
-                    takePersistableUriPermission(uri,
-                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                val mime = ctx.contentResolver.getType(uri) ?: "image/jpeg"
-                onAttachmentsChange(attachments + Attachment(
-                    type = "image", uri = uri.toString(),
-                    mimeType = mime, name = name, sizeBytes = size
-                ))
-            } else {
-                android.widget.Toast.makeText(
-                    ctx,
-                    ctx.getString(R.string.attachment_too_large,
-                        AttachmentLoader.MAX_ATTACHMENT_BYTES / 1024 / 1024),
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
-            }
+    // 附件导入逻辑（suspend函数），两个picker launcher都调用它
+    // 不能在lambda里直接调rememberCoroutineScope() —— 它是 @Composable，
+    // 普通lambda没有 @Composable 上下文。所以把scope提到composable顶层，
+    // launcher callback里scope.launch { ... } 启动协程。
+    val importScope = rememberCoroutineScope()
+    suspend fun doImport(picked: List<Uri>) {
+        val result = withContext(Dispatchers.IO) {
+            AttachmentImporter.importAll(
+                context = ctx,
+                uris = picked,
+                existingHashes = attachments.mapNotNull { it.sha256.takeIf { h -> h.isNotBlank() } }.toSet(),
+            )
         }
+        val msg = buildList {
+            if (result.added.isNotEmpty()) {
+                add(ctx.getString(R.string.attachment_added, result.added.size))
+            }
+            if (result.skippedTooLarge.isNotEmpty()) {
+                add(ctx.getString(
+                    R.string.attachment_too_large,
+                    AttachmentLoader.MAX_ATTACHMENT_BYTES / 1024 / 1024
+                ) + "（${result.skippedTooLarge.size} 个）")
+            }
+            if (result.skippedFailed.isNotEmpty()) {
+                add(ctx.getString(R.string.attachment_import_failed,
+                    result.skippedFailed.size))
+            }
+            if (result.dedupedAgainstExisting.isNotEmpty()) {
+                add(ctx.getString(R.string.attachment_duplicate,
+                    result.dedupedAgainstExisting.size))
+            }
+        }.joinToString("；")
+        if (msg.isNotBlank()) {
+            Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+        }
+        if (result.added.isNotEmpty()) {
+                    // 图片不截断（压缩后整张发出）—— 这里只提示实际发出去的大小，不再提"只发前N KB"
+                    val biggest = result.added.maxByOrNull { it.sizeBytes }
+                    if (biggest != null && biggest.type == "image" && biggest.sizeBytes > 2L * 1024 * 1024) {
+                        Toast.makeText(
+                            ctx,
+                            ctx.getString(
+                                R.string.attachment_large_inline_hint,
+                                AttachmentLoader.formatBytes(biggest.sizeBytes)
+                            ),
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                    onAttachmentsChange(attachments + result.added)
+                }
     }
-    val pickFile = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val (name, size) = AttachmentLoader.queryNameSize(ctx.contentResolver, uri)
-            if (size in 1..AttachmentLoader.MAX_ATTACHMENT_BYTES || size <= 0) {
-                ctx.contentResolver.runCatching {
-                    takePersistableUriPermission(uri,
-                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                val mime = ctx.contentResolver.getType(uri) ?: "application/octet-stream"
-                val isImage = mime.startsWith("image/")
-                onAttachmentsChange(attachments + Attachment(
-                    type = if (isImage) "image" else "file",
-                    uri = uri.toString(),
-                    mimeType = mime, name = name, sizeBytes = size
-                ))
-            } else {
-                android.widget.Toast.makeText(
-                    ctx,
-                    ctx.getString(R.string.attachment_too_large,
-                        AttachmentLoader.MAX_ATTACHMENT_BYTES / 1024 / 1024),
-                    android.widget.Toast.LENGTH_LONG
-                ).show()
-            }
-        }
+
+    // 多选图片：系统照片选择器（自带HEIC→JPEG兼容）
+    val pickImages = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) importScope.launch { doImport(uris) }
+    }
+    // 多选任意文件
+    val pickFiles = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris: List<Uri> ->
+        if (uris.isNotEmpty()) importScope.launch { doImport(uris) }
     }
 
     Column(
@@ -196,7 +231,9 @@ fun InputBar(
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                items(attachments, key = { it.uri }) { att ->
+                // key用Attachment自带的uuid id —— 同一个物理文件被不同picker/ContentProvider
+                // 暴露可能产生不同的uri字符串，dedupe用精确字符串匹配抓不住，uri当key会崩
+                items(attachments, key = { att -> att.id }) { att ->
                     AttachmentChip(att = att, onRemove = {
                         onAttachmentsChange(attachments - att)
                     })
@@ -210,9 +247,7 @@ fun InputBar(
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.Top
         ) {
-            // 模型选择
             Box(
-                // 顶部让出容器内边距(8dp)+首行定高36dp，使圆球中心与输入框中心水平对齐
                 modifier = Modifier
                     .padding(top = 8.dp)
                     .size(36.dp)
@@ -230,7 +265,6 @@ fun InputBar(
             }
             Spacer(Modifier.width(6.dp))
 
-            // 输入容器
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -238,7 +272,6 @@ fun InputBar(
                     .background(MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                    // 第一行文本；未展开第二行时候选回复/加号内联在右侧
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(
                             modifier = Modifier
@@ -299,7 +332,6 @@ fun InputBar(
                         }
                     }
 
-                    // 第二行键盘弹出/面板展开时出现
                     AnimatedVisibility(
                         visible = expanded,
                         enter = expandVertically(expandFrom = Alignment.Top) +
@@ -317,7 +349,7 @@ fun InputBar(
                                 icon = Icons.Default.Image,
                                 contentDescription = stringResource(R.string.attach_image),
                                 enabled = enabled,
-                                onClick = { pickImage.launch("image/*") }
+                                onClick = { pickImages.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }
                             )
                             Spacer(Modifier.weight(1f))
                             IconActionPainter(
@@ -350,7 +382,6 @@ fun InputBar(
                 }
             }
             Spacer(Modifier.width(6.dp))
-            // 发送/停止（保持在容器外）
             val canSend = (value.trim().isNotEmpty() || attachments.isNotEmpty())
                 && !isStreaming && enabled
             val sendBg = when {
@@ -396,14 +427,19 @@ fun InputBar(
                 fadeOut(animationSpec = androidx.compose.animation.core.tween(140))
         ) {
             AddActionPanel(
-                onPickImage = { pickImage.launch("image/*") },
-                onPickFile = { pickFile.launch("*/*") },
+                onPickImage = {
+                    pickImages.launch(androidx.activity.result.PickVisualMediaRequest(
+                        ActivityResultContracts.PickVisualMedia.ImageOnly
+                    ))
+                },
+                onPickFile = { pickFiles.launch("*/*") },
                 onCompress = onContextCompress,
-                onSkills = { skillSheetOpen = true }
+                onSkills = { skillSheetOpen = true },
+                onWorkspace = { workspaceDialogOpen = true },
+                onMcp = { mcpDialogOpen = true },
             )
         }
 
-        // 候选回复面板
         AnimatedVisibility(
             visible = candidatesOpen && candidatesPanel != null,
             enter = expandVertically(expandFrom = Alignment.Bottom) +
@@ -465,4 +501,146 @@ fun InputBar(
             }
         )
     }
+
+    // 工作区：对话级选择（与「助手技能」一致的弹窗开关）
+    if (workspaceDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { workspaceDialogOpen = false },
+            title = { Text("工作区") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        "选择本次对话使用的工作区；都不选则本次对话不向模型提供工作区工具。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.heightIn(min = 8.dp))
+                    if (workspaces.isEmpty()) {
+                        Text(
+                            "还没有工作区，点右下角“管理”去创建",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        workspaces.forEach { ws ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(ws.name, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        workspaceStatusLabel(ws.shellStatus),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Switch(
+                                    checked = ws.id == effectiveWorkspaceId,
+                                    onCheckedChange = { on -> onPickWorkspace(if (on) ws.id else null) }
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { workspaceDialogOpen = false }) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    workspaceDialogOpen = false
+                    onManageWorkspaces()
+                }) { Text("管理") }
+            }
+        )
+    }
+
+    // MCP：对话级开关（与「助手技能」一致的弹窗开关）
+    if (mcpDialogOpen) {
+        AlertDialog(
+            onDismissRequest = { mcpDialogOpen = false },
+            title = { Text("MCP 服务") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 380.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        "选择本次对话启用的 MCP 服务；关闭后本次对话不再向模型提供该服务的工具。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.heightIn(min = 8.dp))
+                    if (mcpServers.isEmpty()) {
+                        Text(
+                            "还没有配置 MCP 服务，点右下角“管理”去添加",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    } else {
+                        mcpServers.forEach { srv ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        srv.name.ifBlank { srv.url },
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        srv.url,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                Switch(
+                                    checked = srv.id in effectiveMcpServerIds,
+                                    onCheckedChange = { on -> onToggleMcpServer(srv.id, on) }
+                                )
+                            }
+                        }
+                        Spacer(Modifier.heightIn(min = 4.dp))
+                        TextButton(onClick = onResetToolOverrides) {
+                            Text("恢复为跟随助手设置")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { mcpDialogOpen = false }) {
+                    Text("确定")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    mcpDialogOpen = false
+                    onManageMcp()
+                }) { Text("管理") }
+            }
+        )
+    }
+}
+
+private fun workspaceStatusLabel(status: String): String = when (status) {
+    WorkspaceShellStatus.READY.name -> "环境已就绪"
+    WorkspaceShellStatus.INSTALLING.name -> "正在安装"
+    WorkspaceShellStatus.BROKEN.name -> "环境损坏"
+    else -> "未安装 Rootfs"
 }

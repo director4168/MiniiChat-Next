@@ -1,6 +1,28 @@
 [versions]
-agp = "8.13.0"
-kotlin = "2.1.0"
+# AGP 版本决定内嵌的 R8 版本，而 R8 决定能读懂哪个版本的 Kotlin 元数据。
+# 三者是硬绑定的，动一个就得核对另两个：
+#
+#   AGP 8.13.0 → R8 8.13.6   → 只支持到 Kotlin 2.1
+#   AGP 8.13.2 → R8 8.13.19  → 只支持到 Kotlin 2.3   ← 当前
+#   Kotlin 2.4 → 需要 R8 9.1.x，AGP 8.13.x 做不到（得升 AGP 9.x 或覆盖 R8）
+#
+# （AGP 把 R8 内嵌在 com.android.tools.build:builder 的 jar 里，不是独立依赖。
+#   实测：unzip -p builder-8.13.0.jar | strings | grep "R8 version" → 8.13.6
+#         unzip -p builder-8.13.2.jar | strings | grep "R8 version" → 8.13.19）
+#
+# 症状对照：R8 版本不够时，release 构建会刷几百行
+#   "WARNING: R8: An error occurred when parsing kotlin metadata"
+# 警告本身不致命，但 full mode 下会剥离/重写 @kotlin.Metadata，解析失败时
+# 重写可能出错，而 Ktor / kotlinx.serialization / MCP SDK 都依赖元数据。
+#
+# 想升 Kotlin 2.4+：必须同时升 AGP 到 9.x，或用 settings.gradle.kts 的
+#   pluginManagement { buildscript { classpath("com.android.tools:r8:X") } }
+# 覆盖 R8（注意官方表里的 "9.1.29" 在 Google Maven 上不存在，照抄会 CONFIGURE FAILED）。
+agp = "8.13.2"
+# Kotlin 版本上限由上面的 AGP 决定：AGP 8.13.2 内嵌 R8 8.13.19，
+# 官方表里对应 Kotlin 2.3，所以 2.3.x 是上限（当前 2.3.21 = 2.3.x 最新）。
+# ⚠️ 若把 AGP 改回 8.13.0/8.13.1（R8 8.13.6），Kotlin 也必须退回 2.1.x。
+kotlin = "2.3.21"
 
 # AndroidX
 coreKtx = "1.13.1"
@@ -12,7 +34,13 @@ datastore = "1.1.1"
 composeBom = "2024.12.01"
 
 # Ktor / kotlinx
-ktor = "2.3.12"
+# ⚠️ Ktor 必须整族同一个版本 —— 所有 ktor-* 模块都用这个 ref，别再单独写死版本。
+#
+# 历史坑（已随 MCP SDK 一并移除）：MCP SDK 只声明了 ktor-client-core 而没声明
+# ktor-client-okhttp，导致 core/引擎版本撕裂 → NoClassDefFoundError: HttpTimeout。
+# 现在 MCP 走纯 JDK HttpURLConnection 客户端，Ktor 只服务 LLM 请求。
+# app/build.gradle.kts 里仍保留一道 resolutionStrategy 强制对齐，双保险。
+ktor = "3.4.3"
 
 # 头像裁剪 (照搬 RikkaHub CropLauncher)
 ucrop = "2.2.11-native"
@@ -42,6 +70,9 @@ androidx-compose-foundation              = { group = "androidx.compose.foundatio
 
 androidx-datastore-preferences           = { group = "androidx.datastore",            name = "datastore-preferences",    version.ref = "datastore" }
 
+# 测试依赖：JVM 单元测试用 JUnit + kotlinx-serialization（无需 Android SDK）
+junit                                    = { group = "junit",                       name = "junit",                       version = "4.13.2" }
+
 ktor-client-core                        = { group = "io.ktor",                       name = "ktor-client-core",                  version.ref = "ktor" }
 ktor-client-okhttp                      = { group = "io.ktor",                       name = "ktor-client-okhttp",                version.ref = "ktor" }
 ktor-client-content-negotiation         = { group = "io.ktor",                       name = "ktor-client-content-negotiation",   version.ref = "ktor" }
@@ -49,6 +80,19 @@ ktor-client-content-negotiation         = { group = "io.ktor",                  
 # 头像 / 背景裁剪（照搬 RikkaHub CropLauncher 的 UCrop 集成）
 ucrop = { group = "com.github.yalantis", name = "ucrop", version.ref = "ucrop" }
 androidx-appcompat                        = { group = "androidx.appcompat",             name = "appcompat",                    version.ref = "appcompat" }
+androidx-documentfile                    = { group = "androidx.documentfile",         name = "documentfile",                version = "1.0.1" }
+xz                                       = { module = "org.tukaani:xz",               version = "1.12" }
+# ⚠️ MCP SDK 必须 <= 0.14.0 —— 0.15.0 会拖进 kotlin-stdlib 2.4.0，元数据版本超出 R8 能力。
+#
+# 实测各版本的构建用 Kotlin（读 Maven 上的 kotlin-tooling-metadata.json）：
+#     0.12.0 / 0.13.0 / 0.14.0 → Kotlin 2.3.21，依赖 kotlin-stdlib 2.3.21  ✅
+#     0.15.0                  → Kotlin 2.4.0，依赖 kotlin-stdlib 2.4.0    ❌
+# Gradle 版本冲突取最高版，所以只要 0.15.0 在图上，kotlin-stdlib 就被顶到 2.4.0，
+# 项目自己的 Kotlin 插件降到多少都没用 → R8 报 "parsing kotlin metadata" 警告。
+#
+# （其余构件已逐个验过 @kotlin.Metadata 的 mv 值，都在 R8 8.13.19 能力内：
+#   ktor 3.5.1 → 2.3 / serialization 1.11.0 → 2.3 / coroutines 1.11.0 → 2.2 / io-core 0.9.1 → 2.3）
+modelcontextprotocol-kotlin-sdk          = { module = "io.modelcontextprotocol:kotlin-sdk", version = "0.14.0" }
 androidx-transition                       = { group = "androidx.transition",            name = "transition",                   version.ref = "androidxTransition" }
 ktor-serialization-kotlinx-json        = { group = "io.ktor",                       name = "ktor-serialization-kotlinx-json",   version.ref = "ktor" }
 ktor-client-logging                     = { group = "io.ktor",                       name = "ktor-client-logging",               version.ref = "ktor" }

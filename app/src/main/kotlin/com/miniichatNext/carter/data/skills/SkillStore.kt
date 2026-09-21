@@ -125,7 +125,6 @@ class SkillStore(private val context: Context) {
             }.getOrDefault(false)
         }
 
-    // --- 内部结构 ---
 
     private fun readFromDisk(): List<Skill> {
         val dir = skillsRoot()

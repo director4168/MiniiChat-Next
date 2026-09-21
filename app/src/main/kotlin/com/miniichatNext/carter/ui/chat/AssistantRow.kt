@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -65,7 +66,10 @@ internal fun AssistantRow(
     onCommitEdit: () -> Unit = {},
     onCancelEdit: () -> Unit = {},
     onContinue: () -> Unit = {},
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onRegenerateFrom: () -> Unit = {},
+    onApproveTool: ((com.miniichatNext.carter.data.model.ToolInvocation, String?) -> Unit)? = null,
+    onRejectTool: ((com.miniichatNext.carter.data.model.ToolInvocation) -> Unit)? = null
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val clipboard = LocalClipboardManager.current
@@ -120,9 +124,29 @@ internal fun AssistantRow(
                     }
                 }
             }
-        } else if (message.content.isEmpty() && isLastAssistant && isStreaming) {
-            TypingDots()
         } else {
+            // 思考过程 + 工具调用：RikkaHub风格的时间线卡片，放在回复正文之前
+            val clarifications = message.toolInvocations.filter { isClarificationTool(it.toolName) }
+            val steps = buildList {
+                message.reasoningContent?.takeIf { it.isNotBlank() }
+                    ?.let { add(ThoughtStep.Reasoning(it)) }
+                message.toolInvocations
+                    .filterNot { isClarificationTool(it.toolName) }
+                    .forEach { add(ThoughtStep.Tool(it)) }
+            }
+            if (steps.isNotEmpty()) {
+                ChainOfThought(
+                    steps = steps,
+                    onApprove = onApproveTool,
+                    onReject = onRejectTool
+                )
+                Spacer(Modifier.height(8.dp))
+            }
+            clarifications.forEach { inv ->
+                InteractiveClarificationCard(invocation = inv, onApprove = onApproveTool)
+                Spacer(Modifier.height(8.dp))
+            }
+            if (message.content.isNotEmpty()) {
             Box {
                 Box(
                     modifier = Modifier
@@ -141,11 +165,13 @@ internal fun AssistantRow(
                         .padding(horizontal = 14.dp, vertical = 10.dp)
                 ) {
                     SelectionContainer {
-                        MarkdownText(
-                            text = message.content,
-                            color = Color(0xFFECECEC),
-                            modifier = Modifier.fillMaxWidth()
-                        )
+                        Column {
+                            MarkdownText(
+                                text = message.content,
+                                color = Color(0xFFECECEC),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
                     }
                 }
                 androidx.compose.material3.DropdownMenu(
@@ -179,6 +205,14 @@ internal fun AssistantRow(
                         )
                     }
                     androidx.compose.material3.DropdownMenuItem(
+                        text = { Text(stringResource(R.string.regenerate_from_here)) },
+                        leadingIcon = { Icon(Icons.Default.Refresh, null) },
+                        onClick = {
+                            menuOpen = false
+                            onRegenerateFrom()
+                        }
+                    )
+                    androidx.compose.material3.DropdownMenuItem(
                         text = { Text(stringResource(R.string.delete)) },
                         leadingIcon = {
                             Icon(
@@ -193,6 +227,9 @@ internal fun AssistantRow(
                         }
                     )
                 }
+            }
+            } else if (isLastAssistant && isStreaming) {
+                TypingDots()
             }
         }
         // 只有最后一条助手的消息会显示继续和编辑按钮

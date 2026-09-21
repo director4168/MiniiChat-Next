@@ -18,9 +18,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -196,23 +200,75 @@ private fun RenderCodeBlock(
             )
         }
         // 代码块背景固定深色（BubblePalette.codeBg），配套用深色高亮
-        val highlightPalette = HighlightPalette.Dark
-        Box(
+        val codeStyle = MaterialTheme.typography.bodyMedium.copy(
+            fontFamily = FontFamily.Monospace,
+            fontSize = 13.sp
+        )
+        val lines = remember(block.code, block.lang) {
+            highlightCode(block.code, block.lang, HighlightPalette.Dark).lineSlices()
+        }
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 12.dp, vertical = 10.dp)
+                .padding(vertical = 10.dp)
         ) {
-            Text(
-                text = highlightCode(block.code, block.lang, highlightPalette),
-                color = palette.codeFg,
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 13.sp
-                )
-            )
+            // 行号栏：放在横向滚动之外，滚动代码时保持不动
+            Column(
+                modifier = Modifier
+                    .drawBehind {
+                        val x = size.width - 0.5.dp.toPx()
+                        drawLine(
+                            color = palette.outline,
+                            start = Offset(x, 0f),
+                            end = Offset(x, size.height),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                    }
+                    .padding(start = 10.dp, end = 8.dp)
+            ) {
+                lines.forEachIndexed { index, _ ->
+                    Text(
+                        text = "${index + 1}",
+                        style = codeStyle,
+                        color = palette.lineNumberFg,
+                        textAlign = TextAlign.End
+                    )
+                }
+            }
+            Column(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState())
+                    .padding(start = 10.dp, end = 12.dp)
+            ) {
+                lines.forEach { line ->
+                    Text(text = line, style = codeStyle, color = palette.codeFg)
+                }
+            }
         }
     }
+}
+
+/** 把高亮结果按行切开，便于逐行渲染行号（保留每行的span样式） */
+private fun AnnotatedString.lineSlices(): List<AnnotatedString> {
+    val raw = text
+    if (raw.isEmpty()) return listOf(AnnotatedString(""))
+    val out = mutableListOf<AnnotatedString>()
+    var start = 0
+    while (true) {
+        val nl = raw.indexOf('\n', start)
+        val end = if (nl < 0) raw.length else nl
+        val builder = AnnotatedString.Builder().apply { append(raw.substring(start, end)) }
+        spanStyles.forEach { span ->
+            if (span.start < end && span.end > start) {
+                builder.addStyle(span.item, maxOf(span.start, start) - start, minOf(span.end, end) - start)
+            }
+        }
+        out += builder.toAnnotatedString()
+        if (nl < 0) break
+        start = nl + 1
+    }
+    return out
 }
 
 @Composable

@@ -36,7 +36,7 @@ enum class DebugLevel(val label: String) {
 private data class ZipSource(
     val file: File,
     val entryName: String,
-    /** 打包成功后可以删除：旧的崩溃归档 zip（内容已经进导出包了，留着只会堆积） */
+    /** 打包成功后可以删除：旧的崩溃归档zip（内容已经进导出包了，留着只会堆积） */
     val deleteAfterPack: Boolean
 )
 
@@ -46,7 +46,7 @@ object DebugLog {
     private const val MAX_FILE_BYTES = 512 * 1024
     private const val MANIFEST_NAME = "manifest.txt"
 
-    /** 导出 zip 里额外附带的内存缓冲快照文件名（放在logs/下，前缀下划线表示是合成文件） */
+    /** 导出zip里额外附带的内存缓冲快照文件名（放在logs/下，前缀下划线表示是合成文件） */
     private const val SESSION_BUFFER_NAME = "_session_buffer.log"
     private const val SESSION_BUFFER_HEADER =
         "# In-memory session buffer (up to 600 recent lines).\n" +
@@ -74,7 +74,6 @@ object DebugLog {
     var level: DebugLevel = DebugLevel.WARN
         private set
 
-    // ---------- 生命周期 ----------
 
     fun restore(context: Context) {
         appContext = context.applicationContext
@@ -92,7 +91,6 @@ object DebugLog {
         i("DebugLog", "log level changed to " + lvl.name)
     }
 
-    // ---------- 路径 ----------
 
     fun dir(context: Context): File = File(context.filesDir, DIR).apply { mkdirs() }
 
@@ -101,7 +99,6 @@ object DebugLog {
 
     private fun logFileSafe(): File? = appContext?.let { logFile(it) }
 
-    // ---------- 记录 ----------
 
     fun v(tag: String, msg: String) = log(DebugLevel.VERBOSE, tag, msg, null)
     fun d(tag: String, msg: String) = log(DebugLevel.DEBUG, tag, msg, null)
@@ -131,14 +128,29 @@ object DebugLog {
         val f = logFileSafe() ?: return
         synchronized(fileLock) {
             runCatching {
-                // 超过上限就清空重来，避免日志无限膨胀
-                if (f.length() > MAX_FILE_BYTES) f.writeText("")
+                trimIfOversized(f)
                 f.appendText(line + "\n")
             }
         }
     }
 
-    // ---------- 读取/导出 ----------
+    /**
+     * 超过上限时只丢掉前半段，保留最近的日志。
+     *
+     * 不能整个清空：排查问题时最需要的恰恰是崩溃前那一段，
+     * 清空会把唯一的线索一起删掉。
+     */
+    private fun trimIfOversized(f: File) {
+        if (f.length() <= MAX_FILE_BYTES) return
+        runCatching {
+            val text = f.readText()
+            val keep = MAX_FILE_BYTES / 2
+            if (text.length > keep) {
+                f.writeText("...[trimmed ${text.length - keep} chars]...\n" + text.takeLast(keep))
+            }
+        }
+    }
+
 
     fun bufferText(): String = synchronized(buffer) { buffer.joinToString("\n") }
 
@@ -147,7 +159,7 @@ object DebugLog {
     fun appendDirectSync(context: Context, levelName: String, tag: String, text: String) {
         runCatching {
             val f = logFile(context)
-            if (f.length() > MAX_FILE_BYTES) f.writeText("")
+            trimIfOversized(f)
             f.appendText(
                 timeFormat.format(Date()) + " " + levelName + "/" + tag + " " + text + "\n"
             )
@@ -158,7 +170,7 @@ object DebugLog {
         withContext(Dispatchers.IO) {
             mutex.withLock {
                 val f = logFile(context)
-                // 先加锁把内容快照下来，避免和 appendToDisk 争先读到写了一半的行
+                // 先加锁把内容快照下来，避免和appendToDisk争先读到写了一半的行
                 val snapshot = synchronized(fileLock) {
                     runCatching { if (f.isFile) f.readBytes() else null }.getOrNull()
                 }
@@ -188,12 +200,12 @@ object DebugLog {
      *
      * 先在cacheDir/shared生成完整zip，再整体拷贝到目标位置，这样即使写目标中途失败，也不会在下载目录里留下只有前几个条目的半包
      *
-     * @return 展示用的保存位置（成功）或 null（失败）
+     * @return 展示用的保存位置（成功）或null（失败）
      */
     fun exportZipToDownloads(context: Context): String? {
         val name = exportFileName()
 
-        // 先在cacheDir生成完整 zip（写日志zip和清理已归档的崩溃zip都在这一步完成）
+        // 先在cacheDir生成完整zip（写日志zip和清理已归档的崩溃zip都在这一步完成）
         val staging = File(File(context.cacheDir, "shared").apply { mkdirs() }, name)
         val staged = runCatching {
             staging.outputStream().use { writeLogZip(context, it) }

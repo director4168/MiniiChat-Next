@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Email
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -28,10 +29,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
@@ -43,6 +48,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
@@ -61,11 +67,10 @@ import com.miniichatNext.carter.ui.components.SectionHeader
 fun AboutScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    // 运行时取版本号
+    var showDonateDialog by remember { mutableStateOf(false) }
     val versionName = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName
     }.getOrDefault("?")
-    // versionCode一并展示
     val versionCode = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).versionCode
     }.getOrDefault(0L)
@@ -296,7 +301,21 @@ fun AboutScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
                             }
                         }
                     )
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        thickness = 0.5.dp
+                    )
+                    AboutActionRow(
+                        icon = Icons.Default.Favorite,
+                        title = stringResource(R.string.about_donate_title),
+                        subtitle = stringResource(R.string.about_donate_subtitle),
+                        onClick = { showDonateDialog = true },
+                    )
                 }
+            }
+
+            if (showDonateDialog) {
+                DonateDialog(onDismiss = { showDonateDialog = false })
             }
 
             Spacer(Modifier.height(24.dp))
@@ -306,6 +325,118 @@ fun AboutScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
 
 /** 邮箱 */
 private const val MAIL_ADDRESS = "director4168@163.com"
+
+/**
+ * 打赏弹窗：显示DSM.png + "保存" 按钮。
+ *
+ * 保存路径：Android 10+ 走MediaStore.Downloads（无需WRITE_EXTERNAL_STORAGE权限）；
+ * 9及以下走系统下载目录（需要WRITE_EXTERNAL_STORAGE，已在manifest声明）。
+ */
+@Composable
+private fun DonateDialog(onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val res = context.resources
+    val bitmap = remember {
+        runCatching {
+            android.graphics.BitmapFactory.decodeStream(res.assets.open("DSM.png"))
+        }.getOrNull()
+    }
+    var saving by remember { mutableStateOf(false) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                stringResource(R.string.about_donate_title),
+                style = MaterialTheme.typography.titleLarge
+            )
+        },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                if (bitmap != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = stringResource(R.string.about_donate_title),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 8.dp)
+                    )
+                } else {
+                    Text(
+                        "DSM.png",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(R.string.about_donate_message),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                enabled = bitmap != null && !saving,
+                onClick = {
+                    saving = true
+                    val bmp = bitmap
+                    if (bmp != null) {
+                        scope.launch {
+                            val result = withContext(Dispatchers.IO) {
+                                runCatching { savePngToDownloads(context, bmp) }
+                            }
+                            saving = false
+                            val msg = result.fold(
+                                onSuccess = { path ->
+                                    context.getString(R.string.about_donate_saved) + "\n" + path
+                                },
+                                onFailure = { e ->
+                                    context.getString(R.string.about_donate_save_failed, e.message ?: "")
+                                }
+                            )
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            ) { Text(stringResource(R.string.about_donate_save)) }
+        },
+        dismissButton = {
+            androidx.compose.material3.TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.cancel))
+            }
+        }
+    )
+}
+
+private fun savePngToDownloads(context: Context, bitmap: android.graphics.Bitmap): String {
+    val name = "MiniiChat-Next-donate-qr.png"
+    return if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+        val resolver = context.contentResolver
+        val values = android.content.ContentValues().apply {
+            put(android.provider.MediaStore.MediaColumns.DISPLAY_NAME, name)
+            put(android.provider.MediaStore.MediaColumns.MIME_TYPE, "image/png")
+            put(android.provider.MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+            put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val uri = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: error("MediaStore insert returned null")
+        resolver.openOutputStream(uri).use { out ->
+            checkNotNull(out) { "Cannot open output stream" }.use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        }
+        values.clear()
+        values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0)
+        resolver.update(uri, values, null, null)
+        android.os.Environment.DIRECTORY_DOWNLOADS + "/" + name
+    } else {
+        val dir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+        if (!dir.exists()) dir.mkdirs()
+        val file = java.io.File(dir, name)
+        file.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        file.absolutePath
+    }
+}
 
 @Composable
 private fun AboutActionRow(
