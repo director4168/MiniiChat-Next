@@ -10,7 +10,10 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
@@ -24,7 +27,7 @@ import androidx.core.view.WindowCompat
  * Clean iOS-style flat theme.
  * Pure white / near-black backgrounds, hairline dividers, accent purple for primary.
  */
-private val LightColors = lightColorScheme(
+internal val DefaultLightColors = lightColorScheme(
     primary = Color(0xFF6E5CFF),
     onPrimary = Color.White,
     primaryContainer = Color(0xFFEDE9FF),
@@ -45,7 +48,7 @@ private val LightColors = lightColorScheme(
 
 // Tightened dark scheme: lighter onSurfaceVariant for legibility, slightly bolder
 // surface contrast so subtle UI (chips, dividers, hint text) reads cleanly.
-private val DarkColors = darkColorScheme(
+internal val DefaultDarkColors = darkColorScheme(
     primary = Color(0xFFB1A4FF),
     onPrimary = Color(0xFF15093D),
     primaryContainer = Color(0xFF3826A8),
@@ -72,6 +75,9 @@ private val AppTypography = Typography(
     labelLarge = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Medium),
     labelSmall = TextStyle(fontSize = 11.sp, fontWeight = FontWeight.Medium, letterSpacing = 0.4.sp)
 )
+
+/** 当前是否为深色主题（跟随themeMode的实际结果，而非系统深浅） */
+val LocalDarkMode = staticCompositionLocalOf { false }
 
 @Composable
 fun MiniiChatTheme(
@@ -107,8 +113,16 @@ fun MiniiChatTheme(
                 )
             } else dyn
         }
-        darkTheme -> DarkColors
-        else -> LightColors
+        darkTheme -> DefaultDarkColors
+        else -> DefaultLightColors
+    }
+    // Debug配色覆盖：AppThemeOverrides.version变化时读取最新覆盖应用（保存后立即全局生效）
+    val overrideVersion = com.miniichatNext.carter.util.AppThemeOverrides.version.intValue
+    val themeCtx = LocalContext.current
+    val colorsWithOverrides = remember(colors, overrideVersion, themeCtx) {
+        val overrides = com.miniichatNext.carter.util.AppThemeOverrides.load(themeCtx)
+        val mode = if (darkTheme) "dark" else "light"
+        com.miniichatNext.carter.util.AppThemeOverrides.apply(colors, overrides[mode].orEmpty())
     }
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -120,9 +134,11 @@ fun MiniiChatTheme(
             WindowCompat.getInsetsController(window, view).isAppearanceLightNavigationBars = !darkTheme
         }
     }
-    MaterialTheme(
-        colorScheme = colors,
-        typography = AppTypography,
-        content = content
-    )
+    CompositionLocalProvider(LocalDarkMode provides darkTheme) {
+        MaterialTheme(
+            colorScheme = colorsWithOverrides,
+            typography = AppTypography,
+            content = content
+        )
+    }
 }

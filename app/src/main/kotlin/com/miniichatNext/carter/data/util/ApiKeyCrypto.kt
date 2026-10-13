@@ -1,4 +1,4 @@
-package com.miniichatNext.carter.util
+package com.miniichatNext.carter.data.util
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties

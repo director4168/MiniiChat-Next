@@ -1,5 +1,6 @@
 package com.miniichatNext.carter.debug.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -24,8 +25,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,6 +39,7 @@ import com.miniichatNext.carter.debug.DebugLog
 @Composable
 fun CrashReportScreen(onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
     val crashText = remember { CrashLogger.readLatestCrash(context) }
 
     Column(
@@ -66,6 +70,10 @@ fun CrashReportScreen(onDismiss: () -> Unit) {
         Spacer(Modifier.height(8.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = {
+                clipboard.setText(AnnotatedString(crashText))
+                Toast.makeText(context, context.getString(R.string.copied), Toast.LENGTH_SHORT).show()
+            }) { Text(stringResource(R.string.crash_copy)) }
             TextButton(onClick = {
                 runCatching {
                     shareZip(

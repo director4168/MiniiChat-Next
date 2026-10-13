@@ -44,11 +44,28 @@ class MainActivity : ComponentActivity() {
         return base.createConfigurationContext(cfg)
     }
 
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra("open_debug", false)) {
+            com.miniichatNext.carter.debug.DebugNavRequest.openDebug.value = true
+        }
+        if (intent.getBooleanExtra("open_debug_panel", false)) {
+            com.miniichatNext.carter.debug.DebugNavRequest.openPanel.value = true
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         com.miniichatNext.carter.debug.DebugLog.i(
             "Activity", "MainActivity.onCreate (savedState=${savedInstanceState != null})"
         )
+        // 调试球"打开Debug页"：从悬浮球启动时带上extra
+        if (intent?.getBooleanExtra("open_debug", false) == true) {
+            com.miniichatNext.carter.debug.DebugNavRequest.openDebug.value = true
+        }
+        if (intent?.getBooleanExtra("open_debug_panel", false) == true) {
+            com.miniichatNext.carter.debug.DebugNavRequest.openPanel.value = true
+        }
         enableEdgeToEdge()
         setContent {
             val s by vm.settings.collectAsState()

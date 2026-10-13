@@ -48,6 +48,7 @@ import com.miniichatNext.carter.ui.components.AvatarView
 import com.miniichatNext.carter.util.newId
 import com.miniichatNext.carter.ui.components.SettingsTopBar
 import com.miniichatNext.carter.ui.chat.AssistantRow
+import com.miniichatNext.carter.ui.markdown.MarkdownText
 
 @Composable
 fun AssistantsScreen(
@@ -119,23 +120,15 @@ fun AssistantsScreen(
     }
 
     deleteTarget?.let { target ->
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
-            title = { Text(stringResource(R.string.delete) + " · " + target.name) },
-            text = { Text(stringResource(R.string.assistant_delete_confirm, target.name)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete(target.id)
-                    deleteTarget = null
-                }) {
-                    Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error)
-                }
+        com.miniichatNext.carter.ui.components.ConfirmDeleteDialog(
+            targetName = target.name,
+            typeLabel = stringResource(R.string.item_assistant),
+            bodyText = stringResource(R.string.assistant_delete_confirm, target.name),
+            onConfirm = {
+                onDelete(target.id)
+                deleteTarget = null
             },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
+            onDismiss = { deleteTarget = null },
         )
     }
 }

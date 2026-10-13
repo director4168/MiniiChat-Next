@@ -3,6 +3,8 @@ package com.miniichatNext.carter.vm
 import android.app.Application
 import androidx.lifecycle.viewModelScope
 import com.miniichatNext.carter.data.model.Assistant
+import com.miniichatNext.carter.R
+import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.data.model.ModelConfig
 import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.skills.Skill
@@ -33,11 +35,17 @@ internal fun ChatViewModel.updateModelConfig(
     viewModelScope.launch {
         val provider = providerStore.snapshot().firstOrNull { it.id == providerId } ?: return@launch
         val models = provider.models.toMutableList()
-        val idx = models.indexOfFirst { it.modelId == modelId || it.displayName == modelId }
-        if (idx >= 0) {
-            models[idx] = transform(models[idx])
+        val idx = models.indexOfFirst { it.modelId == modelId }
+        val transformed = transform(
+            if (idx >= 0) models[idx] else ModelConfig(modelId = modelId)
+        )
+        if (transformed.isDefault()) {
+            // 全默认=无覆盖：从列表删除（避免空配置导致ModelChip误高亮）
+            if (idx >= 0) models.removeAt(idx)
+        } else if (idx >= 0) {
+            models[idx] = transformed
         } else {
-            models += transform(ModelConfig(modelId = modelId))
+            models += transformed
         }
         providerStore.upsert(provider.copy(models = models))
     }
@@ -69,30 +77,40 @@ internal fun ChatViewModel.deleteAssistant(id: String) {
 
 internal fun ChatViewModel.upsertProvider(p: ProviderConfig) {
     viewModelScope.launch {
-        providerStore.upsert(p)
-        val all = providerStore.snapshot()
-        if (settings.value.activeProviderId.isBlank() && all.isNotEmpty()) {
-            val target = all.firstOrNull { it.id == p.id } ?: all.first()
-            val firstModel = target.modelIds().firstOrNull() ?: ""
-            settingsRepo.update {
-                it.copy(activeProviderId = target.id, activeModel = firstModel)
+        try {
+            providerStore.upsert(p)
+            val all = providerStore.snapshot()
+            if (settings.value.activeProviderId.isBlank() && all.isNotEmpty()) {
+                val target = all.firstOrNull { it.id == p.id } ?: all.first()
+                val firstModel = target.modelIds().firstOrNull() ?: ""
+                settingsRepo.update {
+                    it.copy(activeProviderId = target.id, activeModel = firstModel)
+                }
             }
+        } catch (t: Throwable) {
+            DebugLog.e("ChatVM", "upsertProvider failed", t)
+            _error.value = getApplication<Application>().getString(R.string.error_generic, t.message ?: "")
         }
     }
 }
 
 internal fun ChatViewModel.deleteProvider(id: String) {
     viewModelScope.launch {
-        providerStore.delete(id)
-        if (settings.value.activeProviderId == id) {
-            val remaining = providerStore.snapshot()
-            val nextProvider = remaining.firstOrNull()
-            settingsRepo.update {
-                it.copy(
-                    activeProviderId = nextProvider?.id ?: "",
-                    activeModel = nextProvider?.modelIds()?.firstOrNull() ?: ""
-                )
+        try {
+            providerStore.delete(id)
+            if (settings.value.activeProviderId == id) {
+                val remaining = providerStore.snapshot()
+                val nextProvider = remaining.firstOrNull()
+                settingsRepo.update {
+                    it.copy(
+                        activeProviderId = nextProvider?.id ?: "",
+                        activeModel = nextProvider?.modelIds()?.firstOrNull() ?: ""
+                    )
+                }
             }
+        } catch (t: Throwable) {
+            DebugLog.e("ChatVM", "deleteProvider failed", t)
+            _error.value = getApplication<Application>().getString(R.string.error_generic, t.message ?: "")
         }
     }
 }
@@ -104,10 +122,10 @@ internal fun ChatViewModel.fetchModels(providerId: String) {
         try {
             val models = client.listModels(provider)
             if (models.isEmpty()) {
-                _toast.value = getApplication<Application>()
-                    .getString(com.miniichatNext.carter.R.string.models_none_returned)
+                _toast.trySend(getApplication<Application>()
+                        .getString(com.miniichatNext.carter.R.string.models_none_returned))
             } else {
-                // 代理/聚合API常返回重名模型；不去重会让modelIds() 出现重复项，
+                // 代理/聚合API常返回重名模型；不去重会让modelIds()出现重复项，
                 // 模型选择器的LazyColumn key冲突直接崩（同类崩溃见挂载重复附件）
                 val incoming = models.distinct()
                 val existingIds = provider.modelIds().toSet()
@@ -115,16 +133,17 @@ internal fun ChatViewModel.fetchModels(providerId: String) {
                     .map { ModelConfig(modelId = it, displayName = it) }
                 val updated = provider.copy(models = provider.models + newConfigs)
                 providerStore.upsert(updated)
-                _toast.value = getApplication<Application>()
-                    .getString(
+                _toast.trySend(getApplication<Application>()
+                        .getString(
                         com.miniichatNext.carter.R.string.models_fetched,
                         incoming.size
-                    )
+                    ))
             }
         } catch (e: Exception) {
             _error.value = getApplication<Application>()
                 .getString(
-                    com.miniichatNext.carter.R.string.error_fetch_models,
+                    R.string.error_fetch_models,
+                    provider.name,
                     e.message ?: ""
                 )
         } finally {
@@ -135,28 +154,38 @@ internal fun ChatViewModel.fetchModels(providerId: String) {
 
 internal fun ChatViewModel.addManualModel(providerId: String, model: String) {
     viewModelScope.launch {
-        val trimmed = model.trim()
-        if (trimmed.isEmpty()) return@launch
-        val provider = providerStore.snapshot().firstOrNull { it.id == providerId } ?: return@launch
-        if (provider.modelIds().contains(trimmed)) return@launch
-        val updated = provider.copy(
-            models = provider.models + ModelConfig(modelId = trimmed, displayName = trimmed)
-        )
-        providerStore.upsert(updated)
+        try {
+            val trimmed = model.trim()
+            if (trimmed.isEmpty()) return@launch
+            val provider = providerStore.snapshot().firstOrNull { it.id == providerId } ?: return@launch
+            if (provider.modelIds().contains(trimmed)) return@launch
+            val updated = provider.copy(
+                models = provider.models + ModelConfig(modelId = trimmed, displayName = trimmed)
+            )
+            providerStore.upsert(updated)
+        } catch (t: Throwable) {
+            DebugLog.e("ChatVM", "addManualModel failed", t)
+            _error.value = getApplication<Application>().getString(R.string.error_generic, t.message ?: "")
+        }
     }
 }
 
 internal fun ChatViewModel.removeModel(providerId: String, model: String) {
     viewModelScope.launch {
-        val provider = providerStore.snapshot().firstOrNull { it.id == providerId } ?: return@launch
-        val updated = provider.copy(
-            models = provider.models.filterNot { it.modelId == model || it.displayName == model }
-        )
-        providerStore.upsert(updated)
-        if (settings.value.activeProviderId == providerId && settings.value.activeModel == model) {
-            settingsRepo.update {
-                it.copy(activeModel = updated.modelIds().firstOrNull() ?: "")
+        try {
+            val provider = providerStore.snapshot().firstOrNull { it.id == providerId } ?: return@launch
+            val updated = provider.copy(
+                models = provider.models.filterNot { it.modelId == model || it.displayName == model }
+            )
+            providerStore.upsert(updated)
+            if (settings.value.activeProviderId == providerId && settings.value.activeModel == model) {
+                settingsRepo.update {
+                    it.copy(activeModel = updated.modelIds().firstOrNull() ?: "")
+                }
             }
+        } catch (t: Throwable) {
+            DebugLog.e("ChatVM", "removeModel failed", t)
+            _error.value = getApplication<Application>().getString(R.string.error_generic, t.message ?: "")
         }
     }
 }

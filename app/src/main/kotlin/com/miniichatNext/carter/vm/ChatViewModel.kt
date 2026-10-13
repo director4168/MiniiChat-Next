@@ -1,6 +1,7 @@
 package com.miniichatNext.carter.vm
 
 import android.app.Application
+import com.miniichatNext.carter.R
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.miniichatNext.carter.api.LlmClient
@@ -10,6 +11,7 @@ import com.miniichatNext.carter.data.store.AssistantStore
 import com.miniichatNext.carter.data.model.Conversation
 import com.miniichatNext.carter.data.store.ConversationStore
 import com.miniichatNext.carter.data.model.ProviderConfig
+import com.miniichatNext.carter.data.model.ToolInvocationState
 import com.miniichatNext.carter.data.store.ProviderStore
 import com.miniichatNext.carter.data.store.SettingsRepository
 import com.miniichatNext.carter.data.skills.Skill
@@ -31,6 +33,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import com.miniichatNext.carter.data.avatar.Avatar
@@ -101,15 +104,49 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     internal val _isStreaming = MutableStateFlow(false)
     val isStreaming: StateFlow<Boolean> = _isStreaming.asStateFlow()
 
+    /** 正在流式生成的对话id（切到别的对话时发送键不该显示为停止键） */
+    internal val _streamingConvId = MutableStateFlow<String?>(null)
+    val streamingConvId: StateFlow<String?> = _streamingConvId.asStateFlow()
+
     internal val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
     /** 正在生成候选词的页码集合（驱动候选回复面板的骨架屏） */
-    internal val _suggestionsGenerating = MutableStateFlow<Set<Int>>(emptySet())
-    val suggestionsGenerating: StateFlow<Set<Int>> = _suggestionsGenerating.asStateFlow()
+    internal val _suggestionsGenerating = MutableStateFlow<Set<String>>(emptySet())
+    private val _pendingManageStorage = MutableStateFlow<String?>(null)
+    val pendingManageStorage: StateFlow<String?> = _pendingManageStorage.asStateFlow()
+    fun requestPermission(toolName: String) { _pendingManageStorage.value = toolName }
+    fun dismissPermissionRequest() { _pendingManageStorage.value = null }
+    val suggestionsGenerating: StateFlow<Set<String>> = _suggestionsGenerating.asStateFlow()
 
-    internal val _toast = MutableStateFlow<String?>(null)
-    val toast: StateFlow<String?> = _toast.asStateFlow()
+    /** Toast队列：Channel保证每条提示按序显示、互不覆盖（同轮多个辅助失败依次弹出） */
+    /** 存在等待用户操作的工具调用（审批/澄清选择）——此期间输入栏按键保持"停止" */
+    internal val _hasPendingTools = MutableStateFlow(false)
+    val hasPendingTools: StateFlow<Boolean> = _hasPendingTools.asStateFlow()
+
+    /** 等待审批/澄清的对话id（busy态按对话隔离） */
+    internal val _pendingConvId = MutableStateFlow<String?>(null)
+    val pendingConvId: StateFlow<String?> = _pendingConvId.asStateFlow()
+
+    internal val _toast = kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.BUFFERED)
+    val toast = _toast.receiveAsFlow()
+
+    /** 底部堆叠toast栈：新条目追加到末尾（视觉底部），旧的被顶上去；每条由UI层独立计时移除 */
+    internal val _toastItems = MutableStateFlow<List<com.miniichatNext.carter.data.model.ToastItem>>(emptyList())
+    val toastItems: StateFlow<List<com.miniichatNext.carter.data.model.ToastItem>> = _toastItems.asStateFlow()
+    fun pushToast(item: com.miniichatNext.carter.data.model.ToastItem) {
+        _toastItems.value = _toastItems.value + item
+    }
+    fun removeToast(id: String) {
+        _toastItems.value = _toastItems.value.filterNot { it.id == id }
+    }
+
+    /** OCR未配置提示只弹一次（进程级防抖，避免每条带图消息都弹） */
+    internal var ocrNotConfiguredWarned = false
+
+    /** 辅助模型错误队列（kind: title/suggestion/compress/ocr_not_set/…）：toast按钮变"管理"跳设置 */
+    internal val _auxError = kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.BUFFERED)
+    val auxError = _auxError.receiveAsFlow()
 
     internal val _fetchingModelsFor = MutableStateFlow<String?>(null)
     val fetchingModelsFor: StateFlow<String?> = _fetchingModelsFor.asStateFlow()
@@ -135,9 +172,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
      * 清理不再被引用的头像文件。
      *
      * 两个前提都必须满足，否则会误删用户正在用的头像：
-     *  1) 助手列表真正加载完（非空）
-     *  2) 用户资料真正加载完 —— `userProfile` 是StateFlow，初值是空UserProfile()，
-     *     直接读 .value会拿不到头像路径，把它当孤儿删掉。所以走store.snapshot()。
+     * 1)助手列表真正加载完（非空）
+     * 2)用户资料真正加载完——`userProfile`是StateFlow，初值是空UserProfile()，
+     * 直接读.value会拿不到头像路径，把它当孤儿删掉。所以走store.snapshot()。
      * 另外只删24小时前的文件，刚裁剪出来还没写进任何配置的不会被误删。
      */
     internal fun pruneOrphanAvatars() {
@@ -161,7 +198,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
             // 保险：一条路径都没收集到时不做任何删除（宁可留垃圾也不要误删）
             if (keep.isEmpty()) {
-                DebugLog.w("AvatarStorage", "prune skipped: keep set is empty")
+                // 正常情况（助手/用户都用emoji头像时keep必然为空）；降为INFO避免误报
+                DebugLog.i("AvatarStorage", "no avatar paths to keep; skip pruning")
                 return@launch
             }
 
@@ -187,6 +225,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteConversation(id: String) {
+        // 删除前先切断该对话的生成与pending工具（停止键同款清理），再落盘删除
+        if (_activeId.value == id) stopStreaming()
         viewModelScope.launch {
             store.delete(id)
             if (_activeId.value == id) _activeId.value = null
@@ -201,12 +241,42 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         streamingJob?.cancel()
         streamingJob = null
         _isStreaming.value = false
+        _hasPendingTools.value = false
+        _streamingConvId.value = null
+        _pendingConvId.value = null
+        // 同步把当前对话最后一条assistant消息里未结束的工具调用标成CANCELLED，
+        // 否则UI一直显示"执行中/待审批"的进度条（即使对话已终止）。
+        // 注意：不要覆盖SUCCESS/ERROR/REJECTED——这些是历史上正常收尾的结果。
+        val cid = _activeId.value ?: return
+        val stoppedNote = getApplication<Application>().getString(R.string.chat_stopped_tool_note)
+        viewModelScope.launch {
+            store.updateMessages(cid) { msgs ->
+                if (msgs.isEmpty()) return@updateMessages msgs
+                val lastIdx = msgs.indexOfLast { it.role == "assistant" }
+                if (lastIdx < 0) return@updateMessages msgs
+                val last = msgs[lastIdx]
+                if (last.toolInvocations.isEmpty()) return@updateMessages msgs
+                val cleaned = last.toolInvocations.map { inv ->
+                    when (inv.state) {
+                        ToolInvocationState.EXECUTING,
+                        ToolInvocationState.PENDING_APPROVAL ->
+                            inv.copy(
+                                state = ToolInvocationState.CANCELLED,
+                                error = inv.error ?: stoppedNote,
+                            )
+                        else -> inv
+                    }
+                }
+                msgs.toMutableList().also { it[lastIdx] = last.copy(toolInvocations = cleaned) }
+            }
+        }
     }
 
     fun clearError() { _error.value = null }
-    fun clearToast() { _toast.value = null }
+    fun clearToast() { /* Channel消费即出队，无需清理；保留兼容旧调用点 */ }
     fun setError(msg: String) { _error.value = msg }
-    fun setToast(msg: String) { _toast.value = msg }
+    fun setToast(msg: String) { _toast.trySend(msg) }
+    fun setAuxError(payload: String) { _auxError.trySend(payload) }
 
     fun requestCompressDialog() { _compressDialog.value = true }
     fun dismissCompressDialog() { _compressDialog.value = false }

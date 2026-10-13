@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -44,6 +45,7 @@ internal fun AddActionPanel(
     onSkills: () -> Unit,
     onWorkspace: () -> Unit,
     onMcp: () -> Unit,
+    onTerminal: () -> Unit = {},
 ) {
     val items = listOf(
         Triple(Icons.Default.Image, stringResource(R.string.attach_image), onPickImage),
@@ -51,7 +53,8 @@ internal fun AddActionPanel(
         Triple(Icons.Default.Compress, stringResource(R.string.context_compress), onCompress),
         Triple(Icons.Default.Extension, stringResource(R.string.assistant_skills), onSkills),
         Triple(Icons.Default.Storage, stringResource(R.string.workspace_title), onWorkspace),
-        Triple(Icons.Default.Hub, stringResource(R.string.mcp_title), onMcp)
+        Triple(Icons.Default.Hub, stringResource(R.string.mcp_title), onMcp),
+        Triple(Icons.Default.Terminal, stringResource(R.string.workspace_terminal_menu), onTerminal)
     )
     Column(
         modifier = Modifier

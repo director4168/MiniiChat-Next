@@ -1,23 +1,19 @@
-package com.miniichatNext.carter.util
+package com.miniichatNext.carter.data.util
 
 import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.miniichatNext.carter.data.model.Attachment
-import java.io.File
 import java.security.MessageDigest
-import java.util.UUID
 
 /**
- * 把picker返回的content:// URI复制到app自有目录（filesDir/uploads/<uuid>.<ext>）
- * 同时计算内容SHA-256用于跨picker/跨路径去重
+ * 把picker返回的URI登记为附件：不复制文件，直接指向原始位置（content://）。
+ * 读取/发送时通过ContentResolver按需读取；SHA-256用于跨picker/跨路径去重。
+ * 注意：content://权限可能随重启失效，读取失败时调用方应给用户明确提示。
  */
 object AttachmentImporter {
     private const val TAG = "AttachmentImporter"
-
-    /** 上传目录名 */
-    private const val UPLOAD_DIR = "uploads"
 
     private val IMAGE_MIMES = setOf(
         "image/jpeg", "image/png", "image/gif", "image/webp",
@@ -31,17 +27,11 @@ object AttachmentImporter {
         val dedupedAgainstExisting: List<String>,
     )
 
-    fun uploadDir(context: Context): File {
-        val dir = File(context.filesDir, UPLOAD_DIR)
-        if (!dir.exists()) dir.mkdirs()
-        return dir
-    }
-
     /**
      * 把一批picker URI全部导入
      *
-     * @param existingHashes当前attachments里已有的SHA-256；命中即视为重复
-     * @param maxFileBytes单个源文件硬上限
+     * @param existingHashes 当前attachments里已有的SHA-256；命中即视为重复
+     * @param maxFileBytes 单个源文件硬上限
      */
     fun importAll(
         context: Context,
@@ -49,7 +39,6 @@ object AttachmentImporter {
         existingHashes: Set<String>,
         maxFileBytes: Long = AttachmentLoader.MAX_ATTACHMENT_BYTES,
     ): ImportResult {
-        val dir = uploadDir(context)
         val resolver = context.contentResolver
         val added = mutableListOf<Attachment>()
         val tooLarge = mutableListOf<String>()
@@ -63,33 +52,31 @@ object AttachmentImporter {
                     tooLarge.add(name)
                     continue
                 }
-                val bytes = readBytesWithCap(resolver, uri, maxFileBytes)
-                if (bytes == null) {
-                    tooLarge.add(name)
-                    continue
-                }
 
                 val mime = resolver.getType(uri)
                     ?: guessMimeByName(name)
                     ?: "application/octet-stream"
                 val isImage = mime in IMAGE_MIMES || mime.startsWith("image/")
 
+                // 读一次算SHA用于去重（不落盘）
+                val bytes = readBytesWithCap(resolver, uri, maxFileBytes)
+                if (bytes == null) {
+                    tooLarge.add(name)
+                    continue
+                }
                 val sha = sha256(bytes)
                 if (sha in existingHashes || added.any { it.sha256 == sha }) {
                     deduped.add(name)
                     continue
                 }
 
-                val ext = extForMime(mime) ?: name.substringAfterLast('.', "").ifBlank { "bin" }
-                val stored = File(dir, "${UUID.randomUUID()}.$ext")
-                stored.writeBytes(bytes)
-
+                // 直接指向原始位置，不复制到私有目录
                 added += Attachment(
                     type = if (isImage) "image" else "file",
-                    uri = Uri.fromFile(stored).toString(),
+                    uri = uri.toString(),
                     mimeType = mime,
                     name = name,
-                    sizeBytes = bytes.size.toLong(),
+                    sizeBytes = declaredSize,
                     sha256 = sha,
                 )
             } catch (e: Exception) {
@@ -140,19 +127,4 @@ object AttachmentImporter {
         }
     }
 
-    private fun extForMime(mime: String): String? = when (mime) {
-        "image/jpeg" -> "jpg"
-        "image/png" -> "png"
-        "image/gif" -> "gif"
-        "image/webp" -> "webp"
-        "image/heic" -> "heic"
-        "image/heif" -> "heif"
-        "image/avif" -> "avif"
-        "application/pdf" -> "pdf"
-        "text/plain" -> "txt"
-        "application/json" -> "json"
-        "application/xml" -> "xml"
-        "text/csv" -> "csv"
-        else -> null
-    }
 }

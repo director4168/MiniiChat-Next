@@ -17,7 +17,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.builtins.ListSerializer
-import com.miniichatNext.carter.util.ApiKeyCrypto
+import com.miniichatNext.carter.util.AppJson
+import com.miniichatNext.carter.data.util.ApiKeyCrypto
 import com.miniichatNext.carter.data.model.ModelConfig
 import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.debug.DebugLog
@@ -26,7 +27,7 @@ private val Context.providersDataStore: DataStore<Preferences> by preferencesDat
 
 class ProviderStore(private val context: Context) {
     private val key = stringPreferencesKey("providers_json")
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private val json get() = AppJson.json
 
     val providersFlow: Flow<List<ProviderConfig>> =
         context.providersDataStore.data.map { prefs ->
@@ -45,7 +46,7 @@ class ProviderStore(private val context: Context) {
         )
 
         // 解密失败（Keystore密钥丢失或变更）时decrypt会返回空串。若直接回写，
-        // 就会用空值覆盖掉原来的密文 —— 用户只是改个别的设置，API Key就被永久毁掉了。
+        // 就会用空值覆盖掉原来的密文——用户只是改个别的设置，API Key就被永久毁掉了。
         // 所以这里对「新值为空、旧密文非空」的项保留旧密文。
         val storedById: Map<String, ProviderConfig> = runCatching {
             val raw = context.providersDataStore.data.first()[key]

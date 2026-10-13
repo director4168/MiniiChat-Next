@@ -1,5 +1,7 @@
 package com.miniichatNext.carter.ui.markdown
 
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -8,6 +10,37 @@ import com.miniichatNext.carter.ui.markdown.lang.ALL_LANGUAGES
 import com.miniichatNext.carter.ui.markdown.lang.LangRules
 
 private class Span(val start: Int, val end: Int, val style: SpanStyle)
+
+/** #RGB/ #RRGGBB/ #RRGGBBAA（matchAt从#处开始匹配） */
+private val HEX_COLOR_REGEX = Regex("#[0-9a-fA-F]{8}|#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}(?![0-9a-fA-F])")
+
+/** "RRGGBB"/"RGB"/"RRGGBBAA"→ARGB Int；失败返回null */
+private fun hexToArgb(hex: String): Int? {
+    return runCatching {
+        val value = hex.toLong(16)
+        when (hex.length) {
+            3 -> {
+                val r = ((value shr 8) and 0xF).toInt() * 0x11
+                val g = ((value shr 4) and 0xF).toInt() * 0x11
+                val b = (value and 0xF).toInt() * 0x11
+                (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+            }
+            6 -> {
+                val v = value.toInt()
+                (0xFF shl 24) or ((v shr 16 and 0xFF) shl 16) or ((v shr 8 and 0xFF) shl 8) or (v and 0xFF)
+            }
+            8 -> value.toInt()   // Long低32位直通ARGB（含alpha），超出Int范围的补码正好是正确位型
+            else -> null
+        }
+    }.getOrNull()
+}
+
+/** 在hex颜色文字背后铺一层保证可读的对比底色：亮字给深底、暗字给浅底 */
+private fun contrastingBg(argb: Int): androidx.compose.ui.graphics.Color {
+    val c = androidx.compose.ui.graphics.Color(argb)
+    return if (c.luminance() > 0.5f) androidx.compose.ui.graphics.Color(0xFF1A1A1A)
+    else androidx.compose.ui.graphics.Color(0xFFF2F3F5)
+}
 
 internal fun highlightCode(code: String, lang: String, palette: HighlightPalette): AnnotatedString {
     val rules = ALL_LANGUAGES[lang.lowercase()] ?: return AnnotatedString(code)
@@ -63,6 +96,25 @@ private fun scan(code: String, rules: LangRules, palette: HighlightPalette): Lis
             spans.add(Span(i, finish, SpanStyle(color = if (isKey) palette.property else palette.string)))
             i = finish
             continue
+        }
+
+        // 十六进制颜色#RGB/ #RRGGBB/ #RRGGBBAA：渲染成颜色本身+自动对比背景色
+        if (ch == '#' && rules.allowHexColors) {
+            val m = HEX_COLOR_REGEX.matchAt(code, i)
+            if (m != null) {
+                val end = m.range.last + 1
+                val hexText = code.substring(i + 1, end)
+                val argb = hexToArgb(hexText)
+                if (argb != null) {
+                    val bg = contrastingBg(argb)
+                    spans.add(Span(i, end, SpanStyle(
+                        color = androidx.compose.ui.graphics.Color(argb),
+                        background = bg,
+                    )))
+                    i = end
+                    continue
+                }
+            }
         }
 
         if (ch.isDigit()) {

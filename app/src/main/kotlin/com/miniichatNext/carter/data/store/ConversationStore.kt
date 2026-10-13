@@ -14,6 +14,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.data.model.Conversation
 import com.miniichatNext.carter.data.model.Message
 import com.miniichatNext.carter.debug.DebugLog
@@ -27,7 +28,7 @@ private val Context.conversationsDataStore: DataStore<Preferences> by preference
 class ConversationStore(private val context: Context) {
 
     private val mutex = Mutex()
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private val json get() = AppJson.json
     private val legacyKey = stringPreferencesKey(LEGACY_KEY)
 
     private val _cache = MutableStateFlow<List<Conversation>>(emptyList())

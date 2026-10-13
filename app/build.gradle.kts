@@ -21,12 +21,24 @@ android {
         applicationId = "com.miniichatNext.carter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 26092117
-        versionName = "1.4.0-rc.1"
+        versionCode = 261013060
+        versionName = "1.5.0-beta"
         vectorDrawables { useSupportLibrary = true }
+        externalNativeBuild {
+            cmake {
+                cppFlags += ""
+            }
+        }
     }
 
-    // 自动签名部分，用的是我（director_Carter）自己创建的签名，V2签
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
+    }
+
+    // 自动签名
     signingConfigs {
         create("release") {
             val ksFile = file("release.keystore")
@@ -75,7 +87,6 @@ android {
     // 关于页面要显示构建方式（debug/release）和构建日期
     buildTypes.all {
         buildConfigField("String", "BUILD_TYPE", "\"${this.name}\"")
-        // buildConfigField的value参数永远是 String（要嵌进BuildConfig.java字面量），/ System.currentTimeMillis()是Long，必须.toString()
         buildConfigField("long", "BUILD_TIMESTAMP", System.currentTimeMillis().toString())
     }
 
@@ -100,6 +111,7 @@ android {
     packaging {
         jniLibs {
             useLegacyPackaging = true
+            pickFirsts += "lib/*/libtermux.so"
         }
         resources {
             excludes += setOf(
@@ -157,12 +169,21 @@ dependencies {
     testImplementation(libs.junit)
 
     implementation(libs.ucrop)
+    implementation(libs.exifinterface)
     implementation(libs.androidx.transition)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.documentfile)
     implementation(libs.xz)
+
+    // jlatexmath数学公式原生LaTeX渲染
+    // 交互式终端
+    implementation(libs.termux.terminal.view)
+    implementation(libs.jlatexmath)
+    implementation(libs.jlatexmath.font.greek)
+    implementation(libs.jlatexmath.font.cyrillic)
 }
 
+// 自定义一个工具，用于将打包输出的apk移动到/build-outputs
 val copyAndRenameReleaseApks = tasks.register("copyAndRenameReleaseApks") {
     group = "distribution"
     description = "Rename release APKs to MiniiChat-Next-<ver>-<abi>-release.apk and copy to build-outputs/release/"

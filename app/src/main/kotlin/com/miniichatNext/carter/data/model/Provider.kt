@@ -1,5 +1,7 @@
 package com.miniichatNext.carter.data.model
 
+import androidx.annotation.StringRes
+import com.miniichatNext.carter.R
 import kotlinx.serialization.Serializable
 
 enum class ProviderType { OPENAI, CLAUDE }
@@ -37,14 +39,41 @@ data class ModelConfig(
     val thinkingLevel: String? = null,
     /**
      * 该模型是否支持推理参数。默认true（保持既有行为不变）；
-     * 关掉后不再往请求里塞thinking / reasoning_effort，
-     * 避免对不支持推理的模型（gpt-4o / 视觉 / embedding）被网关拒绝。
+     * 关掉后不再往请求里塞thinking/reasoning_effort，
+     * 避免对不支持推理的模型（gpt-4o/视觉/embedding）被网关拒绝。
      */
-    val supportsReasoning: Boolean = true
+    val supportsReasoning: Boolean = true,
+    /** 该模型是否支持工具调用（function calling）；关掉后不向模型提供tools */
+    val supportsToolCall: Boolean = true,
+    /** 该模型是否支持图片输入（vision）；关掉后发送时跳过图片附件 */
+    val supportsImageInput: Boolean = true,
+    /** 模型级连接覆盖（优先于服务商级；null/空=跟随服务商） */
+    val baseUrl: String? = null,
+    /** 模型级API路径（如/v1/chat/completions）；null=跟随服务商chatCompletionsPath */
+    val apiPath: String? = null,
+    /** 模型级API Key；null/空=跟随服务商 */
+    val apiKey: String? = null,
+    /** 模型级Response API偏好：null=跟随服务商（仅对OPENAI类型有意义） */
+    val responseApi: Boolean? = null,
+    /** 模型级提示缓存偏好：null=跟随服务商（仅对CLAUDE类型有意义） */
+    val promptCache: Boolean? = null,
+    /** 模型级缓存TTL：null=跟随服务商 */
+    val promptCacheTtl: String? = null,
 ) {
     fun thinking(): ThinkingLevel = thinkingLevel
         ?.let { runCatching { ThinkingLevel.valueOf(it) }.getOrNull() }
         ?: ThinkingLevel.OFF
+
+    /** 是否有任何「单独设置」的字段（用于UI外框加深提示） */
+    fun hasOverride(): Boolean =
+        thinkingLevel != null || temperature != null || maxTokens != null
+            || customHeaders.isNotEmpty() || extraBody.isNotEmpty()
+            || !supportsReasoning || !supportsToolCall || !supportsImageInput
+            || !baseUrl.isNullOrBlank() || !apiPath.isNullOrBlank() || !apiKey.isNullOrBlank()
+            || responseApi != null || promptCache != null || promptCacheTtl != null
+
+    /** 与全新默认配置等价（无任何覆盖）——用于保存时清理空配置，避免误高亮 */
+    fun isDefault(): Boolean = !hasOverride()
 }
 
 @Serializable
@@ -75,14 +104,12 @@ data class ProviderConfig(
     fun cacheTtl(): PromptCacheTtl = runCatching { PromptCacheTtl.valueOf(promptCacheTtl) }
         .getOrDefault(PromptCacheTtl.FIVE_MINUTES)
 
-    fun model(id: String): ModelConfig? = models.firstOrNull {
-        it.modelId == id || it.displayName == id
-    }
+    fun model(id: String): ModelConfig? = models.firstOrNull { it.modelId == id }
 
     fun modelIds(): List<String> = models.map { it.modelId.ifBlank { it.displayName } }
         .filter { it.isNotBlank() }
 
-    // ---- 生效值：模型级覆盖优先，未覆盖(null)时回落到服务商级 ----
+    // 生效值：模型级覆盖优先，未覆盖(null)时回落到服务商级
 
     fun effectiveThinking(modelId: String): ThinkingLevel =
         model(modelId)?.thinkingLevel?.let { runCatching { ThinkingLevel.valueOf(it) }.getOrNull() }
@@ -91,16 +118,40 @@ data class ProviderConfig(
     fun supportsReasoning(modelId: String): Boolean =
         model(modelId)?.supportsReasoning ?: true
 
+    fun supportsToolCall(modelId: String): Boolean =
+        model(modelId)?.supportsToolCall ?: true
+
+    fun supportsImageInput(modelId: String): Boolean =
+        model(modelId)?.supportsImageInput ?: true
+
     /**
-     * Response API / 提示缓存是「对话级 + 按服务商」的覆盖：
+     * Response API/提示缓存是「对话级+按服务商」的覆盖：
      * 对话里在加号菜单设过就用对话的值，否则用服务商配置。
      */
-    fun effectiveResponseApi(override: Boolean?): Boolean = override ?: useResponseApi
+    fun effectiveResponseApi(modelId: String, override: Boolean?): Boolean =
+        override
+            ?: model(modelId)?.responseApi
+            ?: useResponseApi
 
-    fun effectivePromptCache(override: Boolean?): Boolean = override ?: promptCache
+    fun effectivePromptCache(modelId: String, override: Boolean?): Boolean =
+        override
+            ?: model(modelId)?.promptCache
+            ?: promptCache
 
-    fun effectiveCacheTtl(overrideTtl: String?): PromptCacheTtl =
-        overrideTtl?.let { runCatching { PromptCacheTtl.valueOf(it) }.getOrNull() } ?: cacheTtl()
+    fun effectiveCacheTtl(modelId: String, overrideTtl: String?): PromptCacheTtl =
+        overrideTtl?.let { runCatching { PromptCacheTtl.valueOf(it) }.getOrNull() }
+            ?: model(modelId)?.promptCacheTtl?.let { runCatching { PromptCacheTtl.valueOf(it) }.getOrNull() }
+            ?: cacheTtl()
+
+    /** 模型级连接参数：baseUrl/apiPath/apiKey覆盖（null=跟随服务商） */
+    fun effectiveBaseUrl(modelId: String): String =
+        model(modelId)?.baseUrl?.takeIf { it.isNotBlank() } ?: baseUrl
+
+    fun effectiveApiPath(modelId: String): String =
+        model(modelId)?.apiPath?.takeIf { it.isNotBlank() } ?: chatCompletionsPath
+
+    fun effectiveApiKey(modelId: String): String =
+        model(modelId)?.apiKey?.takeIf { it.isNotBlank() } ?: apiKey
 
     /** 有没有显式覆盖过某项设置（用于UI显示「跟随服务商」） */
     fun hasModelOverride(modelId: String, which: String): Boolean {
@@ -116,60 +167,51 @@ object ProviderPresets {
     data class Preset(
         val name: String,
         val baseUrl: String,
-        val hint: String,
+        @StringRes val hintRes: Int,
         val path: String = "/chat/completions",
         val type: ProviderType = ProviderType.OPENAI
     )
 
     /*
-     * 下面的这些是提供的模型预设
-     *
-     * 如果是克劳德格式需要追加:
-     * type = ProviderType.CLAUDE),
-     *
-     * 如果提供商的API路径不是/chat/completions，需要自定义，那么可以追加:
-     * path = "[API路径]"
-     *
-     * 追加提供商基础格式：
-     * Preset("[提供商名称]", "[提供商的baseUrl]",
-     *     "[介绍]"),
+     * 模型预设。追加条目：Claude格式加type=ProviderType.CLAUDE；
+     * 端点不是/chat/completions的加path；介绍文案放字符串资源（hintRes）。
      */
     val all: List<Preset> = listOf(
             Preset("OpenAI", "https://api.openai.com/v1",
-                "OpenAI官方API，提供GPT系列模型"),
+                R.string.provider_preset_openai_hint),
 
             Preset("Anthropic Claude", "https://api.anthropic.com/v1",
-                "Anthropic（Claude克劳德）官方API，提供Claude系列模型",
+                R.string.provider_preset_claude_hint,
                 type = ProviderType.CLAUDE),
 
             Preset("OpenRouter", "https://openrouter.ai/api/v1",
-                "第三方提供商，提供OpenAI / Anthropic / Gemini"),
+                R.string.provider_preset_openrouter_hint),
 
             Preset("DeepSeek", "https://api.deepseek.com",
-                "Deepseek官方API，提供deepseek系列模型"),
+                R.string.provider_preset_deepseek_hint),
 
             Preset("xAI", "https://api.x.ai/v1",
-                "马斯克产业旗下xAI，提供Grok（格ro克）系列模型",
+                R.string.provider_preset_xai_hint,
                 path = "/responses"),
 
             Preset("Mistral", "https://api.mistral.ai/v1",
-                "提供Mistral模型"),
+                R.string.provider_preset_mistral_hint),
 
             Preset("Minimax", "https://api.minimaxi.com/anthropic/v1",
-                "Minimax官方API，提供minimax系列模型",
+                R.string.provider_preset_minimax_hint,
                 type = ProviderType.CLAUDE),
 
             Preset("Gemini (OpenAI shim)",
                 "https://generativelanguage.googleapis.com/v1beta/openai",
-                "谷歌旗下的Gemini官方API，提供Gemini系列模型"),
+                R.string.provider_preset_gemini_hint),
 
             Preset("SiliconFlow",
                 "https://api.siliconflow.cn/v1",
-                "国内聚合，速度快"),
+                R.string.provider_preset_siliconflow_hint),
 
             Preset("AK AI Gateway",
                 "https://aigateway.akile.ai/v1",
-                "第三方中转站，提供GPT、Claude系列模型，注册地址：https://aigateway.akile.ai/register?aff=CFJYTVZ4QSEN"),
+                R.string.provider_preset_ak_hint),
             // CFJYTVZ4QSEN是我的邀请码，如果愿意还请使用一下
         )
 }

@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
+import com.miniichatNext.carter.R
 import java.io.File
 import java.io.OutputStream
 import java.io.PrintWriter
@@ -176,7 +177,7 @@ object DebugLog {
                 }
                 val disk = snapshot?.let { bytes ->
                     if (bytes.size > maxBytes) {
-                        "> (日志过长，仅显示末尾部分)\n" +
+                        context.getString(R.string.debug_log_truncated_head) +
                             String(bytes, bytes.size - maxBytes, maxBytes)
                     } else {
                         String(bytes)
@@ -202,6 +203,27 @@ object DebugLog {
      *
      * @return 展示用的保存位置（成功）或null（失败）
      */
+    /**
+     * 取最近N条内存缓冲日志（用于「复制到剪贴板」快速诊断）。
+     * 失败时返回空串而非抛异常。
+     */
+    fun recentLines(maxLines: Int = 200): String = synchronized(fileLock) {
+        val start = (buffer.size - maxLines).coerceAtLeast(0)
+        buffer.toList().subList(start, buffer.size).joinToString("\n")
+    }
+
+    /** 把最近日志复制到剪贴板；返回是否成功 */
+    fun copyRecentToClipboard(context: Context, maxLines: Int = 200): Boolean {
+        val text = recentLines(maxLines)
+        if (text.isEmpty()) return false
+        val cb = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager ?: return false
+        cb.setPrimaryClip(android.content.ClipData.newPlainText("MiniiChat Next logs", text))
+        return true
+    }
+
+    /** 当前日志文件大小（bytes）；用于导出后Toast显示 */
+    fun currentLogSize(context: Context): Long = logFile(context).takeIf { it.exists() }?.length() ?: 0L
+
     fun exportZipToDownloads(context: Context): String? {
         val name = exportFileName()
 
@@ -216,7 +238,6 @@ object DebugLog {
             return null
         }
 
-        // 整体拷到目标位置
         val attempt = runCatching {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val resolver = context.contentResolver
@@ -250,7 +271,7 @@ object DebugLog {
         }
 
         val result = attempt.getOrElse { e ->
-            // 注意：w(tag, msg) 没有Throwable参数，带异常要用e(tag, msg, tr)
+            // 注意：w(tag, msg)没有Throwable参数，带异常要用e(tag, msg, tr)
             e("DebugLog", "export to Downloads failed, trying app-specific dir: ${e.message}", e)
             runCatching {
                 val dir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)

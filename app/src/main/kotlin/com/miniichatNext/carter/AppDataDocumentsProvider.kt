@@ -139,7 +139,7 @@ class AppDataDocumentsProvider : DocumentsProvider() {
         val target = File(parent, safeName).canonicalFile
         ensureInside(target)
 
-        // 同名时按“名字 (1).ext”找一个可用的
+        // 同名时按“名字(1).ext”找一个可用的
         val finalTarget = if (target.exists()) uniqueChild(target) else target
         if (mimeType == Document.MIME_TYPE_DIR) {
             if (!finalTarget.mkdirs() && !finalTarget.isDirectory) {

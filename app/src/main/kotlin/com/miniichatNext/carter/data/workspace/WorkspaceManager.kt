@@ -14,7 +14,7 @@ class WorkspaceManager(
 ) {
     private val fileSystem = WorkspaceFileSystem(config)
 
-    // 按target长度降序，保证 /a/b优先于 /a匹配
+    // 按target长度降序，保证/a/b优先于/a匹配
     private val sortedBindMounts = bindMounts.sortedByDescending { it.target.trimEnd('/').length }
 
     init {
@@ -185,6 +185,7 @@ class WorkspaceManager(
         cwd: String = "",
         timeoutMillis: Long = DEFAULT_COMMAND_TIMEOUT_MS,
         stdin: ByteArray? = null,
+        shellCompatibilityMode: Boolean = false,
     ): WorkspaceCommandResult {
         require(command.isNotBlank()) { "Command is required" }
         val workingDir = fileSystem.resolve(filesDir(root), cwd)
@@ -203,6 +204,7 @@ class WorkspaceManager(
                 timeoutMillis = timeoutMillis,
                 stdin = stdin,
                 bindMounts = bindMounts,
+                shellCompatibilityMode = shellCompatibilityMode,
             )
         )
     }
@@ -216,7 +218,7 @@ class WorkspaceManager(
         WorkspaceStorageArea.LINUX -> linuxDir(root)
     }
 
-    /** 按宿主目录读写（用于bind mount / Rootfs绝对路径落点） */
+    /** 按宿主目录读写（用于bind mount/Rootfs绝对路径落点） */
     fun writeTextInDir(
         dir: File,
         path: String,
@@ -253,6 +255,17 @@ class WorkspaceManager(
 
         /** Rootfs内工作区文件区的挂载点 */
         const val ROOTFS_WORKSPACE_DIR = "/workspace"
+
+        /** Rootfs内使用的shell：优先bash，没有时（如Alpine minirootfs）回退/bin/sh（照搬rikkahub） */
+        fun rootfsShell(linuxDir: File): String =
+            if (linuxDir.hasRootfsEntry("bin/bash")) "/bin/bash" else "/bin/sh"
+
+        // Alpine等发行版的/bin/sh是指向/bin/busybox的绝对路径软链，宿主机解析不到目标，
+        // 软链本身存在即视为存在
+        private fun File.hasRootfsEntry(path: String): Boolean {
+            val entry = File(this, path)
+            return entry.isFile || java.nio.file.Files.isSymbolicLink(entry.toPath())
+        }
 
         /** 由宿主机透传的内核伪文件系统，只能通过shell访问 */
         val KERNEL_FS_MOUNTS = listOf("/dev", "/proc", "/sys")

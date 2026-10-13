@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dns
@@ -70,6 +71,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.miniichatNext.carter.data.mcp.BuiltInFileTools
+import com.miniichatNext.carter.data.workspace.WORKSPACE_SERVER_ID
+import com.miniichatNext.carter.data.workspace.WorkspaceToolDefaultApprovals
+import com.miniichatNext.carter.data.workspace.workspaceToolSpecs
 import com.miniichatNext.carter.data.mcp.McpClient
 import com.miniichatNext.carter.data.mcp.McpServerConfig
 import com.miniichatNext.carter.data.mcp.McpStore
@@ -79,6 +83,7 @@ import com.miniichatNext.carter.data.mcp.McpTransport
 import com.miniichatNext.carter.ui.components.SettingsTopBar
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.launch
+import com.miniichatNext.carter.ui.markdown.MarkdownText
 
 /** MCP服务器列表 */
 @Composable
@@ -109,14 +114,6 @@ fun McpServersScreen(
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                item {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    BuiltInToolsEntryCard(
-                        builtInToolsCount = BuiltInFileTools.schema.size,
-                        onClick = onOpenBuiltInTools
-                    )
-                }
-
                 item {
                     if (!hasAllFilesAccess()) {
                         Card(
@@ -204,27 +201,23 @@ fun McpServersScreen(
     }
 
     pendingDelete?.let { server ->
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            title = { Text(stringResource(R.string.mcp_delete_confirm_title)) },
-            text = { Text(stringResource(R.string.mcp_delete_confirm_message, server.name.ifBlank { server.url })) },
-            confirmButton = {
-                TextButton(onClick = {
-                    scope.launch {
-                        mcpStore.deleteServer(server.id)
-                        Toast.makeText(context, context.getString(R.string.mcp_deleted), Toast.LENGTH_SHORT).show()
-                    }
-                    pendingDelete = null
-                }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
+        com.miniichatNext.carter.ui.components.ConfirmDeleteDialog(
+            targetName = server.name.ifBlank { server.url },
+            typeLabel = stringResource(R.string.item_mcp_server),
+            bodyText = stringResource(R.string.mcp_delete_confirm_message, server.name.ifBlank { server.url }),
+            onConfirm = {
+                scope.launch {
+                    mcpStore.deleteServer(server.id)
+                    Toast.makeText(context, context.getString(R.string.mcp_deleted), Toast.LENGTH_SHORT).show()
+                }
+                pendingDelete = null
             },
-            dismissButton = {
-                TextButton(onClick = { pendingDelete = null }) { Text(stringResource(R.string.cancel)) }
-            }
+            onDismiss = { pendingDelete = null },
         )
     }
 }
 
-/** Android 11+ 需要“所有文件访问”才能用File API读写 /storage/emulated/0 */
+/** Android 11+需要“所有文件访问”才能用File API读写/storage/emulated/0 */
 @Suppress("NewApi")
 private fun hasAllFilesAccess(): Boolean =
     if (android.os.Build.VERSION.SDK_INT < 30) true
@@ -367,11 +360,74 @@ private fun McpServerItemCard(
 @Composable
 fun BuiltInToolsScreen(
     mcpStore: McpStore,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    backDispatcher: com.miniichatNext.carter.ui.navigation.AppBackDispatcher? = null,
 ) {
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val perms by mcpStore.permsFlow.collectAsState(initial = emptyList())
-    val allTools = remember { BuiltInFileTools.schema }
+    // 内置工具+工作区工具合并展示（工作区工具由WorkspaceTools提供spec/schema）
+    val allTools = remember {
+        BuiltInFileTools.schema(context) + workspaceToolSpecs()
+    }
+
+    // 分组：组名资源ID→(介绍资源ID,工具名集合)
+    val groups = remember(allTools) {
+        listOf(
+            Triple(
+                R.string.builtin_group_ask, R.string.builtin_group_ask_desc,
+                listOf("interactive_clarification")
+            ),
+            Triple(
+                R.string.builtin_group_shell, R.string.builtin_group_shell_desc,
+                listOf("execute_shell")
+            ),
+            Triple(
+                R.string.builtin_group_file_io, R.string.builtin_group_file_io_desc,
+                listOf("file_read", "file_write", "file_edit", "file_append")
+            ),
+            Triple(
+                R.string.builtin_group_file_manage, R.string.builtin_group_file_manage_desc,
+                listOf("file_list", "file_delete", "file_move", "file_copy", "file_rename", "file_mkdir")
+            ),
+            Triple(
+                R.string.builtin_group_search, R.string.builtin_group_search_desc,
+                listOf("file_search", "file_exists", "file_info")
+            ),
+            Triple(
+                R.string.builtin_group_workspace, R.string.builtin_group_workspace_desc,
+                listOf("workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
+                       "workspace_list_files", "workspace_delete_file", "workspace_move_file",
+                       "workspace_copy_file", "workspace_mkdir", "workspace_glob", "workspace_grep")
+            ),
+            Triple(
+                R.string.builtin_group_web, R.string.builtin_group_web_desc,
+                listOf("browser_fetch")
+            ),
+        )
+    }
+    var openGroupRes by remember { mutableStateOf<Int?>(null) }
+    var query by remember { mutableStateOf("") }
+    // 子页面打开时拦截系统返回手势：先关子页面回组列表，而不是直接退出内置工具页
+    if (backDispatcher != null) {
+        com.miniichatNext.carter.ui.navigation.NavBackInterceptor(
+            dispatcher = backDispatcher,
+            route = "McpBuiltIn",
+            enabled = openGroupRes != null,
+            onBack = { openGroupRes = null; query = ""; true },
+        )
+    }
+
+    val groupTools = openGroupRes?.let { res ->
+        groups.firstOrNull { it.first == res }?.third
+            ?.mapNotNull { name -> allTools.firstOrNull { it.name == name } }
+            .orEmpty()
+    }
+    val filteredTools = groupTools?.filter { tool ->
+        query.isBlank() ||
+            tool.name.contains(query, ignoreCase = true) ||
+            tool.description.contains(query, ignoreCase = true)
+    }
 
     Column(
         modifier = Modifier
@@ -379,7 +435,10 @@ fun BuiltInToolsScreen(
             .background(MaterialTheme.colorScheme.background)
             .padding(WindowInsets.statusBars.asPaddingValues())
     ) {
-        SettingsTopBar(stringResource(R.string.mcp_builtin_config_title), onBack)
+        SettingsTopBar(
+            title = openGroupRes?.let { stringResource(it) } ?: stringResource(R.string.mcp_builtin_config_title),
+            onBack = { if (openGroupRes != null) { openGroupRes = null; query = "" } else onBack() }
+        )
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -394,30 +453,104 @@ fun BuiltInToolsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            items(allTools, key = { it.name }) { tool ->
-                ToolPermissionCard(
-                    tool = tool,
-                    perm = perms.firstOrNull { it.toolName == tool.name && it.serverId.isBlank() },
-                    onToggleEnabled = { enabled ->
-                        val cur = perms.firstOrNull { it.toolName == tool.name && it.serverId.isBlank() }
-                        scope.launch {
-                            mcpStore.setToolPermission("", tool.name, enabled, cur?.requireApproval ?: true)
-                        }
-                    },
-                    onToggleApproval = { approval ->
-                        val cur = perms.firstOrNull { it.toolName == tool.name && it.serverId.isBlank() }
-                        scope.launch {
-                            mcpStore.setToolPermission("", tool.name, cur?.enabled ?: true, approval)
+
+            if (openGroupRes == null) {
+                items(groups, key = { it.first }) { (res, descRes, names) ->
+                    val title = stringResource(res)
+                    val desc = stringResource(descRes)
+                    // 自动计数：组内名字在allTools（内置+工作区）里实际存在的数量
+                    val count = names.count { name -> allTools.any { it.name == name } }
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { openGroupRes = res },
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                                Text(
+                                    desc,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    stringResource(R.string.mcp_builtin_group_count, count),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Icon(
+                                Icons.AutoMirrored.Filled.ArrowForward,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
                     }
-                )
+                }
+            } else {
+                item {
+                    OutlinedTextField(
+                        value = query,
+                        onValueChange = { query = it },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text(stringResource(R.string.mcp_builtin_search_hint)) },
+                    )
+                }
+                items(filteredTools.orEmpty(), key = { it.name }) { tool ->
+                    // 工作区工具serverId="workspace"（非空）——perm查写必须按各自serverId，否则永远查不到/写串轨
+                    val sid = if (tool.serverId.isNotBlank()) tool.serverId else ""
+                    val defaultApproval = if (tool.serverId == WORKSPACE_SERVER_ID)
+                        WorkspaceToolDefaultApprovals[tool.name] ?: false
+                    else BuiltInFileTools.defaultRequireApproval(tool.name)
+                    ToolPermissionCard(
+                        tool = tool,
+                        perm = perms.firstOrNull { it.toolName == tool.name && it.serverId == sid },
+                        defaultApproval = defaultApproval,
+                        onToggleEnabled = { enabled ->
+                            val cur = perms.firstOrNull { it.toolName == tool.name && it.serverId == sid }
+                            scope.launch {
+                                mcpStore.setToolPermission(
+                                    sid, tool.name, enabled,
+                                    cur?.requireApproval ?: defaultApproval
+                                )
+                            }
+                        },
+                        onToggleApproval = { approval ->
+                            val cur = perms.firstOrNull { it.toolName == tool.name && it.serverId == sid }
+                            scope.launch {
+                                mcpStore.setToolPermission(sid, tool.name, cur?.enabled ?: true, approval)
+                            }
+                        }
+                    )
+                }
+                if (filteredTools?.isEmpty() == true) {
+                    item {
+                        Text(
+                            stringResource(R.string.mcp_builtin_search_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        )
+                    }
+                }
             }
             item { Spacer(modifier = Modifier.height(32.dp)) }
         }
     }
 }
 
-/** 单个MCP服务器详情：连接信息 + 逐工具权限 */
+/** 单个MCP服务器详情：连接信息+逐工具权限 */
 @Composable
 fun McpServerDetailScreen(
     mcpStore: McpStore,
@@ -581,30 +714,26 @@ fun McpServerDetailScreen(
 
     if (pendingDelete) {
         val name = server?.name?.ifBlank { server.url } ?: ""
-        AlertDialog(
-            onDismissRequest = { pendingDelete = false },
-            title = { Text(stringResource(R.string.mcp_delete_confirm_title)) },
-            text = { Text(stringResource(R.string.mcp_delete_confirm_message, name)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    pendingDelete = false
-                    scope.launch {
-                        mcpStore.deleteServer(serverId)
-                        Toast.makeText(context, context.getString(R.string.mcp_deleted), Toast.LENGTH_SHORT).show()
-                        onDeleted()
-                    }
-                }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
+        com.miniichatNext.carter.ui.components.ConfirmDeleteDialog(
+            targetName = name,
+            typeLabel = stringResource(R.string.item_mcp_server),
+            bodyText = stringResource(R.string.mcp_delete_confirm_message, name),
+            onConfirm = {
+                pendingDelete = false
+                scope.launch {
+                    mcpStore.deleteServer(serverId)
+                    Toast.makeText(context, context.getString(R.string.mcp_deleted), Toast.LENGTH_SHORT).show()
+                    onDeleted()
+                }
             },
-            dismissButton = {
-                TextButton(onClick = { pendingDelete = false }) { Text(stringResource(R.string.cancel)) }
-            }
+            onDismiss = { pendingDelete = false },
         )
     }
 }
 
 /**
- * MCP服务器新增 / 编辑。
- * 请求头按RikkaHub的做法逐行编辑（名称 + 值 + 删除），值默认以密码形式显示，可切换明文。
+ * MCP服务器新增/编辑。
+ * 请求头按RikkaHub的做法逐行编辑（名称+值+删除），值默认以密码形式显示，可切换明文。
  */
 @Composable
 fun McpServerEditorScreen(
@@ -817,10 +946,12 @@ private fun ToolPermissionCard(
     tool: McpTool,
     perm: McpToolPermission?,
     onToggleEnabled: (Boolean) -> Unit,
-    onToggleApproval: (Boolean) -> Unit
+    onToggleApproval: (Boolean) -> Unit,
+    defaultApproval: Boolean = true
 ) {
     val enabled = perm?.enabled ?: true
-    val requireApproval = perm?.requireApproval ?: true
+    // 默认值由调用方按工具类别传入（内置工具=defaultRequireApproval，MCP工具=true），与执行侧同源
+    val requireApproval = perm?.requireApproval ?: defaultApproval
 
     Card(
         modifier = Modifier.fillMaxWidth(),

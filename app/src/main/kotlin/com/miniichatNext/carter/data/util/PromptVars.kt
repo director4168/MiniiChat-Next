@@ -1,4 +1,4 @@
-package com.miniichatNext.carter.util
+package com.miniichatNext.carter.data.util
 
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -8,14 +8,14 @@ import java.util.Locale
  * Replace prompt variables in a system prompt or user message.
  *
  * Supported tokens:
- *  - {model}      → current model id
- *  - {provider}   → current provider name
- *  - {assistant}  → current assistant name
- *  - {date}       → today's date (YYYY-MM-DD, local)
- *  - {time}       → current time (HH:mm, local)
- *  - {datetime}   → ISO-ish local timestamp
- *  - {locale}     → device locale tag (e.g. en-US)
- *  - {weekday}    → Monday/Tuesday/... (locale-formatted)
+ * - {model}→current model id
+ * - {provider}→current provider name
+ * - {assistant}→current assistant name
+ * - {date}→today's date (YYYY-MM-DD, local)
+ * - {time}→current time (HH:mm, local)
+ * - {datetime}→ISO-ish local timestamp
+ * - {locale}→device locale tag (e.g. en-US)
+ * - {weekday}→Monday/Tuesday/... (locale-formatted)
  */
 object PromptVars {
     fun render(

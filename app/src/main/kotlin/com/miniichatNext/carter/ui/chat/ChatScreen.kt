@@ -21,9 +21,11 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -51,6 +53,10 @@ import com.miniichatNext.carter.data.model.UserProfile
 import com.miniichatNext.carter.data.skills.Skill
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.vm.effectiveSkillIds
+import com.miniichatNext.carter.vm.suggestionCacheKey
+import com.miniichatNext.carter.vm.ChatViewModel
+import androidx.compose.runtime.collectAsState
+import com.miniichatNext.carter.ui.markdown.MarkdownText
 
 @Composable
 fun ChatScreen(
@@ -65,8 +71,8 @@ fun ChatScreen(
     skills: List<com.miniichatNext.carter.data.skills.Skill> = emptyList(),
     onToggleSkill: (String, Boolean) -> Unit = { _, _ -> },
     onContextCompress: () -> Unit = {},
-    onSuggestions: (Int) -> Unit = {},
-    suggestionsGenerating: Set<Int> = emptySet(),
+    onSuggestions: (String, Int, Boolean) -> Unit = { _, _, _ -> },
+    suggestionsGenerating: Set<String> = emptySet(),
     onRenameChat: (String) -> Unit = {},
     effectiveSkillIds: Set<String> = emptySet(),
     onSelectAssistant: (String) -> Unit = {},
@@ -77,10 +83,13 @@ fun ChatScreen(
     onDeleteMessage: (String) -> Unit = {},
     onEditMessage: (String, String) -> Unit = { _, _ -> },
     onContinue: () -> Unit = {},
+    // VM注入：用于权限请求弹窗（pendingManageStorage StateFlow）
+    vm: ChatViewModel? = null,
     onNew: () -> Unit,
     onOpenSettings: () -> Unit,
     onPickModel: () -> Unit,
-    // 对话级工具开关（「+」菜单→工作区 / MCP弹窗）
+    onFullscreen: ((String, Boolean) -> Unit)? = null,
+    // 对话级工具开关（「+」菜单→工作区/MCP弹窗）
     workspaces: List<com.miniichatNext.carter.data.workspace.WorkspaceEntity> = emptyList(),
     effectiveWorkspaceId: String? = null,
     onPickWorkspace: (String?) -> Unit = {},
@@ -88,6 +97,8 @@ fun ChatScreen(
     effectiveMcpServerIds: Set<String> = emptySet(),
     onToggleMcpServer: (String, Boolean) -> Unit = { _, _ -> },
     onResetToolOverrides: () -> Unit = {},
+    onOpenTerminal: () -> Unit = {},
+    onManageSkills: () -> Unit = {},
     onManageWorkspaces: () -> Unit = {},
     onManageMcp: () -> Unit = {},
     onApproveTool: ((com.miniichatNext.carter.data.model.ToolInvocation, String?) -> Unit)? = null,
@@ -102,17 +113,19 @@ fun ChatScreen(
         if (ov == null) rawMessages
         else rawMessages.map { if (it.id == ov.first) it.copy(content = ov.second) else it }
     }
+    // UI可见消息（过滤续写指令等隐形消息）
+    val visibleMessages = remember(messages) { messages.filterNot { it.hidden } }
     var editingMessageId by rememberSaveable { mutableStateOf<String?>(null) }
-    var editingDraft by rememberSaveable { mutableStateOf("") }
     // 重说：先确认，再截断重生成
     var retellTargetId by remember { mutableStateOf<String?>(null) }
     var showRenameDialog by rememberSaveable { mutableStateOf(false) }
     var renameDraft by rememberSaveable { mutableStateOf("") }
-    // 两个内嵌面板：+ 面板 与 候选回复面板（互斥，点空白处统一收起）
+    // 两个内嵌面板：+面板与候选回复面板（互斥，点空白处统一收起）
     var addPanelOpen by rememberSaveable { mutableStateOf(false) }
     var candidatesOpen by rememberSaveable { mutableStateOf(false) }
+    // 候选词当前页（0-based）
     var suggestionPage by rememberSaveable { mutableStateOf(0) }
-    // 递增即请求一次"聚焦输入框 + 弹键盘"（候选回复点"编辑"时用）
+    // 递增即请求一次"聚焦输入框+弹键盘"（候选回复点"编辑"时用）
     var focusInputRequest by remember { mutableStateOf(0) }
     var immersive by rememberSaveable { mutableStateOf(false) }
     val immersiveAlpha by animateFloatAsState(
@@ -121,10 +134,39 @@ fun ChatScreen(
         label = "immersive-alpha"
     )
 
-    LaunchedEffect(messages.size, isStreaming) {
-        if (messages.isNotEmpty()) listState.animateScrollToItem(messages.lastIndex)
+    // 只在"新消息出现"时滚动到底：
+    // 1) isStreaming结束不再触发（流式高度增长后最后一次滚动会把消息顶部对齐视口顶）
+    // 2)首次进入/从全屏等页面返回（ChatScreen重组重启本Effect）也不滚
+    // 记住上一次的size，size真的变了才滚（保住用户的浏览位置）
+    // 滚动策略（按会话隔离的三步状态机）：
+    // 1)切换会话（该会话首次见到）→直接跳到最新消息（无动画）
+    // 2)同会话内新消息出现（count>seen）→平滑滚到底
+    // 3)重组重启（从全屏/其他页面返回）/消息截断→不滚，保住浏览位置
+    // 进入编辑态不主动滚动：BasicTextField聚焦时LazyColumn的bringIntoView
+    // 会自动把可见区域调整到输入框位置；强行animateScrollToItem反而会把
+    // 消息顶部对齐视口顶（长消息生硬跳变），加上键盘弹出又跳一次（用户报的bug）
+    // 参考rikkahub ChatPage.onEdit：只改inputState.editingMessage，不做任何滚动
+    var rememberedLastMsgId by rememberSaveable { mutableStateOf("") }
+    var rememberedCount by rememberSaveable { mutableIntStateOf(-1) }
+    var rememberedSession by rememberSaveable { mutableStateOf("") }
+    LaunchedEffect(conversation?.id, visibleMessages.size) {
+        val count = visibleMessages.size
+        if (count == 0) return@LaunchedEffect
+        val lastMsgId = visibleMessages.last().id
+        val session = conversation?.id.orEmpty()
+        when {
+            rememberedSession != session -> listState.scrollToItem(count - 1)              // 切会话：滚到底
+            rememberedLastMsgId.isBlank() -> listState.scrollToItem(count - 1)             // 首次
+            // 新消息到达（末尾id变了且数量增加）才滚动；
+            // 删除消息（id变了但数量减少）绝不滚——删除C再删B会把视口拽到A的顶部
+            rememberedLastMsgId != lastMsgId && count > rememberedCount ->
+                listState.animateScrollToItem(count - 1)
+            // 其余（删除/截断/编辑/重组/返回）：不滚，保持视口
+        }
+        rememberedLastMsgId = lastMsgId
+        rememberedCount = count
+        rememberedSession = session
     }
-
     val backgroundMode = assistant?.backgroundMode ?: "default"
     val backgroundPath = assistant?.backgroundPath
     val backgroundCss = assistant?.backgroundCss ?: ""
@@ -332,36 +374,23 @@ fun ChatScreen(
                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                items(messages, key = { it.id }) { msg ->
+                items(visibleMessages, key = { it.id }) { msg ->
                     val isUserMsg = msg.role == "user"
                     MessageItem(
                         message = msg,
-                        // 消息行头像
                         avatar = if (isUserMsg) userProfile.avatar
                         else com.miniichatNext.carter.data.avatar.Avatar.fromLegacy(
                             assistant?.avatar ?: "🤖", assistant?.avatarPath
                         ),
                         senderLabel = if (msg.role == "user") stringResource(R.string.profile_default_name)
                         else settings.activeModel.ifBlank { activeProvider?.name ?: stringResource(R.string.assistant) },
-                        isLastAssistant = msg.id == messages.lastOrNull()?.id && msg.role == "assistant",
+                        isLastAssistant = msg.id == visibleMessages.lastOrNull()?.id && msg.role == "assistant",
                         isStreaming = isStreaming,
-                        editing = editingMessageId == msg.id,
-                        editingDraft = if (editingMessageId == msg.id) editingDraft else "",
-                        onEditingDraftChange = { editingDraft = it },
                         onStartEdit = {
+                            // 编辑迁移到输入框：内容填进输入框并聚焦（发送键变保存键）
                             editingMessageId = msg.id
-                            editingDraft = msg.content
-                        },
-                        onCommitEdit = {
-                            editingMessageId?.let { id ->
-                                onEditMessage(id, editingDraft)
-                            }
-                            editingMessageId = null
-                            editingDraft = ""
-                        },
-                        onCancelEdit = {
-                            editingMessageId = null
-                            editingDraft = ""
+                            input = msg.content
+                            focusInputRequest++
                         },
                         onContinue = onContinue,
                         onDelete = { onDeleteMessage(msg.id) },
@@ -399,12 +428,47 @@ fun ChatScreen(
         }
         }
 
+        // AI调用需要「所有文件访问权限」的工具但用户未授权→弹窗引导去授权
+        val pendingPermission = vm?.pendingManageStorage?.collectAsState()?.value
+        val permCtx = androidx.compose.ui.platform.LocalContext.current
+        pendingPermission?.let { tool ->
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { vm.dismissPermissionRequest() },
+                title = { Text(stringResource(com.miniichatNext.carter.R.string.permission_manage_storage_title)) },
+                text = { Text(stringResource(com.miniichatNext.carter.R.string.permission_manage_storage_message, tool)) },
+                confirmButton = {
+                    TextButton(onClick = {
+                        vm.dismissPermissionRequest()
+                        val intent = android.content.Intent(
+                            android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            android.net.Uri.parse("package:" + permCtx.packageName)
+                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        permCtx.startActivity(intent)
+                    }) { Text(stringResource(com.miniichatNext.carter.R.string.permission_grant)) }
+                },
+                dismissButton = {
+                    TextButton(onClick = { vm.dismissPermissionRequest() }) {
+                        Text(stringResource(com.miniichatNext.carter.R.string.cancel))
+                    }
+                },
+            )
+        }
+
         InputBar(
             value = input,
             onValueChange = { input = it },
+            editing = editingMessageId != null,
+            onCommitEdit = { text ->
+                editingMessageId?.let { id -> onEditMessage(id, text) }
+                editingMessageId = null
+                input = ""
+            },
+            onCancelEdit = {
+                editingMessageId = null
+                input = ""
+            },
             attachments = pendingAttachments,
             onAttachmentsChange = { pendingAttachments = it },
-            modelLabel = settings.activeModel.ifBlank { stringResource(R.string.select_model) },
             onPickModel = onPickModel,
             skills = skills,
             enabledSkillIds = effectiveSkillIds,
@@ -417,6 +481,8 @@ fun ChatScreen(
             effectiveMcpServerIds = effectiveMcpServerIds,
             onToggleMcpServer = onToggleMcpServer,
             onResetToolOverrides = onResetToolOverrides,
+            onOpenTerminal = onOpenTerminal,
+            onManageSkills = onManageSkills,
             onManageWorkspaces = onManageWorkspaces,
             onManageMcp = onManageMcp,
             onSend = {
@@ -424,7 +490,6 @@ fun ChatScreen(
                 val atts = pendingAttachments
                 input = ""
                 pendingAttachments = emptyList()
-                // 发送时收起面板
                 candidatesOpen = false
                 addPanelOpen = false
                 onSend(text, atts)
@@ -443,19 +508,20 @@ fun ChatScreen(
             candidatesOpen = candidatesOpen,
             onToggleCandidates = {
                 val next = !candidatesOpen
+                if (next) suggestionPage = 0
                 candidatesOpen = next
-                if (next) {
-                    addPanelOpen = false
-                    suggestionPage = 0
-                }
+                if (next) addPanelOpen = false
             },
             candidatesPanel = {
+                val anchorMsgId = conversation?.messages?.lastOrNull { it.role == "assistant" }?.id.orEmpty()
+                val cacheKey = suggestionCacheKey(anchorMsgId, suggestionPage)
                 SuggestionPanel(
                     conversation = conversation,
+                    anchorMessageId = anchorMsgId,
                     page = suggestionPage,
-                    loading = suggestionPage in suggestionsGenerating,
+                    loading = anchorMsgId.isNotEmpty() && cacheKey in suggestionsGenerating,
                     onPageChange = { suggestionPage = it },
-                    onGenerate = { onSuggestions(it) },
+                    onGenerate = { manual -> onSuggestions(anchorMsgId, suggestionPage, manual) },
                     onPick = { candidate ->
                         candidatesOpen = false
                         onSend(candidate, emptyList())
@@ -521,7 +587,7 @@ fun ChatScreen(
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { retellTargetId = null },
             title = { Text(stringResource(R.string.retell_confirm_title)) },
-            text = { Text(stringResource(R.string.retell_confirm_message)) },
+            text = { com.miniichatNext.carter.ui.markdown.MarkdownText(text = stringResource(R.string.retell_confirm_message).replace("\n", "\n")) },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = {
                     retellTargetId = null

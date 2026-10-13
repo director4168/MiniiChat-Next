@@ -1,5 +1,7 @@
 package com.miniichatNext.carter.data.workspace
 
+import com.miniichatNext.carter.util.AppJson
+
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -24,11 +26,13 @@ data class WorkspaceEntity(
     val createdAt: Long,
     val updatedAt: Long,
     val lastAccessAt: Long? = null,
-    /** toolName -> needsApproval的用户覆盖项 */
+    /** toolName->needsApproval的用户覆盖项 */
     val toolApprovals: String = "{}",
+    /** shell兼容模式（PROOT_NO_SECCOMP=1，部分设备proot的seccomp问题开这个） */
+    val shellCompatibilityMode: Boolean = false,
 ) {
     fun toolApprovalOverrides(): Map<String, Boolean> = runCatching {
-        Json { ignoreUnknownKeys = true }.decodeFromString<Map<String, Boolean>>(toolApprovals)
+        AppJson.json.decodeFromString<Map<String, Boolean>>(toolApprovals)
     }.getOrDefault(emptyMap())
 
     fun toWorkspace(): Workspace = Workspace(
@@ -45,7 +49,7 @@ data class WorkspaceEntity(
 
 class WorkspaceStore(private val context: Context) {
     private val key = stringPreferencesKey("workspaces_json")
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private val json get() = AppJson.json
 
     val workspacesFlow: Flow<List<WorkspaceEntity>> = context.workspaceDataStore.data.map { prefs ->
         val raw = prefs[key] ?: return@map emptyList()

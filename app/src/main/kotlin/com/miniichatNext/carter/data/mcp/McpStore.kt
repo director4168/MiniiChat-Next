@@ -1,5 +1,7 @@
 package com.miniichatNext.carter.data.mcp
 
+import com.miniichatNext.carter.util.AppJson
+
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -20,7 +22,7 @@ class McpStore(private val context: Context) {
     private val toolsKey = stringPreferencesKey("mcp_tools_json")
     private val permsKey = stringPreferencesKey("mcp_perms_json")
 
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true; prettyPrint = false }
+    private val json get() = AppJson.json
 
     val serversFlow: Flow<List<McpServerConfig>> = context.mcpDataStore.data.map { prefs ->
         decode(prefs[serversKey], McpServerConfig.serializer())

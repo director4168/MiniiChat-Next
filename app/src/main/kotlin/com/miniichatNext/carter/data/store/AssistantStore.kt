@@ -11,6 +11,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
+import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.model.AssistantPresets
 import com.miniichatNext.carter.debug.DebugLog
@@ -19,7 +20,7 @@ private val Context.assistantsDataStore: DataStore<Preferences> by preferencesDa
 
 class AssistantStore(private val context: Context) {
     private val key = stringPreferencesKey("assistants_json")
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+    private val json get() = AppJson.json
 
     val assistantsFlow: Flow<List<Assistant>> =
         context.assistantsDataStore.data.map { prefs ->

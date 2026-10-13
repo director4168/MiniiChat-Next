@@ -4,8 +4,15 @@
     <!-- 头像/背景裁剪输出：Android 10+ 上 UCrop 通过 ContentResolver 保存，必须给它
          content:// 目标 URI，file:// 会在保存阶段失败（RESULT_ERROR 96） -->
     <files-path name="avatars" path="avatars/" />
+    <!-- 用户导入的附件副本：打开失败时回退用 FileProvider 分享 -->
+    <files-path name="uploads" path="uploads/" />
     <files-path name="debug_logs" path="logs/" />
     <!-- 崩溃日志已挪到 logs/crash/，FileProvider 必须指向新目录才能分享崩溃 zip -->
     <files-path name="crash" path="logs/crash/" />
     <cache-path name="shared" path="shared/" />
+    <!-- 工作区文件（filesDir/workspaces/<name>/files/, linux/, tmp/）—— 文件管理器选中后
+         Intent.ACTION_VIEW 打开时由 FileProvider 分享给系统应用 -->
+    <files-path name="workspaces" path="workspaces/" />
+    <!-- 更新 APK 缓存（filesDir/cache/Update/）：安装器需要 content:// 才能读取 -->
+    <cache-path name="update_apk" path="Update/" />
 </paths>

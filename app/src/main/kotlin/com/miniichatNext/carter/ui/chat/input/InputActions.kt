@@ -1,5 +1,6 @@
 package com.miniichatNext.carter.ui.chat.input
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
@@ -26,17 +27,21 @@ internal fun IconActionVec(
 ) {
     Box(
         modifier = Modifier
-            .size(32.dp)
+            .size(40.dp)
             .clip(CircleShape)
+            .background(
+                if (active) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+            )
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             icon,
             contentDescription = contentDescription,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(22.dp),
             tint = when {
-                active -> MaterialTheme.colorScheme.primary
+                active -> MaterialTheme.colorScheme.onPrimaryContainer
                 enabled -> MaterialTheme.colorScheme.onSurfaceVariant
                 else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
             }
@@ -55,17 +60,21 @@ internal fun IconActionPainter(
 ) {
     Box(
         modifier = Modifier
-            .size(32.dp)
+            .size(40.dp)
             .clip(CircleShape)
+            .background(
+                if (active) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+            )
             .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             painter = painter,
             contentDescription = contentDescription,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(22.dp),
             tint = when {
-                active -> MaterialTheme.colorScheme.primary
+                active -> MaterialTheme.colorScheme.onPrimaryContainer
                 enabled -> MaterialTheme.colorScheme.onSurfaceVariant
                 else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
             }

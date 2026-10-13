@@ -1,5 +1,6 @@
 package com.miniichatNext.carter.data.workspace
 
+import com.miniichatNext.carter.debug.DebugLog
 import java.io.File
 import java.nio.file.Files
 
@@ -16,7 +17,95 @@ class RootfsPatcher {
         ensureHostname(etcDir, options.hostname)
         ensureLocale(etcDir, options.locale)
         ensureGroupNames(etcDir, options.groupIds.ifEmpty { currentSupplementaryGroupIds() })
+        ensureRootUser(etcDir)
         ensureTempDirs(linuxDir)
+        ensureAptLocks(linuxDir)
+    }
+
+    /**
+     * 清理apt/dpkg的残留锁文件. proot下apt中断后常会留下0字节lock,
+     * 下次apt启动直接"Could not get lock"报错.
+     * 每次shell启动前调用一次即可（ProotShellRunner.execute里调patcher.patch时顺带跑）.
+     */
+    fun ensureAptLocks(linuxDir: File) {
+        listOf(
+            "var/lib/apt/lists/lock",
+            "var/lib/dpkg/lock",
+            "var/lib/dpkg/lock-frontend",
+            "var/cache/apt/archives/lock",
+        ).forEach { rel ->
+            runCatching { File(linuxDir, rel).takeIf { it.isFile }?.delete() }
+        }
+        // 清理apt partial半成品
+        runCatching {
+            val partial = File(linuxDir, "var/lib/apt/lists/partial")
+            if (partial.isDirectory) {
+                partial.listFiles()?.forEach { runCatching { it.delete() } }
+            }
+        }
+    }
+
+    /**
+     * 确保/etc/passwd有root条目（否则bash提示符显示"I have no name!"），
+     * 并清空/etc/shadow的root密码（su默认无密码）。
+     */
+    private fun ensureRootUser(etcDir: File) {
+        // passwd：bash按uid=0查用户名，缺root条目会显示"I have no name!"
+        val passwd = File(etcDir, "passwd")
+        try {
+            val content = if (passwd.isFile) passwd.readText() else ""
+            if (content.lineSequence().none { it.startsWith("root:") }) {
+                passwd.appendText((if (content.isEmpty() || content.endsWith("\n")) "" else "\n") + "root:x:0:0:root:/root:/bin/bash\n")
+            }
+            val ok = passwd.isFile && passwd.readText().lineSequence().any { it.startsWith("root:") }
+            val head = if (passwd.isFile) passwd.readText().lineSequence().take(3).joinToString(" | ") else "(missing)"
+            DebugLog.i("RootfsPatcher", "passwd root entry: " + if (ok) "ok" else "MISSING" + " head: " + head)
+        } catch (t: Throwable) {
+            DebugLog.e("RootfsPatcher", "ensure passwd failed", t)
+        }
+        // shadow：root空密码位=su无需密码（文件不存在则创建）
+        val shadow = File(etcDir, "shadow")
+        try {
+            if (!shadow.isFile) {
+                shadow.writeText("root::0:99999:7:::\n")
+            } else {
+                val lines2 = shadow.readText().split("\n").toMutableList()
+                var replaced = false
+                for (i in lines2.indices) {
+                    if (lines2[i].startsWith("root:")) {
+                        lines2[i] = "root::0:99999:7:::"
+                        replaced = true
+                        break
+                    }
+                }
+                if (!replaced) {
+                    if (lines2.isNotEmpty() && lines2.last().isNotEmpty()) lines2.add("root::0:99999:7:::")
+                    else lines2.add(0, "root::0:99999:7:::")
+                }
+                shadow.writeText(lines2.joinToString("\n"))
+            }
+            val ok = shadow.isFile && shadow.readText().contains("root::")
+            DebugLog.i("RootfsPatcher", "shadow root passwordless: " + if (ok) "ok" else "FAILED")
+        } catch (t: Throwable) {
+            DebugLog.e("RootfsPatcher", "ensure shadow failed", t)
+        }
+    }
+
+    /** 照搬rikkahub：tmp/var/tmp/root目录创建与权限 */
+    private fun ensureTempDirs(linuxDir: File) {
+        listOf("tmp", "var/tmp", "root").forEach { path ->
+            File(linuxDir, path).mkdirs()
+        }
+        listOf(File(linuxDir, "tmp"), File(linuxDir, "var/tmp")).forEach { dir ->
+            dir.setReadable(true, false)
+            dir.setWritable(true, false)
+            dir.setExecutable(true, false)
+        }
+        File(linuxDir, "root").apply {
+            setReadable(true, true)
+            setWritable(true, true)
+            setExecutable(true, true)
+        }
     }
 
     private fun ensureRootfsDns(
@@ -124,20 +213,6 @@ class RootfsPatcher {
                 additions.forEach { appendLine(it) }
             }
         )
-    }
-
-    private fun ensureTempDirs(linuxDir: File) {
-        listOf("tmp", "var/tmp", "root").forEach { path -> File(linuxDir, path).mkdirs() }
-        listOf(File(linuxDir, "tmp"), File(linuxDir, "var/tmp")).forEach { dir ->
-            dir.setReadable(true, false)
-            dir.setWritable(true, false)
-            dir.setExecutable(true, false)
-        }
-        File(linuxDir, "root").apply {
-            setReadable(true, true)
-            setWritable(true, true)
-            setExecutable(true, true)
-        }
     }
 
     private fun currentSupplementaryGroupIds(): List<Long> {

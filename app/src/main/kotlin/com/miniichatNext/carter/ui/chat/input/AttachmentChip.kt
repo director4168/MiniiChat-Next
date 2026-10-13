@@ -27,7 +27,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.data.model.Attachment
-import com.miniichatNext.carter.util.AttachmentLoader
+import com.miniichatNext.carter.data.util.AttachmentLoader
 import androidx.compose.runtime.Composable
 
 @Composable

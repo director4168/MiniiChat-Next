@@ -1,6 +1,25 @@
 # 基础属性
 -keepattributes *Annotation*, InnerClasses, EnclosingMethod, Signature, Exceptions
 
+# Android组件（Application / Activity / Service / Receiver / Provider）
+# 默认proguard-android-optimize.txt应该有这些规则，但AGP 8.13.2+R8激进模式下偶发失效，
+# 显式keep避免ClassNotFoundException启动崩溃。
+-keep public class * extends android.app.Application
+-keep public class * extends android.app.Activity
+-keep public class * extends android.app.Service
+-keep public class * extends android.content.BroadcastReceiver
+-keep public class * extends android.content.ContentProvider
+
+# 自己写的Application类
+-keep class com.miniichatNext.carter.MiniiChatApplication { *; }
+
+# Mermaid WebView 的 JS 桥：@JavascriptInterface 方法名不能被混淆，否则JS调用失败
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keep class com.miniichatNext.carter.MainActivity { *; }
+-keep class com.miniichatNext.carter.AppDataDocumentsProvider { *; }
+
 # kotlinx.serialization
 -keep class kotlinx.serialization.** { *; }
 -keepclassmembers class kotlinx.serialization.json.** {
@@ -18,7 +37,7 @@
 -keepclasseswithmembers class com.miniichatNext.carter.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
-# 参与序列化的枚举不能改名 / 删除
+# 参与序列化的枚举不能改名/删除
 -keepclassmembers enum com.miniichatNext.carter.** { *; }
 
 -keep class io.ktor.** { *; }
@@ -33,7 +52,7 @@
     volatile <fields>;
 }
 
-# MCP 客户端为纯 JDK HttpURLConnection 实现，无 SDK、无反射，不需要额外 keep 规则
+# MCP客户端为纯JDK HttpURLConnection实现，无SDK、无反射，不需要额外keep规则
 
 # 诊断用，异常类名会显示在Dialog/Toast里
 -keepnames class * extends java.lang.Exception
@@ -47,3 +66,7 @@
 -dontwarn okio.**
 -dontwarn io.ktor.**
 -dontwarn androidx.compose.ui.tooling.**
+
+# jlatexmath native bridge（jlamex-math-android 内含 native 库，需保留反射入口）
+-keep class org.scilab.forge.jlatexmath.** { *; }
+-keep class ru.noties.jlatexmath.** { *; }

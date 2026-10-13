@@ -21,17 +21,20 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.RadioButton
+
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
@@ -78,12 +81,26 @@ fun SettingsScreen(
     onOpenSkills: () -> Unit,
     onOpenUserProfile: () -> Unit,
     onOpenAbout: () -> Unit,
+    onOpenUpdateSettings: () -> Unit = {},
+    onOpenAcknowledgements: () -> Unit = {},
     onOpenWorkspace: () -> Unit = {},
     onOpenMcp: () -> Unit = {},
+    onOpenBuiltInTools: () -> Unit = {},
     // 外部传入的滚动状态（AppRoot用rememberSaveable持有，跳转到关于再返回时保留位置）
-    scrollState: ScrollState? = null
+    scrollState: ScrollState? = null,
+    // 非空时滚到对应配置区（如"aux"=辅助模型区，从错误toast的"管理"按钮进入）
+    scrollTarget: String? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    // scrollTarget非空时用本地state并滚到对应区块（辅助错误toast的"管理"入口）
+    val effectiveScrollState = scrollState ?: rememberScrollState()
+    androidx.compose.runtime.LaunchedEffect(scrollTarget) {
+        if (scrollTarget == "aux") {
+            // 等一帧让布局完成再滚（拿不到精确坐标，直接滚到比例位置：辅助区在页面约55%处）
+            kotlinx.coroutines.delay(150)
+            effectiveScrollState.animateScrollTo((effectiveScrollState.maxValue * 55 / 100).coerceAtLeast(0))
+        }
+    }
     var system by rememberSaveable { mutableStateOf(settings.systemPrompt) }
     var temperature by rememberSaveable { mutableStateOf(settings.temperature) }
     val stream = settings.stream
@@ -106,7 +123,7 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 // 用AppRoot传入的ScrollState（如果提供），导航到关于页再返回时滚动位置保留
-                .verticalScroll(scrollState ?: rememberScrollState())
+                .verticalScroll(scrollState ?: effectiveScrollState)
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -281,6 +298,63 @@ fun SettingsScreen(
                         providers = providers,
                         onPick = { ref -> onChange { it.copy(ocrModel = ref) } }
                     )
+                    Spacer(Modifier.height(8.dp))
+                    // OCR触发模式三态：auto=仅纯文本模型/always=视觉模型也附加/off=禁用
+                    Column(modifier = Modifier.padding(horizontal = 4.dp)) {
+                        Text(
+                            stringResource(R.string.aux_ocr_mode),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(
+                                "auto" to R.string.aux_ocr_mode_auto,
+                                "always" to R.string.aux_ocr_mode_always,
+                                "off" to R.string.aux_ocr_mode_off,
+                            ).forEach { (mode, labelRes) ->
+                                androidx.compose.material3.FilterChip(
+                                    selected = settings.ocrMode == mode,
+                                    onClick = { onChange { it.copy(ocrMode = mode) } },
+                                    label = { Text(stringResource(labelRes), style = MaterialTheme.typography.labelLarge) }
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        // 清除OCR识别缓存（隐私/调试用：识别结果按图片哈希缓存30天）
+                        TextButton(
+                            onClick = {
+                                com.miniichatNext.carter.vm.clearOcrImageCache(context)
+                                android.widget.Toast.makeText(
+                                    context,
+                                    context.getString(R.string.aux_ocr_cache_cleared),
+                                    android.widget.Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        ) {
+                            Text(
+                                stringResource(R.string.aux_ocr_clear_cache),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.aux_fallback_to_active),
+                                style = MaterialTheme.typography.bodyLarge)
+                            Text(stringResource(R.string.aux_fallback_to_active_hint),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = settings.auxFallbackToActive,
+                            onCheckedChange = { v ->
+                                onChange { s -> s.copy(auxFallbackToActive = v) }
+                            }
+                        )
+                    }
                 }
             }
 
@@ -349,11 +423,18 @@ fun SettingsScreen(
                         onClick = onOpenMcp,
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    // 内置文件管理工具（从MCP服务页移出来，单独在MCP服务下方）
+                    SettingsNavRow(
+                        icon = Icons.Default.Folder,
+                        title = stringResource(R.string.mcp_builtin_title),
+                        subtitle = stringResource(R.string.mcp_builtin_subtitle, com.miniichatNext.carter.data.mcp.BuiltInFileTools.toolNames.size),
+                        onClick = onOpenBuiltInTools,
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                     SettingsNavRow(
                         icon = Icons.Default.Extension,
                         title = stringResource(R.string.skills),
-                        subtitle = if (skills.isEmpty()) stringResource(R.string.skills_subtitle_empty)
-                        else stringResource(R.string.skills_subtitle_count, skills.count { it.enabled }),
+                        subtitle = stringResource(R.string.skills_subtitle),
                         onClick = onOpenSkills,
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
@@ -377,10 +458,8 @@ fun SettingsScreen(
             }
 
             SectionHeader(stringResource(R.string.section_about))
-            // 关于入口：从内联展开改成独立页面跳转，关于文本 / 链接 / 版本号
-            // 都在AboutScreen里展示，这里只保留一个导航行
+            // 关于栏目：关于+更新设置两个入口（更新设置放在关于下方，直接在设置页里）
             SectionCard {
-                // 注意：SectionCard内部是Box（不是Column），多个子元素会互相叠画→必须自己套Column
                 Column {
                     Row(
                         modifier = Modifier
@@ -402,6 +481,68 @@ fun SettingsScreen(
                             )
                             Text(
                                 stringResource(R.string.about_subtitle),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(
+                            Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onOpenUpdateSettings)
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.SystemUpdate,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.update_settings_title),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                stringResource(R.string.update_settings_sub),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(
+                            Icons.Default.ChevronRight,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable(onClick = onOpenAcknowledgements)
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Favorite,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                stringResource(R.string.acknowledgements_title),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                stringResource(R.string.acknowledgements_sub),
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -551,7 +692,8 @@ private fun AuxModelRow(
         )
     }
     if (showPicker) {
-        AuxModelPickerDialog(
+        AuxModelPickerSheet(
+            label = label,
             providers = providers,
             selected = ref,
             onPick = {
@@ -567,73 +709,7 @@ private fun AuxModelRow(
     }
 }
 
-@Composable
-private fun AuxModelPickerDialog(
-    providers: List<ProviderConfig>,
-    selected: String,
-    onPick: (String) -> Unit,
-    onClear: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.select_model)) },
-        text = {
-            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                if (providers.isEmpty()) {
-                    Text(stringResource(R.string.no_providers),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                } else {
-                    providers.forEach { p ->
-                        val pids = p.modelIds()
-                        if (pids.isEmpty()) {
-                            Text(
-                                "${p.name} — (no models)",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
-                            )
-                        } else {
-                            Text(
-                                p.name,
-                                style = MaterialTheme.typography.labelLarge,
-                                modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
-                            )
-                            pids.forEach { m ->
-                                val key = "${p.id}::$m"
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable { onPick(key) }
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    androidx.compose.material3.RadioButton(
-                                        selected = key == selected,
-                                        onClick = { onPick(key) }
-                                    )
-                                    Text(m, style = MaterialTheme.typography.bodyMedium)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Row {
-                androidx.compose.material3.TextButton(onClick = onClear) {
-                    Text(stringResource(R.string.clear))
-                }
-                androidx.compose.material3.TextButton(onClick = onDismiss) {
-                    Text(stringResource(R.string.cancel))
-                }
-            }
-        }
-    )
-}
-
-/** 设置页的一行导航项（图标 + 标题 + 副标题 + 箭头）。 */
+/** 设置页的一行导航项（图标+标题+副标题+箭头）。 */
 @Composable
 private fun SettingsNavRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector,

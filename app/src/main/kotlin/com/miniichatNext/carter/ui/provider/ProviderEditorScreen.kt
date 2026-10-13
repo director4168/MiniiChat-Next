@@ -54,6 +54,7 @@ import com.miniichatNext.carter.data.model.ProviderPresets
 import com.miniichatNext.carter.util.newId
 import com.miniichatNext.carter.data.model.ProviderType
 import com.miniichatNext.carter.data.model.ThinkingLevel
+import com.miniichatNext.carter.ui.markdown.MarkdownText
 
 @Composable
 fun ProviderEditorScreen(
@@ -371,9 +372,9 @@ fun ProviderEditorScreen(
                                     presetBaseUrl = preset.baseUrl
                                     baseUrl = preset.baseUrl
                                     providerType = preset.type
-                                    // 预设可以自带非标端点路径（如xAI → /responses），
+                                    // 预设可以自带非标端点路径（如xAI→/responses），
                                     // 选中后同步到Chat Completions路径字段；用户
-                                    // 在UI里清空该字段会回退到默认 /chat/completions
+                                    // 在UI里清空该字段会回退到默认/chat/completions
                                     chatCompletionsPath = preset.path
                                     presetSheetOpen = false
                                 }
@@ -382,12 +383,12 @@ fun ProviderEditorScreen(
                             Column {
                                 Text(
                                     if (preset.type == com.miniichatNext.carter.data.model.ProviderType.CLAUDE)
-                                        "${preset.name}  • Claude"
+                                        "${preset.name}  • Anthropic"
                                     else preset.name,
                                     style = MaterialTheme.typography.bodyLarge
                                 )
                                 Text(
-                                    preset.hint,
+                                    stringResource(preset.hintRes),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -403,7 +404,7 @@ fun ProviderEditorScreen(
         AlertDialog(
             onDismissRequest = { showResponseApiWarning = false },
             title = { Text(stringResource(R.string.response_api)) },
-            text = { Text(stringResource(R.string.response_api_warning)) },
+            text = { com.miniichatNext.carter.ui.markdown.MarkdownText(text = stringResource(R.string.response_api_warning).replace("\n", "\n")) },
             confirmButton = {
                 TextButton(onClick = {
                     useResponseApi = true

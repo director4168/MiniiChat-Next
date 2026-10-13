@@ -1,5 +1,8 @@
 package com.miniichatNext.carter.data.mcp
 
+import android.content.Context
+import com.miniichatNext.carter.util.AppJson
+import com.miniichatNext.carter.R
 import com.miniichatNext.carter.debug.DebugLog
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -13,12 +16,12 @@ import java.io.InputStreamReader
 import java.util.concurrent.TimeUnit
 
 /**
- * 内置工具集：文件读写/移动/复制/删除 + 本地shell执行 + 需求澄清。
- * 路径限制在允许的根目录内（外部存储 + 应用私有目录）。
+ * 内置工具集：文件读写/移动/复制/删除+本地shell执行+需求澄清。
+ * 路径限制在允许的根目录内（外部存储+应用私有目录）。
  */
 object BuiltInFileTools {
 
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json get() = AppJson.json
 
     private var cachedRoots: List<File>? = null
     private var appFilesDir: File? = null
@@ -64,91 +67,115 @@ object BuiltInFileTools {
         return f
     }
 
-    val schema: List<McpTool> = listOf(
+    /** 工具名列表（给权限页计数、isBuiltIn等无文案场景用） */
+    val toolNames: List<String> = listOf(
+        "interactive_clarification", "execute_shell", "browser_fetch",
+        "file_list", "file_read", "file_write", "file_append", "file_delete",
+        "file_move", "file_copy", "file_rename", "file_mkdir",
+        "file_exists", "file_search", "file_info", "file_edit"
+    )
+
+    /** 工具描述与JSON Schema走资源（内置工具页要跟随界面语言） */
+    fun schema(context: Context): List<McpTool> = listOf(
         tool(
             "interactive_clarification",
-            "当需要确认或进一步理解用户的需求、偏好或方案时调用此工具。向用户抛出题目与最多4个预设选项，用户可单选、多选或在末尾自定义输入补充信息。",
-            """{"type":"object","properties":{"question":{"type":"string","description":"需要向用户确认的问题或题目"},"options":{"type":"array","items":{"type":"string"},"description":"选项列表，最多4个具体选项"},"allow_multiple":{"type":"boolean","description":"是否允许多选"}},"required":["question","options"]}"""
+            context.getString(R.string.builtin_tool_clarification_desc),
+            context.getString(R.string.builtin_tool_clarification_schema)
+        ),
+        tool(
+            "browser_fetch",
+            context.getString(R.string.builtin_tool_browser_desc, BrowserTools.currentUa(context)),
+            context.getString(R.string.builtin_tool_browser_schema)
         ),
         tool(
             "execute_shell",
-            "在安卓本机环境中执行 Shell (sh/bash) 脚本或终端命令，返回标准输出与错误输出。",
-            """{"type":"object","properties":{"script":{"type":"string","description":"要执行的 Shell 脚本代码或命令行"},"timeout_seconds":{"type":"integer","description":"执行超时时间（秒），默认 30 秒"}},"required":["script"]}"""
+            context.getString(R.string.builtin_tool_shell_desc),
+            context.getString(R.string.builtin_tool_shell_schema)
         ),
         tool(
             "file_list",
-            "列出指定目录下的文件与子目录。返回名称、类型、大小。",
-            """{"type":"object","properties":{"path":{"type":"string","description":"目录绝对路径，例如 /storage/emulated/0"}},"required":["path"]}"""
+            context.getString(R.string.builtin_tool_file_list_desc),
+            context.getString(R.string.builtin_tool_file_list_schema)
         ),
         tool(
             "file_read",
-            "读取文本文件内容。可指定最大读取字节数，默认 256KB。",
-            """{"type":"object","properties":{"path":{"type":"string","description":"文件绝对路径"},"max_bytes":{"type":"integer","description":"最大读取字节数"}},"required":["path"]}"""
+            context.getString(R.string.builtin_tool_file_read_desc),
+            context.getString(R.string.builtin_tool_file_read_schema)
         ),
         tool(
             "file_write",
-            "把文本内容写入文件（覆盖）。父目录不存在会自动创建。",
-            """{"type":"object","properties":{"path":{"type":"string","description":"文件绝对路径"},"content":{"type":"string","description":"写入内容"}},"required":["path","content"]}"""
+            context.getString(R.string.builtin_tool_file_write_desc),
+            context.getString(R.string.builtin_tool_file_write_schema)
         ),
         tool(
             "file_append",
-            "把文本内容追加到文件末尾。文件不存在会创建。",
-            """{"type":"object","properties":{"path":{"type":"string","description":"文件绝对路径"},"content":{"type":"string","description":"追加内容"}},"required":["path","content"]}"""
+            context.getString(R.string.builtin_tool_file_append_desc),
+            context.getString(R.string.builtin_tool_file_append_schema)
         ),
         tool(
             "file_delete",
-            "删除文件或目录。目录会递归删除。",
-            """{"type":"object","properties":{"path":{"type":"string","description":"要删除的文件或目录绝对路径"}},"required":["path"]}"""
+            context.getString(R.string.builtin_tool_file_delete_desc),
+            context.getString(R.string.builtin_tool_file_delete_schema)
         ),
         tool(
             "file_move",
-            "把文件或目录移动到新位置。",
-            """{"type":"object","properties":{"from":{"type":"string","description":"源路径"},"to":{"type":"string","description":"目标路径"}},"required":["from","to"]}"""
+            context.getString(R.string.builtin_tool_file_move_desc),
+            context.getString(R.string.builtin_tool_file_move_schema)
         ),
         tool(
             "file_copy",
-            "复制文件或目录到新位置。",
-            """{"type":"object","properties":{"from":{"type":"string","description":"源路径"},"to":{"type":"string","description":"目标路径"}},"required":["from","to"]}"""
+            context.getString(R.string.builtin_tool_file_copy_desc),
+            context.getString(R.string.builtin_tool_file_copy_schema)
         ),
         tool(
             "file_rename",
-            "重命名文件或目录（同一目录内的改名）。",
-            """{"type":"object","properties":{"path":{"type":"string","description":"文件绝对路径"},"new_name":{"type":"string","description":"新名称"}},"required":["path","new_name"]}"""
+            context.getString(R.string.builtin_tool_file_rename_desc),
+            context.getString(R.string.builtin_tool_file_rename_schema)
         ),
         tool(
             "file_mkdir",
-            "创建目录（含多级父目录）。",
-            """{"type":"object","properties":{"path":{"type":"string","description":"目录绝对路径"}},"required":["path"]}"""
+            context.getString(R.string.builtin_tool_file_mkdir_desc),
+            context.getString(R.string.builtin_tool_file_mkdir_schema)
         ),
         tool(
             "file_exists",
-            "判断路径是否存在，并返回是文件还是目录。",
-            """{"type":"object","properties":{"path":{"type":"string","description":"路径"}},"required":["path"]}"""
+            context.getString(R.string.builtin_tool_file_exists_desc),
+            context.getString(R.string.builtin_tool_file_exists_schema)
         ),
         tool(
             "file_search",
-            "在指定目录下按文件名关键字递归搜索，返回匹配的路径列表。",
-            """{"type":"object","properties":{"path":{"type":"string","description":"搜索根目录"},"keyword":{"type":"string","description":"搜索关键字"},"max_results":{"type":"integer","description":"最大匹配数量"}},"required":["path","keyword"]}"""
+            context.getString(R.string.builtin_tool_file_search_desc),
+            context.getString(R.string.builtin_tool_file_search_schema)
+        ),
+        tool(
+            "file_edit",
+            context.getString(R.string.builtin_tool_file_edit_desc),
+            context.getString(R.string.builtin_tool_file_edit_schema)
         ),
         tool(
             "file_info",
-            "获取文件/目录的详细信息：大小、最后修改时间、是否目录。",
-            """{"type":"object","properties":{"path":{"type":"string","description":"路径"}},"required":["path"]}"""
+            context.getString(R.string.builtin_tool_file_info_desc),
+            context.getString(R.string.builtin_tool_file_info_schema)
         )
     )
-
     private fun tool(name: String, desc: String, schema: String) =
         McpTool(name = name, description = desc, inputSchema = schema, serverId = "", builtIn = true)
 
-    fun isBuiltIn(name: String): Boolean = schema.any { it.name == name }
+    fun isBuiltIn(name: String): Boolean = toolNames.contains(name)
+
+    /** 默认免审批的工具（询问类工具不阻塞，用户在选项卡片上交互） */
+    /** 默认免审批：询问类工具+只读网络工具（browser_fetch）不阻塞 */
+    fun defaultRequireApproval(name: String): Boolean =
+        name != "interactive_clarification" && name != "browser_fetch"
     fun hasTool(name: String): Boolean = isBuiltIn(name)
 
-    fun execute(name: String, argumentsJson: String): McpToolResult = runCatching {
+    fun execute(context: Context, name: String, argumentsJson: String): McpToolResult = runCatching {
         val args = if (argumentsJson.isBlank()) JsonObject(emptyMap())
         else json.parseToJsonElement(argumentsJson).jsonObject
         when (name) {
-            "interactive_clarification" -> interactiveClarification(args)
-            "execute_shell" -> executeShell(args)
+            "interactive_clarification" -> interactiveClarification(context, args)
+            "browser_fetch" -> BrowserTools.execute(context, args)
+            "execute_shell" -> executeShell(context, args)
             "file_list" -> fileList(args)
             "file_read" -> fileRead(args)
             "file_write" -> fileWrite(args, append = false)
@@ -160,6 +187,7 @@ object BuiltInFileTools {
             "file_mkdir" -> fileMkdir(args)
             "file_exists" -> fileExists(args)
             "file_search" -> fileSearch(args)
+            "file_edit" -> fileEdit(args)
             "file_info" -> fileInfo(args)
             else -> McpToolResult(ok = false, content = "", error = "unknown builtin tool: $name")
         }
@@ -168,7 +196,7 @@ object BuiltInFileTools {
         McpToolResult(ok = false, content = "", error = e.message ?: "error")
     }
 
-    private fun executeShell(args: JsonObject): McpToolResult {
+    private fun executeShell(context: Context, args: JsonObject): McpToolResult {
         val script = requireArg(args, "script")
         val timeoutSec = arg(args, "timeout_seconds")?.toLongOrNull() ?: 30L
         val tmpDir = File(appFilesDir ?: File("/data/local/tmp"), "scripts").apply { mkdirs() }
@@ -183,34 +211,42 @@ object BuiltInFileTools {
             val finished = process.waitFor(timeoutSec, TimeUnit.SECONDS)
             if (!finished) {
                 process.destroyForcibly()
-                return fail("执行超时（超过 $timeoutSec 秒）")
+                return fail(context.getString(R.string.builtin_shell_timeout, timeoutSec))
             }
             val raw = BufferedReader(InputStreamReader(process.inputStream)).use { it.readText() }
             val exitCode = process.exitValue()
             // 工具输出上限（对齐rikkahub）：避免撑爆模型上下文
             val output = raw.trimFragment(MAX_TOOL_OUTPUT_CHARS)
-            if (exitCode == 0) ok(output.ifBlank { "(执行成功，无输出)" })
-            else fail("执行退出代码: $exitCode\n输出:\n$output")
+            if (exitCode == 0) ok(output.ifBlank { context.getString(R.string.builtin_shell_no_output) })
+            else fail(context.getString(R.string.builtin_shell_exit, exitCode, output))
         } catch (e: Exception) {
-            fail("Shell 执行失败: ${e.message}")
+            fail(context.getString(R.string.builtin_shell_failed, e.message.orEmpty()))
         } finally {
             runCatching { scriptFile.delete() }
         }
     }
 
-    private fun interactiveClarification(args: JsonObject): McpToolResult {
-        val question = arg(args, "question") ?: "需求选项确认"
-        val rawOptions = args["options"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+    private fun interactiveClarification(context: Context, args: JsonObject): McpToolResult {
+        val question = arg(args, "question") ?: context.getString(R.string.builtin_clarify_default_question)
+        val rawOptions = args["options"]?.jsonArray?.mapNotNull { el ->
+            when (el) {
+                is kotlinx.serialization.json.JsonPrimitive -> el.contentOrNull
+                is JsonObject -> {
+                    (listOf("content", "item", "value", "text", "label", "choice")
+                        .firstNotNullOfOrNull { key -> (el[key] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull })
+                        ?: el.values
+                            .filterIsInstance<kotlinx.serialization.json.JsonPrimitive>()
+                            .firstOrNull { it.contentOrNull?.isNotBlank() == true }?.contentOrNull
+                }
+                else -> null
+            }
+        } ?: emptyList()
         val options = rawOptions.take(4)
         val allowMultiple = args["allow_multiple"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
 
-        val sb = StringBuilder()
-        sb.append("已向用户展示选项卡片并收集反馈：\n")
-        sb.append("问题：").append(question).append('\n')
-        sb.append("模式：").append(if (allowMultiple) "多选" else "单选").append('\n')
-        options.forEachIndexed { i, opt -> sb.append("选项").append(i + 1).append("：").append(opt).append('\n') }
-        sb.append("末尾选项：其他（支持用户手动输入自定义需求）\n")
-        return ok(sb.toString())
+        // 结果只做简短确认——不含选项枚举：选项全文会以"工具结果"展示在COT卡片上，
+        // 用户提交选择后卡片result会覆盖为所选；枚举文本只会让用户误以为选项被重复提交
+        return ok(context.getString(R.string.builtin_clarify_shown))
     }
 
     private fun fileList(args: JsonObject): McpToolResult {
@@ -314,17 +350,128 @@ object BuiltInFileTools {
     private fun fileSearch(args: JsonObject): McpToolResult {
         val root = safeFile(requireArg(args, "path"))
         val keyword = requireArg(args, "keyword")
+        val useRegex = arg(args, "regex")?.toBooleanStrictOrNull() ?: false
         val max = arg(args, "max_results")?.toIntOrNull() ?: 50
         if (!root.isDirectory) return fail("not a directory: ${root.path}")
+        val regex = if (useRegex) {
+            runCatching { Regex(keyword, RegexOption.IGNORE_CASE) }.getOrElse {
+                return fail("invalid regex: ${it.message}")
+            }
+        } else null
+        val matcher: (String) -> Boolean = { name ->
+            if (regex != null) regex.containsMatchIn(name)
+            else name.contains(keyword, ignoreCase = true)
+        }
         val out = mutableListOf<String>()
         root.walkTopDown().forEach { f ->
             if (out.size >= max) return@forEach
-            if (f.name.contains(keyword, ignoreCase = true)) out.add(f.path)
+            if (matcher(f.name)) out.add(f.path)
         }
+        val mode = if (useRegex) "regex" else "keyword"
         val sb = StringBuilder()
-        sb.append("found ${out.size} match(es) for \"$keyword\" under ${root.path}\n")
+        sb.append("found ${out.size} match(es) for \"$keyword\" ($mode) under ${root.path}\n")
         out.forEach { sb.append(it).append('\n') }
         return ok(sb.toString())
+    }
+
+    /**
+     * 精确编辑（参考rikkahub TextReplacers三级回退）：
+     * 1) exact——精确子串匹配（非重叠）
+     * 2) line_trimmed——逐行trim后比较（容忍缩进/行尾空白/CRLF）
+     * 3) block_anchor——首尾两行锚定+中间任意（大块替换）
+     * replace_all=false时要求恰好1处命中（多处报错让模型缩小上下文）
+     */
+    private fun fileEdit(args: JsonObject): McpToolResult {
+        val f = safeFile(requireArg(args, "path"))
+        val oldText = requireArg(args, "old_text")
+        val newText = arg(args, "new_text") ?: ""
+        val replaceAll = arg(args, "replace_all")?.toBooleanStrictOrNull() ?: false
+        if (!f.isFile) return fail("not a file: ${f.path}")
+        val content = runCatching { f.readText() }.getOrElse { return fail("read failed: ${it.message}") }
+        if (oldText.isEmpty()) return fail("old_text must not be empty")
+
+        data class Match(val start: Int, val endExclusive: Int)
+        val matches: List<Match> = run {
+            // 1) exact
+            val exact = mutableListOf<Match>()
+            var idx = content.indexOf(oldText)
+            while (idx >= 0) { exact.add(Match(idx, idx + oldText.length)); idx = content.indexOf(oldText, idx + oldText.length) }
+            if (exact.isNotEmpty()) return@run exact
+            // 2) line_trimmed：滑动行窗口，逐行trim比较；替换文本按首行缩进重排
+            val oldLines = oldText.lines().let { if (it.size > 1 && it.last().isEmpty()) it.dropLast(1) else it }
+            if (oldLines.any { it.isNotBlank() }) {
+                val oldTrim = oldLines.map { it.trim() }
+                data class L(val text: String, val start: Int, val endEx: Int)
+                val lines = buildList {
+                    var pos = 0
+                    content.lineSequence().forEach { l ->
+                        add(L(l, pos, pos + l.length)); pos += l.length + 1
+                    }
+                }
+                val lm = mutableListOf<Match>()
+                var k = 0
+                while (k + oldLines.size <= lines.size) {
+                    val win = lines.subList(k, k + oldLines.size)
+                    if (win.map { it.text.trim() } == oldTrim) {
+                        // new_text按窗口首行缩进重排（保持块结构）
+                        val oldIndent = oldLines.first().takeWhile { it == ' ' || it == '\t' }
+                        val newIndent = win.first().text.takeWhile { it == ' ' || it == '\t' }
+                        var replacement = newText
+                        if (oldIndent.isNotEmpty() && newIndent != oldIndent) {
+                            replacement = newText.lines().joinToString("\n") { line ->
+                                if (line.startsWith(oldIndent)) newIndent + line.removePrefix(oldIndent) else line
+                            }
+                        }
+                        lm.add(Match(win.first().start, win.last().endEx))
+                    }
+                    k++
+                }
+                if (lm.isNotEmpty()) return@run lm
+            }
+            // 3) block_anchor：首尾行锚定（非空）+中间任意
+            val firstOld = oldText.lines().firstOrNull { it.isNotBlank() }?.trim()
+            val lastOld = oldText.lines().lastOrNull { it.isNotBlank() }?.trim()
+            if (firstOld != null && lastOld != null) {
+                val cl = content.lines()
+                val bm = mutableListOf<Match>()
+                var a = 0
+                val offsets = buildList {
+                    var pos = 0
+                    cl.forEach { l -> add(pos); pos += l.length + 1 }
+                }
+                while (a < cl.size) {
+                    if (cl[a].trim() == firstOld) {
+                        var b = a
+                        while (b < cl.size) {
+                            if (cl[b].trim() == lastOld) {
+                                bm.add(Match(offsets[a], offsets[b] + cl[b].length)); break
+                            }
+                            b++
+                        }
+                    }
+                    a++
+                }
+                if (bm.isNotEmpty()) return@run bm
+            }
+            emptyList()
+        }
+
+        if (matches.isEmpty()) {
+            return fail("old_text not found even with whitespace-tolerant matching; re-read the file and copy old_text exactly")
+        }
+        if (!replaceAll && matches.size > 1) {
+            return fail("old_text matches ${matches.size} locations; add surrounding context or set replace_all=true")
+        }
+        // 从后往前替换（避免偏移失效）
+        val sb = StringBuilder(content)
+        val use = if (replaceAll) matches else listOf(matches.first())
+        use.sortedByDescending { it.start }.forEach { m ->
+            sb.replace(m.start, m.endExclusive, newText)
+        }
+        return runCatching {
+            f.writeText(sb.toString())
+            ok("edited ${use.size} location(s) in ${f.path} (strategy=${if (content != sb.toString()) "matched" else "no-op"})")
+        }.getOrElse { fail("write failed: ${it.message}") }
     }
 
     private fun fileInfo(args: JsonObject): McpToolResult {
@@ -349,7 +496,7 @@ object BuiltInFileTools {
         else -> "%.1fMB".format(b / 1024.0 / 1024.0)
     }
 
-    // 工具返回String过长时截断，避免撑爆模型上下文（保留主体 + 加标记）
+    // 工具返回String过长时截断，避免撑爆模型上下文（保留主体+加标记）
     private fun String.trimFragment(maxChars: Int): String =
         if (length <= maxChars) this
         else take(maxChars * 3 / 4) + "\n...[truncated ${length - maxChars * 3 / 4} chars]..."

@@ -16,13 +16,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 
 /**
  * 一次导航的目标。
- * [depth] 是它在返回栈里的层级，过渡动画靠比较前后两个NavKey的depth判断方向。
+ * [depth]是它在返回栈里的层级，过渡动画靠比较前后两个NavKey的depth判断方向。
  */
 data class NavKey(
     val route: String,
@@ -32,7 +33,7 @@ data class NavKey(
 
 /**
  * 极简返回栈。
- * 只存路由（路由 -> 页面由AppRoot的when决定），避免引入导航库依赖。
+ * 只存路由（路由->页面由AppRoot的when决定），避免引入导航库依赖。
  */
 class NavController(initialRoute: String) {
 
@@ -59,7 +60,7 @@ class NavController(initialRoute: String) {
         return true
     }
 
-    /** 回退到栈里已存在的 [route]；不在栈里返回false（不做任何事） */
+    /** 回退到栈里已存在的[route]；不在栈里返回false（不做任何事） */
     fun popUpTo(route: String): Boolean {
         val idx = stack.indexOfLast { it.route == route }
         if (idx < 0) return false
@@ -67,14 +68,14 @@ class NavController(initialRoute: String) {
         return true
     }
 
-    /** 回退到 [route]；栈里没有就压一个（用于从聊天页直接进设置） */
+    /** 回退到[route]；栈里没有就压一个（用于从聊天页直接进设置） */
     fun navigateUpTo(route: String): Boolean {
         if (popUpTo(route)) return true
         push(route)
         return false
     }
 
-    /** 返回上一级：优先回到 [route]，否则弹一层 */
+    /** 返回上一级：优先回到[route]，否则弹一层 */
     fun back(route: String? = null): Boolean {
         if (route != null && popUpTo(route)) return true
         return pop()
@@ -103,10 +104,10 @@ class NavController(initialRoute: String) {
  * 统一的「返回上一级」调度器。
  *
  * 页面可注册**层级内**的返回处理器（例如MCP详情页要先回到列表页而不是退出该模块），
- * 后注册的优先处理；没有任何处理器消费时再由 [NavController] 弹栈；栈底交回系统。
+ * 后注册的优先处理；没有任何处理器消费时再由[NavController]弹栈；栈底交回系统。
  *
- * 后期扩展：调用 [registerHandler] 即可给任意路由挂自定义返回逻辑；
- * [fallback] 用于“再按一次退出”之类的全局兜底。
+ * 后期扩展：调用[registerHandler]即可给任意路由挂自定义返回逻辑；
+ * [fallback]用于“再按一次退出”之类的全局兜底。
  */
 class AppBackDispatcher {
 
@@ -144,7 +145,7 @@ class AppBackDispatcher {
 
 /**
  * 页面在自身层级内注册返回处理。
- * [enabled] 为false时不注册（例如模块已经处于根层级，返回应交给返回栈）。
+ * [enabled]为false时不注册（例如模块已经处于根层级，返回应交给返回栈）。
  */
 @Composable
 fun NavBackInterceptor(
@@ -161,7 +162,7 @@ fun NavBackInterceptor(
     }
 }
 
-/** 页面切换动画；可按路由覆盖（见 [AppNavRegistry]） */
+/** 页面切换动画；可按路由覆盖（见[AppNavRegistry]） */
 data class NavTransitions(
     val forward: ContentTransform,
     val backward: ContentTransform,
@@ -181,7 +182,7 @@ object NavTransitionPresets {
     private const val ENTER_MS = 260
     private const val EXIT_MS = 200
 
-    /** 默认：横向轻微位移 + 淡入淡出（接近Material shared-axis） */
+    /** 默认：横向轻微位移+淡入淡出（接近Material shared-axis） */
     val Slide: NavTransitions = NavTransitions(
         forward = slideInHorizontally(animationSpec = tween(ENTER_MS)) { it / 5 } + fadeIn(tween(ENTER_MS)) togetherWith
             slideOutHorizontally(animationSpec = tween(EXIT_MS)) { -it / 6 } + fadeOut(tween(EXIT_MS)),
@@ -195,7 +196,7 @@ object NavTransitionPresets {
         backward = fadeIn(tween(ENTER_MS)) togetherWith fadeOut(tween(EXIT_MS)),
     )
 
-    /** 缩放 + 淡入，适合弹层式的页面 */
+    /** 缩放+淡入，适合弹层式的页面 */
     val Scale: NavTransitions = NavTransitions(
         forward = scaleIn(initialScale = 0.94f, animationSpec = tween(ENTER_MS)) + fadeIn(tween(ENTER_MS)) togetherWith
             scaleOut(targetScale = 1.04f, animationSpec = tween(EXIT_MS)) + fadeOut(tween(EXIT_MS)),
@@ -231,19 +232,29 @@ object AppNavRegistry {
         routeTransitions[to.route] ?: routeTransitions[from.route] ?: transitions.specFor(from, to)
 }
 
-/** 承载当前页面并播放进入/返回过渡动画 */
+/**
+ * 承载当前页面并播放进入/返回过渡动画。
+ *
+ * 用[androidx.compose.runtime.saveable.rememberSaveableStateHolder]把每个路由的
+ * 组合状态（rememberSaveable/LazyListState等）按路由key隔离保存：push新路由时旧路由
+ * 的组合被销毁，但其状态由state holder持有；pop回来时状态完整恢复（滚动位置/草稿/编辑态）。
+ * 没有这层，AnimatedContent切走时content销毁，回来就是"全新页面"——聊天页滚动位置归零。
+ */
 @Composable
 fun AppNavHost(
     nav: NavController,
     modifier: Modifier = Modifier,
     content: @Composable (NavKey) -> Unit,
 ) {
+    val stateHolder = rememberSaveableStateHolder()
     AnimatedContent(
         targetState = nav.current,
         modifier = modifier,
         transitionSpec = { AppNavRegistry.transformFor(initialState, targetState) },
         label = "app-nav",
     ) { key ->
-        content(key)
+        stateHolder.SaveableStateProvider(key.route) {
+            content(key)
+        }
     }
 }

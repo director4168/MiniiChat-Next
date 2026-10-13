@@ -32,7 +32,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.HelpOutline
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Psychology
@@ -64,21 +64,27 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.miniichatNext.carter.util.AppJson
+import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.model.ToolInvocation
 import com.miniichatNext.carter.data.model.ToolInvocationState
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-/** 一条思考步骤：模型推理 或 一次工具调用 */
+/** 一条思考步骤：模型推理或一次工具调用 */
 sealed interface ThoughtStep {
     data class Reasoning(val text: String) : ThoughtStep
     data class Tool(val invocation: ToolInvocation) : ThoughtStep
@@ -88,7 +94,7 @@ private const val CLARIFICATION_TOOL = "interactive_clarification"
 
 /**
  * 以时间线卡片的形式展示一组思考步骤（对照RikkaHub的ChainOfThought）。
- * 步骤数超过 [collapsedVisibleCount] 时默认只显示末尾若干步，顶部提供展开/收起。
+ * 步骤数超过[collapsedVisibleCount]时默认只显示末尾若干步，顶部提供展开/收起。
  */
 @Composable
 fun ChainOfThought(
@@ -136,7 +142,8 @@ fun ChainOfThought(
                     }
                     Text(
                         modifier = Modifier.padding(start = 8.dp),
-                        text = if (expanded) "收起" else "展开其余 ${steps.size - collapsedVisibleCount} 步",
+                        text = if (expanded) stringResource(R.string.tool_collapse)
+                        else stringResource(R.string.tool_expand_more, steps.size - collapsedVisibleCount),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -174,7 +181,7 @@ fun ChainOfThought(
     }
 }
 
-/** 步骤容器：左侧24dp图标槽 + 右侧内容，与时间线对齐 */
+/** 步骤容器：左侧24dp图标槽+右侧内容，与时间线对齐 */
 @Composable
 private fun StepRow(
     icon: @Composable () -> Unit,
@@ -214,7 +221,7 @@ private fun ReasoningStep(text: String) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "思考过程",
+                text = stringResource(R.string.tool_thinking),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.weight(1f),
@@ -269,11 +276,11 @@ private fun ToolStep(
         else -> MaterialTheme.colorScheme.outline
     }
     val statusText = when {
-        isPending -> "等待审批"
-        isRunning -> "执行中"
-        isSuccess -> "调用完成"
-        isError -> "调用出错"
-        isRejected -> "已拒绝"
+        isPending -> stringResource(R.string.tool_status_pending)
+        isRunning -> stringResource(R.string.tool_status_running)
+        isSuccess -> stringResource(R.string.tool_status_success)
+        isError -> stringResource(R.string.tool_status_error)
+        isRejected -> stringResource(R.string.tool_status_rejected)
         else -> invocation.state
     }
 
@@ -333,7 +340,7 @@ private fun ToolStep(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "调用工具 ${invocation.toolName}",
+                text = stringResource(R.string.tool_call_prefix, invocation.toolName),
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.secondary,
                 modifier = Modifier.weight(1f),
@@ -354,17 +361,18 @@ private fun ToolStep(
         }
 
         if (expand) {
+            val noArgsLabel = stringResource(R.string.tool_no_args)
             Spacer(Modifier.height(6.dp))
-            CodeBlock("输入参数", invocation.arguments.ifBlank { "（无参数）" })
+            CodeBlock(stringResource(R.string.tool_args_label), invocation.arguments.ifBlank { noArgsLabel })
             Spacer(Modifier.height(6.dp))
             CodeBlock(
-                label = "调用结果",
+                label = stringResource(R.string.tool_result_label),
                 text = when {
-                    isRunning -> "执行中…"
-                    invocation.error != null -> "错误：${invocation.error}"
+                    isRunning -> stringResource(R.string.tool_result_running)
+                    invocation.error != null -> stringResource(R.string.tool_result_error, invocation.error)
                     invocation.result.isNotBlank() -> invocation.result
-                    isPending -> "等待用户授权…"
-                    else -> "（无返回结果）"
+                    isPending -> stringResource(R.string.tool_result_pending)
+                    else -> stringResource(R.string.tool_result_none)
                 }
             )
         }
@@ -379,7 +387,7 @@ private fun ToolStep(
                         modifier = Modifier.height(30.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
-                    ) { Text("拒绝", fontSize = 12.sp) }
+                    ) { Text(stringResource(R.string.tool_reject), fontSize = 12.sp) }
                 }
                 Spacer(Modifier.width(8.dp))
                 if (onApprove != null) {
@@ -388,7 +396,7 @@ private fun ToolStep(
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.height(30.dp),
                         contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp)
-                    ) { Text("同意调用", fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
+                    ) { Text(stringResource(R.string.tool_approve), fontSize = 12.sp, fontWeight = FontWeight.SemiBold) }
                 }
             }
         }
@@ -419,7 +427,7 @@ private fun CodeBlock(label: String, text: String) {
                 .padding(vertical = 8.dp)
         ) {
             // 行号栏（固定在左侧，代码横向滚动）
-            // 注意：颜色必须在组合期取出来，drawBehind的lambda不是 @Composable
+            // 注意：颜色必须在组合期取出来，drawBehind的lambda不是@Composable
             val gutterDivider = MaterialTheme.colorScheme.outlineVariant
             val gutterFg = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             Column(
@@ -464,7 +472,7 @@ private fun CodeBlock(label: String, text: String) {
 }
 
 /**
- * 需求澄清：问题 + 最多4个选项（可多选）+ 自定义输入 + 提交按钮。
+ * 需求澄清：问题+最多4个选项（可多选）+自定义输入+提交按钮。
  * 需要用户填表，因此不放进ChainOfThought的步骤流里。
  */
 @Composable
@@ -473,20 +481,35 @@ fun InteractiveClarificationCard(
     onApprove: ((ToolInvocation, String?) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    val json = remember { Json { ignoreUnknownKeys = true } }
-    val parsed = remember(invocation.arguments) {
+    val json = AppJson.json
+    val context = LocalContext.current
+    val parsed = remember(invocation.arguments, context) {
         runCatching {
-            val obj = json.parseToJsonElement(invocation.arguments).jsonObject
-            val q = obj["question"]?.jsonPrimitive?.contentOrNull ?: "请确认您的需求选项"
-            val rawOpts = obj["options"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+            val obj = AppJson.parseObject(invocation.arguments)
+            val q = obj["question"]?.jsonPrimitive?.contentOrNull
+                ?: context.getString(R.string.clarify_default_question)
+            // options元素可能是：JsonObject/JSON-encoded字符串/纯字符串——都规范成纯文本
+            val rawOpts = obj["options"]?.jsonArray?.mapNotNull { el: JsonElement ->
+                    normalizeOption(el, json)
+                } ?: emptyList()
             val allowMulti = obj["allow_multiple"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
             Triple(q, rawOpts.take(4), allowMulti)
-        }.getOrDefault(Triple("请选择需求方案", listOf("默认实现方案"), false))
+        }.getOrDefault(
+            Triple(
+                context.getString(R.string.clarify_fallback_title),
+                listOf(context.getString(R.string.clarify_fallback_option)),
+                false
+            )
+        )
     }
 
     val question = parsed.first
     val options = parsed.second
     val allowMultiple = parsed.third
+    val summaryPrefix = stringResource(R.string.clarify_summary_prefix)
+    val summaryNone = stringResource(R.string.clarify_summary_none)
+    val summaryCustom = stringResource(R.string.clarify_summary_custom)
+    val listSeparator = stringResource(R.string.common_enum_separator)
 
     val selectedOptions = remember { mutableStateListOf<String>() }
     var singleSelected by remember { mutableStateOf<String?>(options.firstOrNull()) }
@@ -504,7 +527,7 @@ fun InteractiveClarificationCard(
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
-                    Icons.Default.HelpOutline,
+                    Icons.AutoMirrored.Filled.HelpOutline,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(20.dp)
@@ -518,7 +541,8 @@ fun InteractiveClarificationCard(
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                text = if (allowMultiple) "支持多选，可在末尾手动输入自定义需求" else "请单选，可在末尾手动输入自定义需求",
+                text = if (allowMultiple) stringResource(R.string.clarify_multi_hint)
+                else stringResource(R.string.clarify_single_hint),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -558,7 +582,7 @@ fun InteractiveClarificationCard(
                     }
                     Spacer(Modifier.width(8.dp))
                     Text(
-                        text = "选项 ${index + 1}: $optionText",
+                        text = stringResource(R.string.clarify_option_line, index + 1, optionText),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -569,7 +593,7 @@ fun InteractiveClarificationCard(
             OutlinedTextField(
                 value = customInput,
                 onValueChange = { if (!isSubmitted) customInput = it },
-                label = { Text("补充选项：手动输入自定义需求（可选）") },
+                label = { Text(stringResource(R.string.clarify_custom_label)) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 enabled = !isSubmitted
@@ -584,15 +608,15 @@ fun InteractiveClarificationCard(
                         val selectedList = if (allowMultiple) selectedOptions.toList() else listOfNotNull(singleSelected)
                         val extra = customInput.trim()
                         val summary = buildString {
-                            append("用户已确认选项：")
-                            append(if (selectedList.isNotEmpty()) selectedList.joinToString("、") else "未勾选预设选项")
-                            if (extra.isNotBlank()) append("；自定义补充需求：").append(extra)
+                            append(summaryPrefix)
+                            append(if (selectedList.isNotEmpty()) selectedList.joinToString(listSeparator) else summaryNone)
+                            if (extra.isNotBlank()) append(summaryCustom).append(extra)
                         }
                         onApprove?.invoke(invocation, summary)
                     },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)
-                ) { Text("提交选择并继续", fontWeight = FontWeight.Bold) }
+                ) { Text(stringResource(R.string.clarify_submit), fontWeight = FontWeight.Bold) }
             } else {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -602,7 +626,7 @@ fun InteractiveClarificationCard(
                     Icon(Icons.Default.Check, null, tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        if (invocation.result.isNotBlank()) invocation.result else "需求选项已确认",
+                        if (invocation.result.isNotBlank()) invocation.result else stringResource(R.string.clarify_confirmed),
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFF2E7D32)
                     )
@@ -614,3 +638,36 @@ fun InteractiveClarificationCard(
 
 /** 是否为需要用户填表的交互式工具 */
 fun isClarificationTool(name: String): Boolean = name == CLARIFICATION_TOOL
+
+/**
+ * 把options数组里形形色色的元素规范成纯文本：
+ * - JsonObject→优先取`content`，其次`item`，最后toString
+ * - JsonPrimitive（string）→试parse成对象，重复上面的逻辑；不是JSON就当纯字符串
+ */
+private fun normalizeOption(el: JsonElement, json: Json): String? {
+    when (el) {
+        is JsonObject -> {
+            // 常见键优先：content/item/value/text/label/choice
+            for (key in listOf("content", "item", "value", "text", "label", "choice")) {
+                (el[key] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.let { return it }
+            }
+            // 任意字符串值字段兜底（AI可能用key_a等自定义键）
+            for ((_, v) in el) {
+                (v as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
+            }
+            // 嵌套结构：递归取第一个可解析项
+            for ((_, v) in el) {
+                if (v is JsonObject) { normalizeOption(v, json)?.let { return it } }
+            }
+            return null
+        }
+        is kotlinx.serialization.json.JsonPrimitive -> {
+            val raw = el.contentOrNull ?: return null
+            return runCatching {
+                val parsed = AppJson.parse(raw)
+                if (parsed is JsonObject) normalizeOption(parsed, json) else raw
+            }.getOrDefault(raw)
+        }
+        else -> return null
+    }
+}

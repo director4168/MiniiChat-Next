@@ -2,7 +2,7 @@ package com.miniichatNext.carter.data.mcp
 
 import kotlinx.serialization.Serializable
 
-/** STREAMABLE_HTTP: 单端点POST，可返回SSE流; SSE: 旧版先GET取endpoint再POST */
+/** STREAMABLE_HTTP:单端点POST，可返回SSE流; SSE:旧版先GET取endpoint再POST */
 enum class McpTransport { STREAMABLE_HTTP, SSE }
 
 @Serializable

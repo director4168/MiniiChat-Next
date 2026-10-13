@@ -109,11 +109,22 @@ fun AvatarPicker(
     val cropLauncher = rememberImageCropLauncher(
         onResult = { path ->
             val stable = AvatarStorage.isInAppStorage(context, path)
+            val previousPath: String? = (current as? Avatar.Image)?.path
             onChange(Avatar.Image(path))
             if (stable) {
                 com.miniichatNext.carter.debug.DebugLog.i(
                     "AvatarPicker", "avatar cropped straight into app storage: $path"
                 )
+                // 旧头像加入待删除队列（30秒延迟避开正在显示的引用）
+                if (previousPath != null && previousPath != path) {
+                    val prevFile = java.io.File(previousPath)
+                    if (prevFile.exists() && prevFile.parentFile == AvatarStorage.dir(context)) {
+                        scope.launch {
+                            kotlinx.coroutines.delay(30_000L)
+                            runCatching { prevFile.delete() }
+                        }
+                    }
+                }
             } else {
                 scope.launch {
                     val result = runCatching {
@@ -127,6 +138,14 @@ fun AvatarPicker(
                                 "AvatarPicker", "avatar transferred: temp=$tempPath -> stable=$savedPath"
                             )
                             onChange(Avatar.Image(savedPath))
+                            // 裁剪临时文件+旧头像一并删除
+                            runCatching { java.io.File(tempPath).delete() }
+                            if (previousPath != null && previousPath != savedPath) {
+                                scope.launch {
+                                    kotlinx.coroutines.delay(30_000L)
+                                    runCatching { java.io.File(previousPath).delete() }
+                                }
+                            }
                         },
                         onFailure = { e ->
                             com.miniichatNext.carter.debug.DebugLog.e(

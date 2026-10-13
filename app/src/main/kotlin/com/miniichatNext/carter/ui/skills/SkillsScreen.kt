@@ -28,14 +28,22 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -65,7 +73,9 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.util.zip.ZipInputStream
 import com.miniichatNext.carter.ui.chat.EmptyState
+import com.miniichatNext.carter.ui.markdown.MarkdownText
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SkillsScreen(
     skills: List<Skill>,
@@ -82,6 +92,10 @@ fun SkillsScreen(
     var editing by remember { mutableStateOf<Skill?>(null) }
     var creating by remember { mutableStateOf(false) }
     var deletingTarget by remember { mutableStateOf<Skill?>(null) }
+    var showImportSheet by remember { mutableStateOf(false) }
+    var showImportUrlDialog by remember { mutableStateOf(false) }
+    var importUrlError by remember { mutableStateOf<String?>(null) }
+    var importingUrl by remember { mutableStateOf(false) }
 
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
@@ -150,61 +164,55 @@ fun SkillsScreen(
         }
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .padding(WindowInsets.statusBars.asPaddingValues())
     ) {
-        TopBar(title = stringResource(R.string.skills), onBack = onBack)
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            TopBar(title = stringResource(R.string.skills), onBack = onBack)
 
-        if (skills.isEmpty()) {
-            EmptyState(
-                onCreate = { creating = true },
-                importLauncher = {
-                    importLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*"))
-                }
-            )
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Spacer(Modifier.height(4.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+            if (skills.isEmpty()) {
+                EmptyState(
+                    onCreate = { creating = true },
+                    importLauncher = {
+                        importLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*"))
+                    }
+                )
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    ActionTile(
-                        icon = Icons.Default.FileUpload,
-                        label = stringResource(R.string.skills_import),
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            importLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*"))
-                        }
-                    )
-                    ActionTile(
-                        icon = Icons.Default.Add,
-                        label = stringResource(R.string.skills_new),
-                        modifier = Modifier.weight(1f),
-                        onClick = { creating = true }
-                    )
+                    Spacer(Modifier.height(4.dp))
+                    skills.forEach { s ->
+                        SkillRow(
+                            skill = s,
+                            onToggle = { onSetEnabled(s.id, it) },
+                            onEdit = { editing = s },
+                            onDelete = { deletingTarget = s }
+                        )
+                    }
+                    // 给右下角FAB让出空间
+                    Spacer(Modifier.height(88.dp))
                 }
-                Spacer(Modifier.height(4.dp))
-                skills.forEach { s ->
-                    SkillRow(
-                        skill = s,
-                        onToggle = { onSetEnabled(s.id, it) },
-                        onEdit = { editing = s },
-                        onDelete = { deletingTarget = s }
-                    )
-                }
-                Spacer(Modifier.height(40.dp))
             }
         }
+        // 右下角悬浮"+"按钮：弹出导入方式选择（本地文件/URL/手动创建）
+        ExtendedFloatingActionButton(
+            onClick = { showImportSheet = true },
+            icon = { Icon(Icons.Default.Add, contentDescription = null) },
+            text = { Text(stringResource(R.string.skills_new)) },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 16.dp, bottom = 24.dp),
+        )
     }
 
     if (creating) {
@@ -223,22 +231,174 @@ fun SkillsScreen(
     }
 
     deletingTarget?.let { target ->
+        com.miniichatNext.carter.ui.components.ConfirmDeleteDialog(
+            targetName = target.name,
+            typeLabel = stringResource(R.string.item_skill),
+            bodyText = stringResource(R.string.skill_delete_confirm, target.name),
+            onConfirm = {
+                onDelete(target.id)
+                deletingTarget = null
+            },
+            onDismiss = { deletingTarget = null },
+        )
+    }
+
+    // 导入方式选择底部弹窗：从本地文件/从URL/手动创建
+    if (showImportSheet) {
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { showImportSheet = false },
+            sheetState = sheetState,
+        ) {
+            Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
+                Text(
+                    stringResource(R.string.skills_new),
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(bottom = 12.dp),
+                )
+                ImportChoiceRow(
+                    icon = Icons.Default.FileUpload,
+                    label = stringResource(R.string.skills_import_file),
+                    onClick = {
+                        showImportSheet = false
+                        importLauncher.launch(arrayOf("text/markdown", "text/plain", "*/*"))
+                    },
+                )
+                Spacer(Modifier.height(4.dp))
+                ImportChoiceRow(
+                    icon = Icons.Default.Link,
+                    label = stringResource(R.string.skills_import_url),
+                    onClick = {
+                        showImportSheet = false
+                        showImportUrlDialog = true
+                    },
+                )
+                Spacer(Modifier.height(4.dp))
+                ImportChoiceRow(
+                    icon = Icons.Default.NoteAdd,
+                    label = stringResource(R.string.skills_create_manual),
+                    onClick = {
+                        showImportSheet = false
+                        creating = true
+                    },
+                )
+                Spacer(Modifier.height(16.dp))
+            }
+        }
+    }
+
+    // 从URL导入：用户粘贴.md文件URL→下载→解析frontmatter→保存
+    if (showImportUrlDialog) {
+        var urlInput by remember { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { deletingTarget = null },
-            title = { Text(stringResource(R.string.delete) + " · " + target.name) },
-            text = { Text(stringResource(R.string.skill_delete_confirm, target.name)) },
+            onDismissRequest = { showImportUrlDialog = false },
+            title = { Text(stringResource(R.string.skills_import_url)) },
+            text = {
+                Column {
+                    Text(
+                        stringResource(R.string.skills_url_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp),
+                    )
+                    OutlinedTextField(
+                        value = urlInput,
+                        onValueChange = {
+                            urlInput = it
+                            importUrlError = null
+                        },
+                        label = { Text("URL") },
+                        singleLine = true,
+                        isError = importUrlError != null,
+                        supportingText = importUrlError?.let { msg ->
+                            { Text(msg, color = MaterialTheme.colorScheme.error) }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (importingUrl) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            stringResource(R.string.skills_url_loading),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            },
             confirmButton = {
-                TextButton(onClick = {
-                    onDelete(target.id)
-                    deletingTarget = null
-                }) { Text(stringResource(R.string.delete)) }
+                TextButton(
+                    enabled = urlInput.isNotBlank() && !importingUrl,
+                    onClick = {
+                        importingUrl = true
+                        scope.launch {
+                            val result = kotlin.runCatching {
+                                val text = withContext(Dispatchers.IO) { fetchUrl(urlInput) }
+                                SkillFrontmatterParser.parse(text, "imported-skill")
+                                    ?: throw IllegalStateException("invalid frontmatter")
+                            }
+                            importingUrl = false
+                            result.fold(
+                                onSuccess = { parsed ->
+                                    if (parsed.name.isBlank() || parsed.description.isBlank()) {
+                                        importUrlError = context.getString(R.string.skill_import_failed_meta)
+                                    } else {
+                                        showImportUrlDialog = false
+                                        onSave(Skill(
+                                            id = newId(),
+                                            name = parsed.name,
+                                            description = parsed.description,
+                                            body = parsed.body,
+                                            enabled = true,
+                                        ))
+                                    }
+                                },
+                                onFailure = { ex ->
+                                    importUrlError = ex.message ?: context.getString(R.string.skill_import_failed)
+                                },
+                            )
+                        }
+                    },
+                ) { Text(stringResource(R.string.action_save)) }
             },
             dismissButton = {
-                TextButton(onClick = { deletingTarget = null }) {
+                TextButton(onClick = { showImportUrlDialog = false }) {
                     Text(stringResource(R.string.action_cancel))
                 }
-            }
+            },
         )
+    }
+}
+
+private fun fetchUrl(url: String): String {
+    val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+        connectTimeout = 7_000
+        readTimeout = 10_000
+        requestMethod = "GET"
+        setRequestProperty("User-Agent", "MiniiChat-Next/1.0")
+    }
+    return try {
+        conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+    } finally {
+        conn.disconnect()
+    }
+}
+
+@Composable
+private fun ImportChoiceRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(Modifier.width(16.dp))
+        Text(label, style = MaterialTheme.typography.bodyLarge)
     }
 }
 
@@ -339,7 +499,11 @@ private fun SkillRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(MaterialTheme.colorScheme.surface)
+            .clickable { onToggle(!skill.enabled) }
+            .background(
+                if (skill.enabled) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                else MaterialTheme.colorScheme.surface
+            )
             .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -367,7 +531,6 @@ private fun SkillRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Switch(checked = skill.enabled, onCheckedChange = onToggle)
         IconButton(onClick = onEdit) {
             Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit))
         }

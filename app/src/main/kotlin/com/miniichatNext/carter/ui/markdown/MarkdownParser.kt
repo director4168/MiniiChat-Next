@@ -9,6 +9,8 @@ internal sealed class Block {
     data class CodeBlock(val lang: String, val code: String) : Block()
     object Hr : Block()
     data class Table(val headers: List<String>, val rows: List<List<String>>) : Block()
+    /** LaTeX块级公式：$$ ... $$ */
+    data class MathBlock(val latex: String) : Block()
 }
 
 internal fun parseBlocks(text: String): List<Block> {
@@ -29,6 +31,14 @@ internal fun parseBlocks(text: String): List<Block> {
         val trimmed = line.trimStart()
 
         if (trimmed.startsWith("```")) {
+            // 单行fenced code（```xxx```在同一行）：若当多行代码块的开头处理会吞掉后续所有行（"---"等就显示不出来）
+            val afterOpen = trimmed.removePrefix("```")
+            val sameLine = afterOpen.indexOf("```")
+            if (sameLine >= 0) {
+                flushParagraph()
+                result.add(Block.CodeBlock("", afterOpen.substring(0, sameLine).trim()))
+                i++; continue
+            }
             flushParagraph()
             val lang = trimmed.removePrefix("```").trim()
             val code = StringBuilder()
@@ -64,6 +74,28 @@ internal fun parseBlocks(text: String): List<Block> {
             }
         }
 
+                // 块级公式：$$ ... $$或\[ ... \]（含单行闭合）
+                val mathOpen = when {
+                    trimmed.startsWith("$$") -> "$$"
+                    trimmed.startsWith("\\[") -> "\\["
+                    else -> null
+                }
+                if (mathOpen != null) {
+                    val mathClose = if (mathOpen == "$$") "$$" else "\\]"
+                    val rest = trimmed.removePrefix(mathOpen)
+                    val sameLine = rest.indexOf(mathClose)
+                    if (sameLine >= 0) {
+                        flushParagraph()
+                        result.add(Block.MathBlock(rest.substring(0, sameLine).trim()))
+                        i++; continue
+                    }
+                    val end = lines.indices.firstOrNull { k -> k > i && lines[k].trimStart().startsWith(mathClose) } ?: -1
+                    if (end > i) {
+                        flushParagraph()
+                        result.add(Block.MathBlock(lines.subList(i + 1, end).joinToString("\n")))
+                        i = end + 1; continue
+                    }
+                }
         if (trimmed == "---" || trimmed == "***" || trimmed == "___") {
             flushParagraph(); result.add(Block.Hr); i++; continue
         }
@@ -99,7 +131,7 @@ internal fun parseBlocks(text: String): List<Block> {
 
 private fun isTableSeparator(line: String): Boolean {
     val s = line.trim()
-    // 至少要 "|x|" 才能取中间段：s = "|" 会同时startsWith/endsWith，substring(1, 0)直接崩
+    // 至少要"|x|"才能取中间段：s="|"会同时startsWith/endsWith，substring(1, 0)直接崩
     if (s.length < 3 || !s.startsWith("|")) return false
     val inner = if (s.endsWith("|")) s.substring(1, s.length - 1) else s.substring(1)
     if (inner.isBlank()) return false

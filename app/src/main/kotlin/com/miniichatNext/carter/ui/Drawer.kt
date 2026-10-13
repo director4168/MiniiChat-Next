@@ -67,6 +67,7 @@ import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.model.Conversation
 import com.miniichatNext.carter.ui.components.AssistantAvatarBadge
 import java.util.Calendar
+import com.miniichatNext.carter.ui.markdown.MarkdownText
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GlassDrawer(
@@ -241,7 +242,6 @@ fun GlassDrawer(
                         overflow = TextOverflow.Ellipsis
                     )
                 }
-                // 设置
                 Row(
                     modifier = Modifier
                         .clickable(onClick = onOpenSettings)
@@ -262,40 +262,26 @@ fun GlassDrawer(
             }
             Spacer(Modifier.padding(WindowInsets.navigationBars.asPaddingValues()))
         }
-    }
 
+}
     renameTarget?.let { conv ->
-        var newTitle by remember(conv.id) { mutableStateOf(conv.title) }
-        AlertDialog(
-            onDismissRequest = { renameTarget = null },
-            confirmButton = {
-                TextButton(onClick = {
-                    onRename(conv.id, newTitle.ifBlank { "" })
-                    renameTarget = null
-                }) { Text(stringResource(R.string.ok)) }
-            },
-            dismissButton = {
-                TextButton(onClick = { renameTarget = null }) { Text(stringResource(R.string.cancel)) }
-            },
-            title = { Text(stringResource(R.string.rename)) },
-            text = {
-                OutlinedTextField(value = newTitle, onValueChange = { newTitle = it }, singleLine = true)
-            }
+        com.miniichatNext.carter.ui.components.InputDialog(
+            title = stringResource(R.string.rename),
+            label = stringResource(R.string.common_name),
+            initial = conv.title,
+            onConfirm = { value -> onRename(conv.id, value); renameTarget = null },
+            onDismiss = { renameTarget = null },
+            confirmText = stringResource(R.string.ok),
         )
     }
+
     deleteTarget?.let { conv ->
-        AlertDialog(
-            onDismissRequest = { deleteTarget = null },
-            confirmButton = {
-                TextButton(onClick = { onDelete(conv.id); deleteTarget = null }) {
-                    Text(stringResource(R.string.delete))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { deleteTarget = null }) { Text(stringResource(R.string.cancel)) }
-            },
-            title = { Text(stringResource(R.string.delete)) },
-            text = { Text("Delete \"${conv.title}\"?") }
+        com.miniichatNext.carter.ui.components.ConfirmDeleteDialog(
+            targetName = conv.title,
+            bodyText = stringResource(R.string.drawer_delete_confirm, conv.title),
+            typeLabel = stringResource(R.string.item_conversation),
+            onConfirm = { onDelete(conv.id); deleteTarget = null },
+            onDismiss = { deleteTarget = null },
         )
     }
 
@@ -434,3 +420,4 @@ private fun groupConversationsByDate(
     if (older.isNotEmpty()) out += R.string.date_older to older
     return out
 }
+

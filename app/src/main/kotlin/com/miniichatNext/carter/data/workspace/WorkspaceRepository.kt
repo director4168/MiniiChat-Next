@@ -1,6 +1,8 @@
 package com.miniichatNext.carter.data.workspace
 
 import android.content.Context
+import com.miniichatNext.carter.util.AppJson
+import com.miniichatNext.carter.R
 import com.miniichatNext.carter.debug.DebugLog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +23,8 @@ class WorkspaceRepository(
     private val context: Context,
     private val store: WorkspaceStore = WorkspaceStore(context),
     val manager: WorkspaceManager = defaultManager(context),
+    /** 给UI用：当前Repository的WorkspaceConfig（含maxReadBytes等限制） */
+    val config: WorkspaceConfig = WorkspaceConfig(),
     private val rootfsInstaller: RootfsInstaller = RootfsInstaller(manager),
 ) {
     val workspacesFlow: Flow<List<WorkspaceEntity>> = store.workspacesFlow
@@ -151,6 +155,26 @@ class WorkspaceRepository(
         manager.writeText(workspace.root, path, text, overwrite)
     }
 
+    /**
+     * 带area的重载：FILES区走manager.writeText；LINUX区走manager.writeTextInDir(linuxDir)。
+     * FILES区可见root真实文件名；LINUX区path相对rootfs根。
+     */
+    suspend fun writeText(
+        id: String,
+        area: WorkspaceStorageArea,
+        path: String,
+        text: String,
+    ): WorkspaceFileEntry = withContext(Dispatchers.IO) {
+        val workspace = getById(id) ?: error("Workspace not found: $id")
+        manager.ensureWorkspace(workspace.root)
+        if (area == WorkspaceStorageArea.LINUX) {
+            val linuxDir = manager.linuxDir(workspace.root)
+            manager.writeTextInDir(linuxDir, path, text)
+        } else {
+            manager.writeText(workspace.root, path, text)
+        }
+    }
+
     /** FILES区走readText（自带大小保护）；LINUX区经exportFile读入内存，需显式限长 */
     suspend fun readTextForPreview(
         id: String,
@@ -163,7 +187,7 @@ class WorkspaceRepository(
             WorkspaceStorageArea.FILES -> manager.readText(workspace.root, path)
             WorkspaceStorageArea.LINUX -> {
                 val size = manager.fileSize(workspace.root, path, area)
-                require(size <= MAX_PREVIEW_BYTES) { "文件过大，无法预览 (${size} bytes)" }
+                require(size <= MAX_PREVIEW_BYTES) { context.getString(R.string.workspace_preview_too_large, size) }
                 ByteArrayOutputStream().use { out ->
                     manager.exportFile(workspace.root, path, area, out)
                     out.toString(Charsets.UTF_8.name())
@@ -188,6 +212,15 @@ class WorkspaceRepository(
         withContext(Dispatchers.IO) {
             val workspace = getById(id) ?: error("Workspace not found: $id")
             manager.fileSize(workspace.root, path, area)
+        }
+
+    /** 读出文件原始字节（用于图片预览等二进制场景） */
+    suspend fun readBytes(id: String, area: WorkspaceStorageArea, path: String): ByteArray =
+        withContext(Dispatchers.IO) {
+            val workspace = getById(id) ?: error("Workspace not found: $id")
+            val baos = ByteArrayOutputStream()
+            manager.exportFile(workspace.root, path, area, baos)
+            baos.toByteArray()
         }
 
     suspend fun exportFile(
@@ -283,7 +316,7 @@ class WorkspaceRepository(
         // runInterruptible让协程取消转化为线程中断，打断阻塞的Process.waitFor并杀进程
         return runInterruptible(Dispatchers.IO) {
             manager.ensureWorkspace(workspace.root)
-            manager.executeCommand(workspace.root, command, cwd, timeoutMillis, stdin)
+            manager.executeCommand(workspace.root, command, cwd, timeoutMillis, stdin, workspace.shellCompatibilityMode)
         }
     }
 
@@ -294,6 +327,12 @@ class WorkspaceRepository(
         return true
     }
 
+    /** shell兼容模式开关（详情页） */
+    suspend fun updateShellCompatibilityMode(workspaceId: String, enabled: Boolean) {
+        val workspace = getById(workspaceId) ?: return
+        store.upsert(workspace.copy(shellCompatibilityMode = enabled, updatedAt = System.currentTimeMillis()))
+    }
+
     private suspend fun updateShellState(workspaceId: String, shellStatus: String) {
         val workspace = getById(workspaceId) ?: return
         store.upsert(workspace.copy(shellStatus = shellStatus, updatedAt = System.currentTimeMillis()))
@@ -302,7 +341,7 @@ class WorkspaceRepository(
     companion object {
         private const val TAG = "WorkspaceRepository"
         private const val MAX_PREVIEW_BYTES = 512L * 1024
-        private val JSON = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        private val JSON get() = AppJson.json
 
         fun baseDir(context: Context): File = File(context.filesDir, "workspaces").apply { mkdirs() }
 
@@ -315,3 +354,5 @@ class WorkspaceRepository(
         )
     }
 }
+
+/** 清理apt/dpkg残留锁的命令（proot内执行）。 */

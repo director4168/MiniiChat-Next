@@ -37,47 +37,33 @@ fun rememberImageCropLauncher(
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        val fromResult = runCatching { result.data?.let { UCrop.getOutput(it) } }.getOrNull()
-        val candidates = mutableListOf<File>()
-        fromResult?.path?.let { candidates.add(File(it)) }
-        pendingFile?.let { candidates.add(it) }
-        if (lastOutputPath.isNotBlank()) candidates.add(File(lastOutputPath))
+        // rikkahub同款简单三态：RESULT_OK→信任本次输出文件；CANCEL→取消；其它→失败。
+        // 不做decodeFile主线程校验（大图解码慢/OOM会把正确结果误判"不可用"）；
+        // 不用newestCropOutput/lastOutputPath兜底（旧图正是"显示原图"的元凶）。
+        val outFile = pendingFile
         pendingFile = null
 
-        val usable = candidates.firstOrNull { it.isFile && it.length() > 0L }
-        if (usable != null) {
-            DebugLog.i(
-                "ImageCropper",
-                "crop ok: path=${usable.absolutePath} bytes=${usable.length()} " +
-                    "src=${if (fromResult != null) "result" else "remembered"}"
-            )
-            onResult(usable.absolutePath)
-            return@rememberLauncherForActivityResult
-        }
-
-        if (result.resultCode == Activity.RESULT_CANCELED) {
-            DebugLog.w("ImageCropper", "crop cancelled by user (resultCode=0)")
-            candidates.forEach { runCatching { it.delete() } }
-            onCancel()
-            return@rememberLauncherForActivityResult
-        }
-
-        val error = runCatching { result.data?.let { UCrop.getError(it) } }.getOrNull()
-        DebugLog.e(
-            "ImageCropper",
-            "crop failed: resultCode=${result.resultCode} " +
-                "uri=${fromResult ?: lastOutputPath} err=${error?.message ?: "null"}",
-            error
-        )
-        val fallback = newestCropOutput(context, outputDir, outputPrefix)
-        if (fallback != null) {
-            DebugLog.w(
-                "ImageCropper", "using newest file in output dir: ${fallback.absolutePath}"
-            )
-            onResult(fallback.absolutePath)
-        } else {
-            candidates.forEach { runCatching { it.delete() } }
-            onFailure()
+        when {
+            result.resultCode == Activity.RESULT_OK && outFile != null &&
+                outFile.isFile && outFile.length() > 0L -> {
+                DebugLog.i("ImageCropper", "crop ok: ${outFile.absolutePath} (${outFile.length()} bytes)")
+                onResult(outFile.absolutePath)
+            }
+            result.resultCode == Activity.RESULT_CANCELED -> {
+                DebugLog.w("ImageCropper", "crop cancelled by user")
+                runCatching { outFile?.delete() }
+                onCancel()
+            }
+            else -> {
+                val error = runCatching { result.data?.let { UCrop.getError(it) } }.getOrNull()
+                DebugLog.e(
+                    "ImageCropper",
+                    "crop failed: resultCode=${result.resultCode} err=${error?.message ?: "null"}",
+                    error
+                )
+                runCatching { outFile?.delete() }
+                onFailure()
+            }
         }
     }
 
@@ -88,11 +74,25 @@ fun rememberImageCropLauncher(
             val outFile = File(dir, outputPrefix + System.currentTimeMillis() + ".jpg")
             lastOutputPath = outFile.absolutePath
             pendingFile = outFile
+            val outUri = Uri.fromFile(outFile)
 
-            val outUri = fileProviderUri(context, outFile) ?: Uri.fromFile(outFile)
-            DebugLog.d("ImageCropper", "crop output uri=$outUri (file=${outFile.absolutePath})")
+            // 源也要file://（rikkahub同款）：content://源在部分设备上UCrop读取异常（直通原图/写不出）。
+            // 先把content://复制到cache临时文件，再交给UCrop。
+            val launchSource: Uri = if (sourceUri.scheme == "content") {
+                val tmp = File(context.cacheDir, "crop_src_${System.currentTimeMillis()}.jpg")
+                runCatching {
+                    context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                        tmp.outputStream().use { output -> input.copyTo(output) }
+                    } ?: error("cannot open $sourceUri")
+                    Uri.fromFile(tmp)
+                }.getOrElse {
+                    DebugLog.w("ImageCropper", "copy source to temp failed: ${it.message}; use original uri")
+                    sourceUri
+                }
+            } else sourceUri
+            DebugLog.d("ImageCropper", "crop src=$launchSource out=$outUri")
 
-            var crop = UCrop.of(sourceUri, outUri)
+            var crop = UCrop.of(launchSource, outUri)
             val options = UCrop.Options().apply {
                 setFreeStyleCropEnabled(aspectRatio == null)
                 setAllowedGestures(
@@ -118,16 +118,6 @@ fun rememberImageCropLauncher(
         }
     }
 }
-
-private fun fileProviderUri(context: Context, file: File): Uri? = runCatching {
-    androidx.core.content.FileProvider.getUriForFile(
-        context,
-        context.packageName + ".fileprovider",
-        file
-    )
-}.onFailure { e ->
-    DebugLog.w("ImageCropper", "FileProvider uri unavailable, falling back to file:// : ${e.message}")
-}.getOrNull()
 
 private fun newestCropOutput(context: Context, outputDir: File?, prefix: String): File? = runCatching {
     val dir = outputDir ?: context.cacheDir

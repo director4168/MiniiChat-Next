@@ -23,7 +23,7 @@ internal fun responsesEndpoint(baseUrl: String) = "${baseUrl.trimEnd('/')}/respo
 
 internal fun coerceToJson(v: String): JsonElement {
     // 看起来像JSON对象/数组就按JSON解析，这样额外请求体也能写嵌套结构
-    // （例如 {"thinking":{"type":"enabled"}}），非标网关可以自己适配
+    // （例如{"thinking":{"type":"enabled"}}），非标网关可以自己适配
     val t = v.trim()
     if (t.startsWith("{") || t.startsWith("[")) {
         runCatching { return Json.parseToJsonElement(t) }

@@ -1,4 +1,4 @@
-package com.miniichatNext.carter.util
+package com.miniichatNext.carter.data.util
 
 import android.content.ContentResolver
 import android.graphics.Bitmap
@@ -9,11 +9,13 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import android.util.Base64
 import android.util.Base64OutputStream
+import androidx.annotation.StringRes
+import com.miniichatNext.carter.R
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
 
-/** 读取content:// 或file:// URI并返回base64+mime+名称+大小 */
+/** 读取content://或file://URI并返回base64+mime+名称+大小 */
 data class LoadedAttachment(
     val name: String,
     val mimeType: String,
@@ -23,9 +25,9 @@ data class LoadedAttachment(
 
 /** 附件内容内联结果（文本文件才内联，二进制只给说明） */
 sealed interface InlineAttachment {
-    /** [truncated] = 命中内联上限，[text]只包含前[sizeBytes]字节 */
+    /** [truncated]=命中内联上限，[text]只包含前[sizeBytes]字节 */
     data class Text(val text: String, val sizeBytes: Long, val truncated: Boolean = false) : InlineAttachment
-    data class Skipped(val reason: String, val sizeBytes: Long) : InlineAttachment
+    data class Skipped(@StringRes val reasonRes: Int, val sizeBytes: Long) : InlineAttachment
     object Failed : InlineAttachment
 }
 
@@ -95,7 +97,7 @@ object AttachmentLoader {
         if (!opened) return InlineAttachment.Failed
         val bytes = out.toByteArray()
         if (!looksLikeText(bytes)) {
-            return InlineAttachment.Skipped("二进制文件", bytes.size.toLong())
+            return InlineAttachment.Skipped(R.string.attachment_binary_file, bytes.size.toLong())
         }
         return InlineAttachment.Text(String(bytes, Charsets.UTF_8), bytes.size.toLong(), truncated)
     }

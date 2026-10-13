@@ -24,22 +24,22 @@ import androidx.compose.ui.unit.dp
 import com.miniichatNext.carter.R
 
 @Composable
-fun MarkdownText(
+internal fun MarkdownText(
     text: String,
     modifier: Modifier = Modifier,
-    color: Color = LocalContentColor.current
+    color: Color = LocalContentColor.current,
+    palette: InlinePalette = BubblePalette,
+    onFullscreen: ((String, Boolean) -> Unit)? = null,
 ) {
     var pendingUrl by remember { mutableStateOf<String?>(null) }
     val ctx = LocalContext.current
-
-    val palette = BubblePalette
 
     // 流式输出时会在半截markdown上反复解析，任何解析异常都不该让整条消息崩掉
     val blocks = remember(text) {
         runCatching { parseBlocks(text) }
             .getOrElse { listOf(Block.Paragraph(text)) }
     }
-    MarkdownBlocks(blocks, palette, color) { pendingUrl = it }
+    MarkdownBlocks(blocks, palette, color, { pendingUrl = it }, onFullscreen)
 
     pendingUrl?.let { url ->
         AlertDialog(

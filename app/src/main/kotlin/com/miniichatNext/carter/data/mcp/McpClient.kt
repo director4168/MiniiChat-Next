@@ -1,5 +1,6 @@
 package com.miniichatNext.carter.data.mcp
 
+import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.debug.DebugLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -21,11 +22,11 @@ import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * MCP JSON-RPC 2.0客户端，纯JDK HttpURLConnection，不依赖Ktor/OkHttp。
- * initialize -> notifications/initialized -> tools/list，session id走Mcp-Session-Id头。
+ * initialize->notifications/initialized->tools/list，session id走Mcp-Session-Id头。
  */
 class McpClient {
 
-    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
+    private val json get() = AppJson.jsonCompact
     private val idGen = AtomicInteger(1)
     private val sessions = mutableMapOf<String, String>()
 

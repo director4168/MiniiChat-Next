@@ -43,6 +43,11 @@ data class ChatMessage(
     val parts: List<ChatPart>? = null,
     @SerialName("tool_calls") val toolCalls: List<ToolCall>? = null,
     @SerialName("tool_call_id") val toolCallId: String? = null,
+    /**
+     * 推理模型的思考内容。DeepSeek的thinking模式要求多轮里把上一轮的
+     * reasoning_content原样回传，否则会400（"...must be passed back to the API"）
+     */
+    @SerialName("reasoning_content") val reasoningContent: String? = null,
 ) {
     fun isMultipart(): Boolean = !parts.isNullOrEmpty()
 

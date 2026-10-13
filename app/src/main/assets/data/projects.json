@@ -1,0 +1,50 @@
+// 这是MiniiChat Next致谢名单中，对于所使用的第三方项目的致谢名单的配置，由AcknowledgementsScreen.kt和ProjectCredits.kt文件所使用
+{
+  "projects": [
+    {
+      "name": "MiniiChat Next",
+      "desc": "本项目（AGPL-3.0）——你正在看的这个项目",
+      "url": "https://github.com/director4168/MiniiChat-Next"
+    },
+    {
+      "name": "Minis233/miniichat",
+      "desc": "原始项目（MIT）——本fork的基础",
+      "url": "https://github.com/Minis233/miniichat"
+    },
+    {
+      "name": "rikkahub/rikkahub",
+      "desc": "（AGPL-3.0）工具调用、MCP、Markdown/LaTeX渲染等多处功能参考了该项目",
+      "url": "https://github.com/rikkahub/rikkahub"
+    },
+    {
+      "name": "jiuweiby/MiniiChat-Next (Flutter)",
+      "desc": "（AGPL-3.0）MiniiChat Next的衍生版，MCP客户端与工具调用层的最初实现参考了该项目",
+      "url": "https://github.com/jiuweiby/MiniiChat-Next"
+    },
+    {
+      "name": "rikkahub/jlatexmath-android",
+      "desc": "（GPL-2.0-or-later）数学公式渲染引擎",
+      "url": "https://github.com/rikkahub/jlatexmath-android"
+    },
+    {
+      "name": "termux/termux-app (terminal-view)",
+      "desc": "（GPL-3.0）工作区交互式终端的终端模拟器与视图组件",
+      "url": "https://github.com/termux/termux-app"
+    },
+    {
+      "name": "termux/proot",
+      "desc": "（GPL-2.0）Agent工作区的Linux环境依赖",
+      "url": "https://github.com/termux/proot"
+    },
+    {
+      "name": "termux/termux-exec",
+      "desc": "（GPL-2.0）Agent工作区的shell执行依赖",
+      "url": "https://github.com/termux/termux-exec"
+    },
+    {
+      "name": "mermaid-js/mermaid",
+      "desc": "（MIT）聊天与更新弹窗中的Mermaid图表渲染引擎",
+      "url": "https://github.com/mermaid-js/mermaid"
+    }
+  ]
+}

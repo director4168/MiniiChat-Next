@@ -16,16 +16,15 @@
 
 ## 简介  
 
-本应用/项目(MiniiChat Next)由*director_Carter*基于*MiniiChat*项目(MIT开源)，新增部分功能基于RikkaHub项目(AGPL-3.0开源）的相关源码  
-本项目将使用AGPL-3.0进行开源  
+本应用/项目(MiniiChat Next)由*director_Carter*基于*MiniiChat*项目(MIT)开发。MiniiChat Next是一款开源的安卓LLM客户端，此衍生版本在原有基础上添加了更多功能*（如MCP服务调用支持、工具调用、文件操作等）  
+**如有bug反馈或功能建议，可提交*[Github Issus](https://github.com/director4168/MiniiChat-Next/issues)*或通过邮箱联系**
 
-本项目使用了以下项目内容:  
-- **[Mini233/miniichat](https://github.com/Minis233/miniichat)** ———来自Github *Minis233* 大佬的MiniiChat 安卓开源（**MIT**）免费LLM客户端，作为本二次项目的主体  
-- **[rikkahub/rikkahub](https://github.com/rikkahub/rikkahub)** ———来自Github *rikkahub* 大佬（*RE*）的Rikkahub，同样是一款安卓开源（**AGPL-3.0**）免费LLM客户端，将部分功能的源码拆分下来移植到本项目  
+[**第三方组件清单**](AGPL_NOTICE.md)
 
 ## 构建  
 
 在开始之前，请确保您的环境：
+
 | 项目 | **推荐或最低版本** |
 | --- | --- |
 | Android Studio | 2025.1.3 |
@@ -39,10 +38,9 @@
 **1. 克隆仓库**  
 ```bash
 git clone https://github.com/director4168/MiniiChat-Next.git
-cd $(pwd)/MiniiChat-Next
 ```
 
-**2. 正式构建**  
+**2. 构建**  
 ```bash
 # 构建Debug包（用于测试）
 ./gradlew assembleDebug
@@ -50,10 +48,6 @@ cd $(pwd)/MiniiChat-Next
 # 构建Release包（用于分发）
 ./gradlew assembleRelease
 ```
-
-> 由于我的习惯性操作，构建产物也会被复制到  
-> /build-outputs/debug/MiniiChat-Next-<versionName>-<ABI>-debug.apk  
-> /build-outputs/release/MiniiChat-Next-<versionName>-<ABI>-release.apk  
 
 ## 关于我  
 
@@ -70,7 +64,6 @@ cd $(pwd)/MiniiChat-Next
 - QQ:  
 2705722903  
 3623293903  
-*若2705722903账号被封，请添加3623293903，或使用其他联系方式*  
 
 - 邮箱:  
 director4168@163.com  

@@ -60,11 +60,13 @@ import com.miniichatNext.carter.data.avatar.Avatar
 import com.miniichatNext.carter.data.skills.Skill
 import com.miniichatNext.carter.ui.components.AvatarPicker
 import com.miniichatNext.carter.ui.components.AvatarView
+import com.miniichatNext.carter.ui.components.ExpandablePill
 import com.miniichatNext.carter.ui.components.Select
 import com.miniichatNext.carter.data.avatar.AvatarStorage
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.launch
 import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.ui.markdown.MarkdownText
 
 @Composable
 fun AssistantEditorScreen(
@@ -74,7 +76,10 @@ fun AssistantEditorScreen(
     availableMcpServers: List<com.miniichatNext.carter.data.mcp.McpServerConfig> = emptyList(),
     availableWorkspaces: List<com.miniichatNext.carter.data.workspace.WorkspaceEntity> = emptyList(),
     onSave: (Assistant) -> Unit,
-    onDelete: () -> Unit = {}
+    onDelete: () -> Unit = {},
+    onManageSkills: () -> Unit = {},
+    onManageMcp: () -> Unit = {},
+    onManageWorkspaces: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -89,19 +94,22 @@ fun AssistantEditorScreen(
     var backgroundOpacity by remember(initial?.id) { mutableStateOf(initial?.backgroundOpacity ?: 1f) }
     var backgroundMode by remember(initial?.id) { mutableStateOf(initial?.backgroundMode ?: "default") }
     var backgroundCss by remember(initial?.id) { mutableStateOf(initial?.backgroundCss ?: "") }
+    // 技能>3时折叠：默认只显示前3个，点"查看更多"展开
+    var showAllSkills by remember(initial?.id) { mutableStateOf(false) }
+    var showAllMcp by remember(initial?.id) { mutableStateOf(false) }
     var enabledSkills by remember(initial?.id) {
         mutableStateOf(initial?.enabledSkillIds?.toSet() ?: emptySet())
     }
     var showAvatarPicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    // 绑定的工作区（在 设置→工作区 里创建/管理，可绑定多个工作区之一）
+    // 绑定的工作区（在设置→工作区里创建/管理，可绑定多个工作区之一）
     var workspaceId by remember(initial?.id) { mutableStateOf(initial?.workspaceId) }
     // 下拉选项：第一项是“不使用工作区”
     val workspaceOptions = remember(availableWorkspaces) {
         listOf<com.miniichatNext.carter.data.workspace.WorkspaceEntity?>(null) + availableWorkspaces
     }
     val selectedWorkspace = availableWorkspaces.firstOrNull { it.id == workspaceId }
-    // 本助手启用哪些全局MCP服务器（服务器本身在 设置→高级功能→ MCP服务 里管理）
+    // 本助手启用哪些全局MCP服务器（服务器本身在设置→高级功能→MCP服务里管理）
     var mcpServerIds by remember(initial?.id) {
         mutableStateOf(initial?.mcpServerIds ?: emptySet<String>())
     }
@@ -470,45 +478,65 @@ fun AssistantEditorScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            if (availableSkills.isEmpty()) {
-                Text(
-                    stringResource(R.string.skill_no_skills_for_assistant),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            } else {
-                availableSkills.forEach { s ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(MaterialTheme.colorScheme.surface)
-                            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(s.name, style = MaterialTheme.typography.bodyLarge)
-                            if (s.description.isNotBlank()) {
-                                Text(
-                                    s.description,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    maxLines = 1
-                                )
+            FieldBox {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                if (availableSkills.isEmpty()) {
+                    Text(
+                        stringResource(R.string.skill_no_skills_for_assistant),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    val visibleSkills = if (showAllSkills || availableSkills.size <= 3)
+                        availableSkills
+                    else availableSkills.take(3)
+                    visibleSkills.forEach { s ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            androidx.compose.material3.Switch(
+                                checked = s.id in enabledSkills,
+                                onCheckedChange = { on ->
+                                    enabledSkills = if (on) enabledSkills + s.id else enabledSkills - s.id
+                                }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(s.name, style = MaterialTheme.typography.bodyMedium)
+                                if (s.description.isNotBlank()) {
+                                    Text(
+                                        s.description,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
                             }
                         }
-                        Switch(
-                            checked = s.id in enabledSkills,
-                            onCheckedChange = { en ->
-                                enabledSkills = if (en) enabledSkills + s.id else enabledSkills - s.id
-                            }
+                    }
+                    if (availableSkills.size > 3) {
+                        ExpandablePill(
+                            expanded = showAllSkills,
+                            expandText = stringResource(
+                                R.string.skill_assistant_show_more,
+                                availableSkills.size - 3,
+                            ),
+                            collapseText = stringResource(R.string.skill_assistant_show_less),
+                            onToggle = { showAllSkills = !showAllSkills },
                         )
                     }
                 }
+                // 右下角"管理"：跳转到技能设置页
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onManageSkills) { Text(stringResource(R.string.manage)) }
+                }
+                }
             }
 
-            // Agent工作区（在 设置→工作区 里创建与管理；下拉选择，与RikkaHub设置页的颜色模式选择同款）
+            // Agent工作区（在设置→工作区里创建与管理；下拉选择，与RikkaHub设置页的颜色模式选择同款）
             FieldBox {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -525,21 +553,26 @@ fun AssistantEditorScreen(
                             )
                         }
                         Spacer(Modifier.width(12.dp))
+                        val noWorkspaceLabel = stringResource(R.string.assistant_workspace_none)
                         Select(
                             options = workspaceOptions,
                             selectedOption = selectedWorkspace,
                             onOptionSelected = { workspaceId = it?.id },
-                            optionToString = { it?.name ?: "不使用工作区" },
+                            optionToString = { it?.name ?: noWorkspaceLabel },
                             modifier = Modifier.width(150.dp)
                         )
                     }
                     if (availableWorkspaces.isEmpty()) {
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "还没有工作区，去 设置 → 工作区 创建一个",
+                            stringResource(R.string.assistant_workspace_empty),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                    // 右下角"管理"：跳转到工作区设置页
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = onManageWorkspaces) { Text(stringResource(R.string.manage)) }
                     }
                 }
             }
@@ -560,7 +593,10 @@ fun AssistantEditorScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     } else {
-                        availableMcpServers.forEach { srv ->
+                        val visibleMcp = if (showAllMcp || availableMcpServers.size <= 3)
+                            availableMcpServers
+                        else availableMcpServers.take(3)
+                        visibleMcp.forEach { srv ->
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -589,6 +625,22 @@ fun AssistantEditorScreen(
                                 }
                             }
                         }
+                        if (availableMcpServers.size > 3) {
+                            Spacer(Modifier.height(4.dp))
+                            ExpandablePill(
+                                expanded = showAllMcp,
+                                expandText = stringResource(
+                                    R.string.skill_assistant_show_more,
+                                    availableMcpServers.size - 3,
+                                ),
+                                collapseText = stringResource(R.string.skill_assistant_show_less),
+                                onToggle = { showAllMcp = !showAllMcp },
+                            )
+                        }
+                    }
+                    // 右下角"管理"：跳转到MCP服务设置页
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                        TextButton(onClick = onManageMcp) { Text(stringResource(R.string.manage)) }
                     }
                 }
             }
@@ -613,21 +665,15 @@ fun AssistantEditorScreen(
     }
 
     if (showDeleteConfirm && initial != null) {
-        AlertDialog(
-            onDismissRequest = { showDeleteConfirm = false },
-            title = { Text(stringResource(R.string.delete) + " · " + (initial.name)) },
-            text = { Text(stringResource(R.string.assistant_delete_confirm, initial.name)) },
-            confirmButton = {
-                TextButton(onClick = {
-                    showDeleteConfirm = false
-                    onDelete()
-                }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
+        com.miniichatNext.carter.ui.components.ConfirmDeleteDialog(
+            targetName = initial.name,
+            typeLabel = stringResource(R.string.item_assistant),
+            bodyText = stringResource(R.string.assistant_delete_confirm, initial.name),
+            onConfirm = {
+                showDeleteConfirm = false
+                onDelete()
             },
-            dismissButton = {
-                TextButton(onClick = { showDeleteConfirm = false }) {
-                    Text(stringResource(R.string.action_cancel))
-                }
-            }
+            onDismiss = { showDeleteConfirm = false },
         )
     }
 }

@@ -5,16 +5,17 @@ import androidx.compose.ui.graphics.Color
 internal data class InlinePalette(
     val codeBg: Color,
     val codeFg: Color,
+    /** 行内`code`用更亮的底色，让单字符/单词的code也显眼 */
+    val inlineCodeBg: Color,
+    val inlineCodeFg: Color,
     val langFg: Color,
     val lineNumberFg: Color,
     val link: Color,
     val quoteBar: Color,
     val quoteFg: Color,
-    val divider: Color,
-    val headerBg: Color,
-    val headerFg: Color,
-    val cellFg: Color,
     val outline: Color,
+    /** 代码块高亮配色（深底palette默认Dark，浅底palette应传Light） */
+    val codeHighlight: HighlightPalette = HighlightPalette.Dark,
 )
 
 /**
@@ -24,16 +25,32 @@ internal data class InlinePalette(
 internal val BubblePalette = InlinePalette(
     codeBg = Color(0xFF23262E),
     codeFg = Color(0xFFECECEC),
+    inlineCodeBg = Color(0xFF2E3340),
+    inlineCodeFg = Color(0xFFE6F0FF),
     langFg = Color(0xFF9AA3B2),
     lineNumberFg = Color(0xFF6C7480),
     link = Color(0xFF8AB4F8),
     quoteBar = Color(0xFF5A6270),
     quoteFg = Color(0xFFB4BAC4),
-    divider = Color(0xFF3A3F4B),
-    headerBg = Color(0xFF2A2E38),
-    headerFg = Color(0xFFECECEC),
-    cellFg = Color(0xFFECECEC),
     outline = Color(0xFF444A57),
+)
+
+/**
+ * 用于跟随主题的浅色内容区（如更新弹窗）：深字压浅底
+ * 与BubblePalette相对——后者服务于固定深色的助手气泡
+ */
+internal val LightContentPalette = InlinePalette(
+    codeBg = Color(0xFFF2F3F5),
+    codeFg = Color(0xFF24292F),
+    inlineCodeBg = Color(0xFFEAECEF),
+    inlineCodeFg = Color(0xFF24292F),
+    langFg = Color(0xFF6A737D),
+    lineNumberFg = Color(0xFF8C959F),
+    link = Color(0xFF0969DA),
+    quoteBar = Color(0xFF8C959F),
+    quoteFg = Color(0xFF57606A),
+    outline = Color(0xFFAFB8C1),
+    codeHighlight = HighlightPalette.Light,
 )
 
 internal data class HighlightPalette(

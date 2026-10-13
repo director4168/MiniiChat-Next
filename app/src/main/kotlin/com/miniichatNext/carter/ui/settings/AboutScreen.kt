@@ -20,13 +20,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -58,22 +62,80 @@ import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.debug.shortVibrate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+
 import com.miniichatNext.carter.ui.components.SectionCard
 import com.miniichatNext.carter.ui.components.SectionHeader
+import com.miniichatNext.carter.data.store.SettingsRepository
+import com.miniichatNext.carter.data.update.UpdateInfo
+import com.miniichatNext.carter.data.update.UpdateRepository
+import com.miniichatNext.carter.data.update.UpdateState
+import com.miniichatNext.carter.data.update.compareVersions
+import com.miniichatNext.carter.ui.settings.update.UpdateDialog
 
 @Composable
-fun AboutScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
+fun AboutScreen(
+    onBack: () -> Unit,
+    onOpenDebug: () -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var showDonateDialog by remember { mutableStateOf(false) }
+    var showLogLevelDialog by remember { mutableStateOf(false) }
+    var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
     val versionName = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName
     }.getOrDefault("?")
     val versionCode = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).versionCode
     }.getOrDefault(0L)
+
+    /**
+     * 手动"检查更新"：**不过滤ignored**——用户主动点检查就是想看现在能拉到啥。
+     * 之前bug是先调tryShowUpdate（内部filter ignored），所以"忽略后再检查"显示"已是最新"。
+     */
+    val checkUpdate: () -> Unit = {
+        scope.launch {
+            val result = withContext(Dispatchers.IO) { UpdateRepository.checkForUpdate(context) }
+            when (result) {
+                is UpdateRepository.Result.Success -> {
+                    val info = result.info
+                    if (info.version.isBlank() ||
+                        compareVersions(info.version, versionName ?: "?") <= 0
+                    ) {
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.update_no_update),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    } else {
+                        // 手动检查：不过滤ignored——用户主动点就是想看
+                        UpdateState.forceShowUpdate(info)
+                    }
+                }
+                is UpdateRepository.Result.Failure -> {
+                    // 手动检查失败→明确提示（含超时分支）
+                    val msg = if (result.message == "timeout")
+                        context.getString(R.string.update_check_timeout)
+                    else
+                        context.getString(R.string.update_check_failed, result.message)
+                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    // 忽略此版本：持久化（重启后不再弹）+关闭弹窗
+    val ignoreThisVersion: (UpdateInfo) -> Unit = { info ->
+        scope.launch {
+            SettingsRepository(context).ignoreUpdateVersion(info.version)
+        }
+        UpdateState.addIgnoredVersion(info.version)
+        updateInfo = null
+        UpdateState.clearPending()
+    }
 
     Column(
         modifier = Modifier
@@ -116,42 +178,6 @@ fun AboutScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
                     Text(
                         buildAnnotatedString {
                             append(stringResource(R.string.about_text_intro))
-                            append("\n")
-                            withLink(
-                                LinkAnnotation.Url(
-                                    "https://github.com/director4168/MiniiChat-Next",
-                                    styles = TextLinkStyles(
-                                        SpanStyle(
-                                            color = MaterialTheme.colorScheme.primary,
-                                            textDecoration = TextDecoration.Underline
-                                        )
-                                    )
-                                )
-                            ) { append("MiniiChat Next") }
-                            append("\n")
-                            withLink(
-                                LinkAnnotation.Url(
-                                    "https://github.com/Minis233/miniichat",
-                                    styles = TextLinkStyles(
-                                        SpanStyle(
-                                            color = MaterialTheme.colorScheme.primary,
-                                            textDecoration = TextDecoration.Underline
-                                        )
-                                    )
-                                )
-                            ) { append("MiniiChat") }
-                            append("\n")
-                            withLink(
-                                LinkAnnotation.Url(
-                                    "https://github.com/rikkahub/rikkahub",
-                                    styles = TextLinkStyles(
-                                        SpanStyle(
-                                            color = MaterialTheme.colorScheme.primary,
-                                            textDecoration = TextDecoration.Underline
-                                        )
-                                    )
-                                )
-                            ) { append("RikkaHub") }
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -280,6 +306,19 @@ fun AboutScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
                         thickness = 0.5.dp
                     )
                     AboutActionRow(
+                        icon = Icons.Default.Tune,
+                        title = stringResource(R.string.about_log_level_title),
+                        subtitle = stringResource(
+                            R.string.about_log_level_sub,
+                            DebugLog.level.name
+                        ),
+                        onClick = { showLogLevelDialog = true }
+                    )
+                    HorizontalDivider(
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                        thickness = 0.5.dp
+                    )
+                    AboutActionRow(
                         icon = Icons.Default.FileUpload,
                         title = stringResource(R.string.about_export_logs_title),
                         subtitle = stringResource(R.string.about_export_logs_sub),
@@ -289,15 +328,18 @@ fun AboutScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
                                     DebugLog.exportZipToDownloads(context)
                                 }
                                 DebugLog.i("About", "export logs -> ${saved ?: "failed"}")
-                                Toast.makeText(
-                                    context,
-                                    if (saved != null) {
-                                        context.getString(R.string.about_export_logs_done, saved)
-                                    } else {
-                                        context.getString(R.string.about_export_logs_failed)
-                                    },
-                                    Toast.LENGTH_LONG
-                                ).show()
+                                val size = DebugLog.currentLogSize(context)
+                                val sizeText = when {
+                                    size >= 1024 * 1024 -> "%.1f MB".format(size / 1024.0 / 1024.0)
+                                    size >= 1024 -> "%.1f KB".format(size / 1024.0)
+                                    else -> "$size B"
+                                }
+                                val msg = if (saved != null) {
+                                    context.getString(R.string.about_export_logs_done_with_size, saved, sizeText)
+                                } else {
+                                    context.getString(R.string.about_export_logs_failed)
+                                }
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                             }
                         }
                     )
@@ -315,7 +357,58 @@ fun AboutScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
             }
 
             if (showDonateDialog) {
-                DonateDialog(onDismiss = { showDonateDialog = false })
+                    DonateDialog(onDismiss = { showDonateDialog = false })
+                }
+
+                if (showLogLevelDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showLogLevelDialog = false },
+                        confirmButton = {},
+                        title = { Text(stringResource(R.string.about_log_level_title)) },
+                        text = {
+                            Column {
+                                com.miniichatNext.carter.debug.DebugLevel.entries.forEach { lvl ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                com.miniichatNext.carter.debug.DebugLog.setLevel(context, lvl)
+                                                showLogLevelDialog = false
+                                            }
+                                            .padding(vertical = 10.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        androidx.compose.material3.RadioButton(
+                                            selected = com.miniichatNext.carter.debug.DebugLog.level == lvl,
+                                            onClick = {
+                                                com.miniichatNext.carter.debug.DebugLog.setLevel(context, lvl)
+                                                showLogLevelDialog = false
+                                            }
+                                        )
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(lvl.name)
+                                    }
+                                }
+                            }
+                        }
+                    )
+                }
+
+            // 更新弹窗：用户点"检测更新"后fetch成功→展示UpdateInfo
+            // 注：UpdateDialog内置"忽略此版本"按钮（在右按钮区），不传customActions避免重复
+            updateInfo?.let { info ->
+                UpdateDialog(
+                    info = info,
+                    currentVersion = versionName,
+                    onDismiss = {
+                        updateInfo = null
+                        UpdateState.clearPending()
+                    },
+                    // 手动检查时的ignore→持久化（关闭弹窗）
+                    onIgnore = if (!info.compulsory) {
+                        { ignoreThisVersion(info) }
+                    } else null,
+                )
             }
 
             Spacer(Modifier.height(24.dp))
@@ -327,9 +420,9 @@ fun AboutScreen(onBack: () -> Unit, onOpenDebug: () -> Unit = {}) {
 private const val MAIL_ADDRESS = "director4168@163.com"
 
 /**
- * 打赏弹窗：显示DSM.png + "保存" 按钮。
+ * 打赏弹窗：显示DSM.png+"保存"按钮。
  *
- * 保存路径：Android 10+ 走MediaStore.Downloads（无需WRITE_EXTERNAL_STORAGE权限）；
+ * 保存路径：Android 10+走MediaStore.Downloads（无需WRITE_EXTERNAL_STORAGE权限）；
  * 9及以下走系统下载目录（需要WRITE_EXTERNAL_STORAGE，已在manifest声明）。
  */
 @Composable

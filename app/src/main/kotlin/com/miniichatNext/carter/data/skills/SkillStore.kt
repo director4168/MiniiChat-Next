@@ -17,6 +17,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import java.io.File
+import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.vm.saveSkillFiles
 
@@ -174,6 +175,6 @@ class SkillStore(private val context: Context) {
 
     companion object {
         private val LEGACY_KEY = stringPreferencesKey("skills_json")
-        private val legacyJson = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        private val legacyJson get() = AppJson.json
     }
 }
