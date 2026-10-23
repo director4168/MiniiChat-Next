@@ -55,7 +55,12 @@ object UpdateRepository {
                 if (body.isBlank()) {
                     Result.Failure(context.getString(R.string.update_empty_response))
                 } else {
-                    val info = json.decodeFromString(UpdateInfo.serializer(), body)
+                    // 容错：剥离整行//注释（与app的assets配置同款约定）。
+                    // 注意：旧版APP无此剥离逻辑，配置里加注释前须确认旧版本已淘汰。
+                    val cleaned = body.lineSequence()
+                        .filterNot { it.trimStart().startsWith("//") }
+                        .joinToString("\n")
+                    val info = json.decodeFromString(UpdateInfo.serializer(), cleaned)
                     Result.Success(info)
                 }
             }

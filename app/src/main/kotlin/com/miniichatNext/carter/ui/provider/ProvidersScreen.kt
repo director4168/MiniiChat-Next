@@ -61,9 +61,6 @@ import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.ui.components.OutlinedFieldBox
 import com.miniichatNext.carter.ui.components.SectionCard
 import com.miniichatNext.carter.ui.components.SettingsTopBar
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Image
 import com.miniichatNext.carter.ui.markdown.MarkdownText
 
 private const val MODELS_COLLAPSED_LIMIT = 5
@@ -82,8 +79,7 @@ fun ProvidersScreen(
     onFetchModels: (String) -> Unit,
     onAddManualModel: (String, String) -> Unit,
     onRemoveModel: (String, String) -> Unit,
-    onSelectModel: (String, String) -> Unit,
-    onEditModel: (ProviderConfig, String) -> Unit = { _, _ -> }
+    onSelectModel: (String, String) -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -150,8 +146,7 @@ fun ProvidersScreen(
                         onFetch = { onFetchModels(p.id) },
                         onAddManual = { m -> onAddManualModel(p.id, m) },
                         onRemoveModel = { m -> onRemoveModel(p.id, m) },
-                        onSelectModel = { m -> onSelectModel(p.id, m) },
-                        onEditModel = { m -> onEditModel(p, m) }
+                        onSelectModel = { m -> onSelectModel(p.id, m) }
                     )
                 }
             }
@@ -171,8 +166,7 @@ private fun ProviderCard(
     onFetch: () -> Unit,
     onAddManual: (String) -> Unit,
     onRemoveModel: (String) -> Unit,
-    onSelectModel: (String) -> Unit,
-    onEditModel: (String) -> Unit
+    onSelectModel: (String) -> Unit
 ) {
     var manualInput by remember { mutableStateOf("") }
     var deleteOpen by remember { mutableStateOf(false) }
@@ -301,16 +295,10 @@ private fun ProviderCard(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     visible.forEach { m ->
-                        val mc = provider.model(m)
                         ModelChip(
                             label = m,
                             selected = m == activeModel,
-                            overridden = mc?.hasOverride() == true,
-                            noReasoning = mc?.supportsReasoning == false,
-                            noToolCall = mc?.supportsToolCall == false,
-                            noImageInput = mc?.supportsImageInput == false,
                             onSelect = { onSelectModel(m) },
-                            onEdit = { onEditModel(m) },
                             onRemove = { onRemoveModel(m) }
                         )
                     }
@@ -369,28 +357,19 @@ private fun ProviderCard(
 private fun ModelChip(
     label: String,
     selected: Boolean,
-    overridden: Boolean = false,
-    noReasoning: Boolean = false,
-    noToolCall: Boolean = false,
-    noImageInput: Boolean = false,
     onSelect: () -> Unit,
-    onEdit: () -> Unit = {},
     onRemove: () -> Unit
 ) {
     val bg = if (selected) MaterialTheme.colorScheme.primaryContainer
     else MaterialTheme.colorScheme.surfaceVariant
-    // 有单独设置→外框加深提示（日/夜都用outline，deep色在两种主题下都明显）
-    val borderColor = when {
-        selected -> MaterialTheme.colorScheme.primary
-        overridden -> MaterialTheme.colorScheme.outline
-        else -> MaterialTheme.colorScheme.outlineVariant
-    }
+    val borderColor = if (selected) MaterialTheme.colorScheme.primary
+    else MaterialTheme.colorScheme.outlineVariant
     Row(
         modifier = Modifier
             .clip(RoundedCornerShape(50))
             .background(bg)
-            .border(if (overridden || selected) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(50))
-            .clickable(onClick = onEdit)
+            .border(if (selected) 1.5.dp else 1.dp, borderColor, RoundedCornerShape(50))
+            .clickable(onClick = onSelect)
             .padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -406,10 +385,6 @@ private fun ModelChip(
             maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(end = 4.dp)
         )
-        // 被关掉的能力用小图标提示（默认全支持时不显示，保持列表干净）
-        if (noReasoning) AbilityBadge(Icons.Default.Psychology, stringResource(R.string.model_supports_reasoning))
-        if (noToolCall) AbilityBadge(Icons.Default.Build, stringResource(R.string.model_supports_tool_call))
-        if (noImageInput) AbilityBadge(Icons.Default.Image, stringResource(R.string.model_supports_image_input))
         IconButton(onClick = onRemove, modifier = Modifier.size(22.dp)) {
             Icon(
                 Icons.Default.Close, contentDescription = "remove",
@@ -418,15 +393,4 @@ private fun ModelChip(
             )
         }
     }
-}
-
-/** 能力提示小图标（仅在被关掉时显示） */
-@Composable
-private fun AbilityBadge(icon: androidx.compose.ui.graphics.vector.ImageVector, description: String) {
-    Icon(
-        icon,
-        contentDescription = description,
-        modifier = Modifier.size(12.dp).padding(end = 2.dp),
-        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-    )
 }

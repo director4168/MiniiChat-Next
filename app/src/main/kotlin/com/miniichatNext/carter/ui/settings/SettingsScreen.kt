@@ -458,7 +458,6 @@ fun SettingsScreen(
             }
 
             SectionHeader(stringResource(R.string.section_about))
-            // 关于栏目：关于+更新设置两个入口（更新设置放在关于下方，直接在设置页里）
             SectionCard {
                 Column {
                     Row(

@@ -6,6 +6,7 @@
       "desc": "本项目（AGPL-3.0）——你正在看的这个项目",
       "url": "https://github.com/director4168/MiniiChat-Next"
     },
+
     {
       "name": "Minis233/miniichat",
       "desc": "原始项目（MIT）——本fork的基础",
@@ -45,6 +46,11 @@
       "name": "mermaid-js/mermaid",
       "desc": "（MIT）聊天与更新弹窗中的Mermaid图表渲染引擎",
       "url": "https://github.com/mermaid-js/mermaid"
+    },
+    {
+      "name": "MiniiChat-Next AGPL_NOTICE",
+      "desc": "本项目完整第三方组件清单",
+      "url": "https://github.com/director4168/MiniiChat-Next/blob/main/AGPL_NOTICE.md"
     }
-  ]
+]
 }

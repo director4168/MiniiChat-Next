@@ -2,11 +2,39 @@ package com.miniichatNext.carter.vm
 
 import androidx.lifecycle.viewModelScope
 import com.miniichatNext.carter.data.model.Assistant
+import com.miniichatNext.carter.data.store.AppSettings
 import com.miniichatNext.carter.data.model.Conversation
+import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.model.ProviderOverride
 import com.miniichatNext.carter.data.model.ThinkingLevel
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.launch
+
+/**
+ * 对话实际生效的模型：对话覆盖>助手preferred>全局默认。
+ *
+ * 全链统一用这一个解析（聊天页选择器显示/写入、发送、续写、UI展示），
+ * 返回null=没配好（provider不存在或model为空），调用方各自处理错误提示。
+ */
+fun effectiveConversationModel(
+    conv: Conversation?,
+    assistant: Assistant?,
+    settings: AppSettings,
+    providers: List<ProviderConfig>,
+): Pair<ProviderConfig, String>? {
+    val cp = conv?.modelProviderId?.takeIf { it.isNotBlank() }
+    val cm = conv?.modelId?.takeIf { it.isNotBlank() }
+    if (cp != null && cm != null) {
+        providers.firstOrNull { it.id == cp }?.let { return it to cm }
+    }
+    val ap = assistant?.preferredProviderId?.takeIf { it.isNotBlank() }
+        ?.let { id -> providers.firstOrNull { it.id == id } }
+    val am = assistant?.preferredModel?.takeIf { it.isNotBlank() }
+    if (ap != null && am != null) return ap to am
+    val dp = providers.firstOrNull { it.id == settings.activeProviderId }
+    if (dp != null && settings.activeModel.isNotBlank()) return dp to settings.activeModel
+    return null
+}
 
 /** 对话级覆盖优先，其次助手配置 */
 fun effectiveWorkspaceId(conv: Conversation?, assistant: Assistant?): String? =
@@ -124,6 +152,22 @@ internal fun ChatViewModel.clearConversationToolOverrides(convId: String) {
                 toolWorkspaceId = null,
                 toolMcpOverridden = false,
                 toolMcpEnabled = emptySet(),
+                updatedAt = System.currentTimeMillis()
+            )
+        )
+    }
+}
+
+/** 记住本对话使用的模型（聊天页选择器写入；只影响本对话，不动全局默认） */
+internal fun ChatViewModel.setConversationModel(convId: String, providerId: String, modelId: String) {
+    if (providerId.isBlank() || modelId.isBlank()) return
+    viewModelScope.launch {
+        val conv = ensureConversationEntity(convId)
+        if (conv.modelProviderId == providerId && conv.modelId == modelId) return@launch
+        store.upsert(
+            conv.copy(
+                modelProviderId = providerId,
+                modelId = modelId,
                 updatedAt = System.currentTimeMillis()
             )
         )

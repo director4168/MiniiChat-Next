@@ -181,7 +181,6 @@ private fun SponsorRow(sponsor: com.miniichatNext.carter.data.model.Sponsor, sho
                     maxLines = 1,
                 )
             }
-            // 有链接：右侧跳转标识箭头（与项目行一致）
             if (!sponsor.url.isNullOrBlank()) {
                 Spacer(Modifier.width(4.dp))
                 Icon(

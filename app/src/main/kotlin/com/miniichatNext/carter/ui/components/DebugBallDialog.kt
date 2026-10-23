@@ -45,7 +45,6 @@ fun DebugBallDialog(
         title = { Text(stringResource(R.string.debug_ball_title)) },
         text = {
             Column {
-                // 区块1：日志等级
                 SectionHeader(
                     label = stringResource(R.string.debug_ball_log_level),
                     expanded = logExpanded,
@@ -63,7 +62,6 @@ fun DebugBallDialog(
                         )
                     }
                 }
-                // 区块2：快速跳转
                 SectionHeader(
                     label = stringResource(R.string.debug_ball_quick_jump),
                     expanded = jumpExpanded,
@@ -79,7 +77,6 @@ fun DebugBallDialog(
                         },
                     )
                 }
-                // 区块3：界面设置（语言+界面模式）
                 SectionHeader(
                     label = stringResource(R.string.debug_ball_ui_settings),
                     expanded = uiExpanded,

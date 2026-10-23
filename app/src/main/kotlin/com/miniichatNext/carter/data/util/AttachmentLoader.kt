@@ -41,7 +41,6 @@ object AttachmentLoader {
     /** 单文件内联进上下文的上限，避免把上下文塞爆 */
     const val MAX_INLINE_TEXT_BYTES: Long = 512L * 1024  // 512 KB
 
-    // 图片编码参数
     private const val IMG_MAX_DIMENSION = 10_000
     private const val IMG_MAX_PIXELS = 16_000_000L
     private const val IMG_JPEG_QUALITY = 85

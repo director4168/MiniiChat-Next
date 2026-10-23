@@ -243,7 +243,6 @@ fun SkillsScreen(
         )
     }
 
-    // 导入方式选择底部弹窗：从本地文件/从URL/手动创建
     if (showImportSheet) {
         val sheetState = rememberModalBottomSheetState()
         ModalBottomSheet(

@@ -17,7 +17,7 @@ for the full license text in [`LICENSE`](LICENSE).
 | # | Project | Upstream | License | Role in MiniiChat Next |
 |---|---------|----------|---------|------------------------|
 | 1 | **Minis233/miniichat** | <https://github.com/Minis233/miniichat> | MIT | Initial fork. Original Kotlin/Compose scaffolding, AppSettings / ConversationStore / ProviderStore / AssistantStore / SkillStore data layer shape, ChatViewModel + LlmClient skeleton, and the basic UI screen set. |
-| 2 | **rikkahub/rikkahub** | <https://github.com/rikkahub/rikkahub> | **GNU AGPL-3.0** | Source of the rewritten LLM client, the prompt templates for context compression / reply suggestions / title generation, the multi-file SKILL.md disk layout, the Compose drawer / input-bar / settings architecture, and the whole **multi-workspace module** (`data/workspace/`) — `WorkspaceManager`, `WorkspaceFileSystem`, `ProotShellRunner`, `RootfsInstaller`, `RootfsPatcher`, `WorkspaceTools`, `TextReplacers`, `WorkspaceShellRunner` — together with its repository / Rootfs install flow, the ChainOfThought tool-call timeline, the interactive workspace **terminal** (`ui/workspace/WorkspaceTerminalSession.kt` / `WorkspaceTerminalSessionManager.kt` / `WorkspaceTerminalScreen.kt`), the LaTeX math renderer port (`ui/markdown/LatexText.kt`), and its **native PTY shim** (`app/src/main/cpp/termux_pty.cpp` — a JNI `createSubprocess` replacement built into `libtermux.so`, which overwrites the stock Termux library at packaging time and is required for `proot --root-id` to work on recent Android releases). The `jniLibs` proot binaries were re-synced from the current rikkahub tree as well (proot 5.1.107.92 build; see §3.5 / §5.5). |
+| 2 | **rikkahub/rikkahub** | <https://github.com/rikkahub/rikkahub> | **GNU AGPL-3.0** | Source of the rewritten LLM client, the prompt templates for context compression / reply suggestions / title generation, the multi-file SKILL.md disk layout, the Compose drawer / input-bar / settings architecture, and the whole **multi-workspace module** (`data/workspace/`) — `WorkspaceManager`, `WorkspaceFileSystem`, `ProotShellRunner`, `RootfsInstaller`, `RootfsPatcher`, `WorkspaceTools`, `TextReplacers`, `WorkspaceShellRunner` — together with its repository / Rootfs install flow, the ChainOfThought tool-call timeline, the interactive workspace **terminal** (`ui/workspace/WorkspaceTerminalSession.kt` / `WorkspaceTerminalSessionManager.kt` / `WorkspaceTerminalScreen.kt`), the LaTeX math renderer port (`ui/markdown/LatexText.kt`), the **whole markdown rendering library** (`ui/markdown/` — `Markdown.kt`, `MarkdownBlocks.kt`, `MarkdownCss.kt`, `MarkdownDefaults.kt`, `MarkdownInline.kt`, `MarkdownNode.kt`, `MarkdownParser.kt`) and its `ui/table/DataTable.kt` (`ui/markdown/Markdown.kt` … `DataTable.kt` in this repo, see §3.7), and its **native PTY shim** (`app/src/main/cpp/termux_pty.cpp` — a JNI `createSubprocess` replacement built into `libtermux.so`, which overwrites the stock Termux library at packaging time and is required for `proot --root-id` to work on recent Android releases). The `jniLibs` proot binaries were re-synced from the current rikkahub tree as well (proot 5.1.107.92 build; see §3.5 / §5.5). |
 | 3 | **久违¹/MiniiChat-Next-Flutter** | https://github.com/jiuweiby/MiniiChat-Next | **GNU AGPL-3.0** | A **public derivative of MiniiChat Next** developed by 久违¹. Source of the rewritten **MCP client and tool-calling layer** (`data/mcp/`: `McpClient`, `McpModels`, `McpStore`, `BuiltInFileTools`), the per-tool permission / approval model (`McpToolPermission`, `ToolInvocation`), and the tool-call UI (`ui/mcp/McpScreens.kt`). The MCP rewrite was later re-implemented and refined against rikkahub's reference in `data/mcp/McpClient.kt` (pure-JDK JSON-RPC 2.0, `HttpURLConnection`, Streamable HTTP + legacy SSE, `Mcp-Session-Id` reuse), removing the Ktor version-tearing crash (`NoClassDefFoundError: io.ktor.client.plugins.HttpTimeout`) from the MCP path entirely. |
 | 4 | **rikkahub/jlatexmath-android** | <https://github.com/rikkahub/jlatexmath-android> | **GPL-2.0-or-later + linking exception** (bundled fonts mixed, see §5.4) | Maven dependency `com.github.rikkahub.jlatexmath-android:jlatexmath` (+ `-font-greek`, `-font-cyrillic`): LaTeX math rendering engine used by `ui/markdown/LatexText.kt`. Full notice in §4 / §5.4. |
 | 5 | **termux/termux-app** (`terminal-view` + `terminal-emulator`) | <https://github.com/termux/termux-app> | **GPL-3.0** | Maven dependency `com.termux.termux-app:terminal-view` 0.118.0: the terminal emulator / view used by the interactive workspace terminal. Its stock `libtermux.so` is replaced at packaging time by the rikkahub-derived PTY shim (§3.5, `pickFirsts += "lib/*/libtermux.so"`). Full notice in §4. |
@@ -125,7 +125,12 @@ shell / read-error messages now include the
 emits verbatim. The `jniLibs` proot binaries were additionally
 re-synced from rikkahub's current tree (proot **5.1.107.92**,
 md5-verified in §5.5): the earlier copies could not fake root on
-Android 16 and broke `su` / apt prerequisites.
+Android 16 and broke `su` / apt prerequisites. The rootfs install
+task itself is owned by a fork-added process-level singleton,
+`RootfsInstallManager` (application-scoped coroutine + per-workspace
+`StateFlow` progress): RikkaHub's install coroutine is page-scoped,
+so in this fork download/extract must survive leaving the workspace
+screen and be re-attachable when the screen comes back.
 
 | RikkaHub original | MiniiChat Next |
 |-------------------|----------------|
@@ -136,9 +141,10 @@ Android 16 and broke `su` / apt prerequisites.
 | `ProotShellRunner.kt` | `data/workspace/ProotShellRunner.kt` (uses the packaged `libproot_exec.so` / `libproot_loader.so`, `-b files:/workspace`, kernel FS binds, `/skills` bind mount) |
 | `RootfsInstaller.kt` | `data/workspace/RootfsInstaller.kt` (tar.gz / tar.xz streaming extractor with PAX / GNU long-name support) |
 | `RootfsPatcher.kt` | `data/workspace/RootfsPatcher.kt` (resolv.conf / hosts / hostname / locale / supplemental gids / tmp dirs) |
+| — (fork addition, built on the ported install flow) | `data/workspace/RootfsInstallManager.kt` — process-level rootfs install owner: application-scoped `CoroutineScope` + per-workspace `StateFlow<RootfsInstallState>`, so a running download/extract is not cancelled when the settings page leaves composition; the detail screen only observes progress and can re-attach |
 | `app/.../data/repository/WorkspaceRepository.kt` + Room `WorkspaceEntity` + `WorkspaceDAO` | `data/workspace/WorkspaceRepository.kt` and `data/workspace/WorkspaceStore.kt` — the Room DAO is replaced by a `DataStore<Preferences>` JSON list (`workspaces`); everything else (integrity check, name uniqueness, tool-approval overrides, `runInterruptible` cancel-safety) is preserved |
 | `app/.../data/ai/tools/WorkspaceTools.kt` + `TextReplacers.kt` | `data/workspace/WorkspaceTools.kt` + `data/workspace/TextReplacers.kt` — tool signatures, approval defaults and the exact → line_trimmed → block_anchor replacement ladder are unchanged; results are returned as `McpToolResult` instead of `UIMessagePart`, and file IO goes through `WorkspaceManager` instead of Rootfs shell redirects |
-| `ui/pages/extensions/workspace/*` | `ui/workspace/WorkspaceScreens.kt` — workspace list / create / rename / delete, Rootfs install with progress, and a file browser for `/workspace`; screen stack adapted to the single-activity `Screen` enum |
+| `ui/pages/extensions/workspace/*` | `ui/workspace/WorkspaceScreens.kt` — workspace list / create / rename / delete, Rootfs install with progress (observed from `RootfsInstallManager`, so the task outlives the screen), and a file browser for `/workspace`; screen stack adapted to the single-activity `Screen` enum |
 | `app/.../workspace/WorkspaceTerminalPage.kt` / `WorkspaceTerminalSession.kt` / `WorkspaceTerminalSessionManager.kt` | `ui/workspace/WorkspaceTerminalScreen.kt` / `WorkspaceTerminalSession.kt` / `WorkspaceTerminalSessionManager.kt` — the real-PTY interactive workspace terminal: multi-tab with per-tab process keep-alive, Ctrl / Alt extra-key row, IME resize handling, exit-screen retention, and the app-side `shellCompatibilityMode` switch (`PROOT_NO_SECCOMP=1`) |
 | `workspace/src/main/cpp/termux_pty.cpp` + `CMakeLists.txt` (+ the `externalNativeBuild` / `pickFirsts += "lib/*/libtermux.so"` Gradle glue) | `app/src/main/cpp/termux_pty.cpp` + `CMakeLists.txt` — a self-built `libtermux.so` JNI shim implementing `Java_com_termux_terminal_JNI_createSubprocess` (`fork` → `setsid` → `TIOCSCTTY` → window-size ioctl → `dup2` → `execve` with an explicit environment array). It replaces the stock `terminal-emulator` library shipped inside the Termux AAR at packaging time; without this shim `proot --root-id` fails to fake root on Android 14+ devices (observed as `id -u` returning the app UID instead of 0, `getcwd: Function not implemented`, and `su` asking for a password). |
 
@@ -170,24 +176,44 @@ modules resolved to different major versions.
 | `ui/chat/ToolInvocationCard.kt` (Flutter prototype) | **Replaced by** `ui/chat/ChainOfThought.kt` (a RikkaHub-style timeline card: each step is either `Reasoning` or `Tool`, default-collapsed to the last 2, expandable) **plus** an inline `InteractiveClarificationCard` for the `interactive_clarification` tool (it has to be filled in, so it doesn't belong inside the step stream). `McpToolResult` returns are wrapped by `vm/ChatViewModelMessage.appendToolMessage`. |
 | `ui/mcp/McpScreens.kt` | `ui/mcp/McpScreens.kt` (server list / add / edit dialog / detail with per-tool enable & approval / built-in tool screen). Server addition accepts custom headers (RikkaHub's behaviour). Built-in tools are presented as a separate page with a per-tool enable toggle. The UI copy is fully localized via `R.string.*` resources in both English and Chinese. |
 
-### 3.7 `ui/markdown/LatexText.kt` — LaTeX math rendering (RikkaHub + JLaTeXMath)
+### 3.7 `ui/markdown/` — GFM markdown rendering library (RikkaHub, ported wholesale)
 
-A reduced port of RikkaHub's
-`app/src/main/java/me/rerere/rikkahub/ui/components/richtext/LatexText.kt`.
-RikkaHub renders math with `ru.noties.jlatexmath.JLatexMathDrawable`; this
-fork keeps only the pieces it needs — `LatexText`, `assumeLatexSize`,
-`getLatexDrawable`, `processLatex` — and drops the split-line helper
-(`splitLatex`) and the WebView pipeline.
+The entire markdown renderer is ported from RikkaHub's `ui/src/main/java/me/rerere/ui/markdown/`
+plus `ui/src/main/java/me/rerere/ui/table/DataTable.kt`:
 
-| RikkaHub original | MiniiChat Next |
-|-------------------|----------------|
-| `LatexText.kt` (`LatexText` + `LatexDrawable` + `splitLatex` + `processLatex`) | `ui/markdown/LatexText.kt` — `LatexText` / `getLatexDrawable` / `assumeLatexSize` / `processLatex`. `processLatex` now only **strips** the `$$..$$` / `$..$` / `\[..\]` / `\(..\)` delimiters (JLaTeXMath accepts plain formulas only). Font-size / colour fallbacks (`takeOrElse`, `Color.isSpecified` → `LocalContentColor`) were added so an unspecified style never breaks the drawable build. |
-| inline / display math detection inside the JSoup/HTML pipeline | `ui/markdown/MarkdownInlineParser.kt` (`\(..\)` and `$..$` emitted through `appendInlineContent` + `InlineTextContent` + `Placeholder(assumeLatexSize(...))`) and `ui/markdown/MarkdownParser.kt` (`$$..$$` block → `Block.MathBlock`) |
+| RikkaHub original | This repo |
+|-------------------|-----------|
+| `ui/markdown/MarkdownParser.kt` (JetBrains AST → HTML → Jsoup DOM → immutable `MarkdownDocument`) | `ui/markdown/MarkdownParser.kt` — unchanged apart from the package name |
+| `ui/markdown/MarkdownNode.kt` (immutable block/inline model: `MarkdownBlock.*`, `MarkdownInline.*`) | `ui/markdown/MarkdownNode.kt` |
+| `ui/markdown/MarkdownBlocks.kt` (block dispatch, lists, quote, details, `MarkdownTable`) | `ui/markdown/MarkdownBlocks.kt` |
+| `ui/markdown/MarkdownInline.kt` (inline → single `Text` + `InlineTextContent`) | `ui/markdown/MarkdownInline.kt` |
+| `ui/markdown/MarkdownDefaults.kt` / `MarkdownCss.kt` (theme, components, HTML style parsing) | same files |
+| `ui/markdown/Markdown.kt` (`Markdown` / `rememberMarkdownDocument`, background parse + conflate) | `ui/markdown/Markdown.kt` |
+| `ui/table/DataTable.kt` (SubcomposeLayout table) | `ui/markdown/DataTable.kt` |
 
-The maths typesetter itself is **JLaTeXMath** (see §4 and §5.4),
-consumed unmodified.
+Adaptations made in this fork:
 
----
+- `Icons.Filled.*` (Material) replaces RikkaHub's HugeIcons for the checkbox / details arrow / image
+  chip glyphs.
+- `ui/markdown/MarkdownText.kt` (this repo) is the app entry point: it derives a `MarkdownTheme`
+  from the bubble palette (`InlinePalette`) and wires `MarkdownComponents` to this project's
+  card UI (`ContentCard`), JLaTeXMath rendering (`LatexText`, `LatexDrawable`, `splitLatex`) and
+  Mermaid WebView (`MermaidChart`).
+- `ui/markdown/MarkdownExtras.kt` (this repo) contains those component implementations
+  (`MdCodeBlockCard`, `MdTableCard`, `MdMathBlock`, `MdImageChip`, `buildInlineMathWidgets`,
+  the legacy `InlineMarkdownText` entry used by dialogs). Highlighting scans the complete
+  code block on `Dispatchers.Default`, without a character-count cutoff; line numbers and
+  code share one horizontal scroll container.
+- `ui/components/DrawingClip.kt` ports `clipDrawing` from RikkaHub's
+  `app/src/main/java/me/rerere/rikkahub/ui/components/message/ChatMessage.kt`.
+  Assistant/user bubbles and content cards use drawing-only clipping, preserving rounded
+  corners without a graphics-layer outline in the touch hit-test path. The upstream source
+  documents lost touch hits past approximately 8192 px for asymmetric rounded outlines.
+- `ui/markdown/LatexText.kt` keeps the earlier port (§3.7 previously) with an added drawable
+  LRU cache; `processLatex` only strips the `$$..$$` / `$..$` / `\[..\]` / `\(..\)` delimiters.
+
+The math typesetter is **JLaTeXMath** (see §4 / §5.4) and the HTML preprocessing uses **jsoup**
+(see §4) — both consumed unmodified.
 
 ## 4. Runtime dependencies with their own notices (AGPL §5(a) source + §5(b) license)
 
@@ -206,6 +232,8 @@ URL listed under each entry.
 | `io.ktor:ktor-client-core / ktor-client-okhttp / ktor-client-content-negotiation / ktor-client-logging / ktor-serialization-kotlinx-json` (3.4.3) | Apache-2.0 | <https://github.com/ktorio/ktor> |
 | `org.jetbrains.kotlinx:kotlinx-serialization-json`, `kotlinx-coroutines-android` | Apache-2.0 | <https://github.com/Kotlin/kotlinx> |
 | `org.jetbrains.kotlin:kotlin-stdlib` (2.3.21) | Apache-2.0 | <https://github.com/JetBrains/kotlin> |
+| `com.github.rikkahub:markdown` (intellij-markdown fork, d79a97cc8e) — GFM markdown parser used by `ui/markdown/MarkdownParser.kt` | Apache-2.0 | <https://github.com/JetBrains/markdown> (upstream) · fork built from <https://github.com/rikkahub/markdown> |
+| `org.jsoup:jsoup` — HTML DOM parser used by the markdown pipeline (`ui/markdown/MarkdownParser.kt`) | MIT | <https://github.com/jhy/jsoup> |
 | `com.github.yalantis:ucrop` (Apache-2.0) | Apache-2.0 | <https://github.com/Yalantis/uCrop> |
 | `androidx.exifinterface:exifinterface` 1.3.7 (used by the avatar crop flow to read/normalize EXIF orientation when saving cropped avatars) | Apache-2.0 | <https://developer.android.com/jetpack/androidx> |
 | `org.tukaani:xz` 1.12 (used by `RootfsInstaller` to extract `.tar.xz` rootfs archives) | **Public Domain** (xz-java by Lasse Collin, placed in the public domain) | <https://tukaani.org/xz/java.html> |

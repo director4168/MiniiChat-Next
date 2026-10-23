@@ -72,7 +72,9 @@ import com.miniichatNext.carter.data.store.SettingsRepository
 import com.miniichatNext.carter.data.update.UpdateInfo
 import com.miniichatNext.carter.data.update.UpdateRepository
 import com.miniichatNext.carter.data.update.UpdateState
-import com.miniichatNext.carter.data.update.compareVersions
+import com.miniichatNext.carter.data.update.ignoreKey
+import com.miniichatNext.carter.data.update.isRemoteNewer
+import com.miniichatNext.carter.data.update.remoteVersionCode
 import com.miniichatNext.carter.ui.settings.update.UpdateDialog
 
 @Composable
@@ -102,9 +104,7 @@ fun AboutScreen(
             when (result) {
                 is UpdateRepository.Result.Success -> {
                     val info = result.info
-                    if (info.version.isBlank() ||
-                        compareVersions(info.version, versionName ?: "?") <= 0
-                    ) {
+                    if (info.remoteVersionCode() <= 0L || !info.isRemoteNewer(context)) {
                         Toast.makeText(
                             context,
                             context.getString(R.string.update_no_update),
@@ -130,9 +130,9 @@ fun AboutScreen(
     // 忽略此版本：持久化（重启后不再弹）+关闭弹窗
     val ignoreThisVersion: (UpdateInfo) -> Unit = { info ->
         scope.launch {
-            SettingsRepository(context).ignoreUpdateVersion(info.version)
+            SettingsRepository(context).ignoreUpdateVersion(info.ignoreKey())
         }
-        UpdateState.addIgnoredVersion(info.version)
+        UpdateState.addIgnoredVersion(info.ignoreKey())
         updateInfo = null
         UpdateState.clearPending()
     }
@@ -185,7 +185,6 @@ fun AboutScreen(
                 }
             }
 
-            // 长按版本卡片进入Debug
             Spacer(Modifier.height(8.dp))
             SectionCard {
                 Column(
@@ -219,7 +218,6 @@ fun AboutScreen(
                 }
             }
 
-            // 构建信息（构建方式、构建日期）
             Spacer(Modifier.height(8.dp))
             SectionCard {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
@@ -244,7 +242,6 @@ fun AboutScreen(
                 }
             }
 
-            // GitHub Issue/联系开发者/日志导出
             Spacer(Modifier.height(8.dp))
             SectionCard {
                 Column {

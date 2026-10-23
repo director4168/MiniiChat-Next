@@ -76,12 +76,14 @@ internal suspend fun ChatViewModel.runAuxCompletion(
         }
     }
     if (!settings.value.auxFallbackToActive) return null
-    val active = activeProvider() ?: return null
-    val activeModel = settings.value.activeModel
-    if (activeModel.isBlank()) return null
+    // 回退目标=当前对话实际生效的模型（对话覆盖>助手preferred>全局默认），与生成端同源
+    val conv = conversations.value.firstOrNull { it.id == _activeId.value }
+    val active = effectiveConversationModel(conv, activeAssistant(), settings.value, providers.value)
+    if (active == null) return null
+    val (providerCfg, activeModel) = active
     // 辅助模型与当前模型相同则无需重复调用
-    if (resolved != null && resolved.first.id == active.id && resolved.second == activeModel) return null
-    return runAuxCompletionOnce(active, activeModel, prompt)
+    if (resolved != null && resolved.first.id == providerCfg.id && resolved.second == activeModel) return null
+    return runAuxCompletionOnce(providerCfg, activeModel, prompt)
 }
 
 

@@ -189,7 +189,6 @@ fun WorkspaceTerminalScreen(
                 }
             }
 
-            // 关闭tab确认
             val pendingClose = state.tabs.firstOrNull { it.id == pendingCloseTabId }
             if (pendingClose != null) {
                 AlertDialog(

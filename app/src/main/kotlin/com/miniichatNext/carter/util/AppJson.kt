@@ -38,7 +38,6 @@ object AppJson {
         encodeDefaults = false
     }
 
-    // 解析
     /** 字符串→JsonElement；失败返回null（绝不让调用方崩） */
     fun parse(text: String): JsonElement? =
         runCatching { json.parseToJsonElement(text) }.getOrNull()
@@ -55,7 +54,6 @@ object AppJson {
     fun parseArrayOrNull(text: String): JsonArray? =
         parse(text) as? JsonArray
 
-    // 取值（JsonObject便捷读取，全部空安全）
     fun str(obj: JsonObject, key: String): String? =
         (obj[key] as? JsonPrimitive)?.contentOrNull
 

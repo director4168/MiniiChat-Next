@@ -12,10 +12,12 @@ data class UpdateInfo(
     val name: String = "MiniiChat-Next",
     /** 发布时间，格式YYMMDD（如260922） */
     val time: String = "",
-    /** 远端版本号（versionName，如"1.6.0"）——给解析器/比较用 */
-    val version: String = "",
-    /** 展示用版本号（如"1.6.0-rc.1"），弹窗标题/正文显示这个，version只做比较 */
+    /** 版本码（数字字符串，如"261013061"）——比较用；legacy的version字段作兼容回退 */
     val versionCode: String = "",
+    /** 展示名（如"v1.5.0-Beta"）——弹窗标题/正文显示 */
+    val versionName: String = "",
+    /** legacy：旧配置的比较字段，仅作回退兼容 */
+    val version: String = "",
     /** true=强制升级（不允许忽略）；false=可选升级 */
     val compulsory: Boolean = false,
     /** 更新说明，可包含markdown */
@@ -26,20 +28,27 @@ data class UpdateInfo(
     val SHA256: String = "",
 )
 
-/**
- * 版本比较结果：>0表示a较新，<0表示a较旧，0表示相同。
- *
- * 支持semver简化版"1.2.3"、"1.2.3-rc.1"、"-beta"后缀。
- * 解析失败时回退到字符串字典序。
- */
-fun compareVersions(a: String, b: String): Int {
-    val aParts = a.split(".", "-").map { it.toIntOrNull() ?: 0 }
-    val bParts = b.split(".", "-").map { it.toIntOrNull() ?: 0 }
-    val n = maxOf(aParts.size, bParts.size)
-    for (i in 0 until n) {
-        val av = aParts.getOrElse(i) { 0 }
-        val bv = bParts.getOrElse(i) { 0 }
-        if (av != bv) return av.compareTo(bv)
-    }
-    return 0
-}
+/** 远端版本码（数字）；优先versionCode，legacy version兜底 */
+fun UpdateInfo.remoteVersionCode(): Long =
+    versionCode.toLongOrNull()
+        ?: version.toLongOrNull()
+        ?: 0L
+
+/** 远端展示名：versionName优先，回退版本码（legacy version兜底） */
+fun UpdateInfo.displayVersion(): String =
+    versionName.ifBlank { versionCode.ifBlank { version } }
+
+/** 忽略记录的键：版本码（legacy回退） */
+fun UpdateInfo.ignoreKey(): String =
+    versionCode.ifBlank { version }
+
+/** 本地已安装versionCode */
+fun localVersionCode(context: android.content.Context): Long = runCatching {
+    val pi = context.packageManager.getPackageInfo(context.packageName, 0)
+    if (android.os.Build.VERSION.SDK_INT >= 28) pi.longVersionCode
+    else @Suppress("DEPRECATION") pi.versionCode.toLong()
+}.getOrDefault(0L)
+
+/** 远端是否比本地新（按版本码数字比较） */
+fun UpdateInfo.isRemoteNewer(context: android.content.Context): Boolean =
+    remoteVersionCode() > localVersionCode(context)

@@ -391,6 +391,13 @@ class LlmClient {
                     totalTokens = it.totalTokens
                 )))
             }
+            // finish_reason是权威结束信号：部分网关（如MiniMax）发完后不断开连接、
+            // 也不发[DONE]，只靠EOF会一直卡在"回复中"
+            val finishReason = chunk.choices.firstOrNull()?.finishReason
+            if (finishReason != null) {
+                DebugLog.i("Llm", "openai stream finish_reason=" + finishReason + ", break")
+                break
+            }
         }
         DebugLog.i(
             "Llm",

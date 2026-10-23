@@ -16,10 +16,34 @@ object UpdateInstaller {
     fun cacheDir(context: Context): File =
         File(context.cacheDir, "Update").apply { mkdirs() }
 
-    /** APK在缓存目录里的固定文件名 */
+    /** APK在缓存目录里的固定文件名（中间文件：下载完成即移入系统Download） */
     const val APK_FILENAME = "MiniiChat-Next-update.apk"
 
     fun cacheApk(context: Context): File = File(cacheDir(context), APK_FILENAME)
+
+    /**
+     * 最终APK落点：系统下载目录（用户可见、可手动管理）。
+     * 更新成功（安装器拉起）后可清理这里的**旧**安装包。
+     */
+    fun downloadsApk(context: Context, version: String): File {
+        val dir = android.os.Environment
+            .getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+        // 带版本号的文件名：多版本共存时可辨认；同版本重下覆盖
+        return File(dir, "MiniiChat-Next-$version.apk")
+    }
+
+    /** 清理Download目录里的旧版本安装包（保留指定文件） */
+    fun cleanOldDownloads(context: Context, keep: File) {
+        runCatching {
+            val dir = android.os.Environment
+                .getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+            dir.listFiles()?.forEach { f ->
+                if (f.name.startsWith("MiniiChat-Next-") && f.name.endsWith(".apk") && f.absolutePath != keep.absolutePath) {
+                    f.delete()
+                }
+            }
+        }
+    }
 
     /**
      * 启动系统安装器（用户确认后安装）。

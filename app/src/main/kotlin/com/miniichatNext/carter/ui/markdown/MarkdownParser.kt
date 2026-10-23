@@ -1,149 +1,419 @@
 package com.miniichatNext.carter.ui.markdown
 
-internal sealed class Block {
-    data class Heading(val level: Int, val text: String) : Block()
-    data class Paragraph(val text: String) : Block()
-    data class BulletItem(val text: String) : Block()
-    data class NumberedItem(val index: Int, val text: String) : Block()
-    data class Quote(val text: String) : Block()
-    data class CodeBlock(val lang: String, val code: String) : Block()
-    object Hr : Block()
-    data class Table(val headers: List<String>, val rows: List<List<String>>) : Block()
-    /** LaTeX块级公式：$$ ... $$ */
-    data class MathBlock(val latex: String) : Block()
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.em
+import org.intellij.markdown.MarkdownElementTypes
+import org.intellij.markdown.MarkdownTokenTypes
+import org.intellij.markdown.ast.ASTNode
+import org.intellij.markdown.ast.getTextInNode
+import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
+import org.intellij.markdown.html.GeneratingProvider
+import org.intellij.markdown.html.HtmlGenerator
+import org.intellij.markdown.parser.LinkMap
+import org.intellij.markdown.parser.MarkdownParser
+import org.jsoup.Jsoup
+import org.jsoup.nodes.Element
+import org.jsoup.nodes.Node
+import org.jsoup.nodes.TextNode
+import org.jsoup.parser.Tag
+
+// 解析流程：Markdown经JetBrains Markdown转HTML，再由Jsoup合成DOM树，最后转成MarkdownDocument
+// Markdown解析器会把内嵌的HTML拆成零散的节点（行内标签是一个个独立的token，块级HTML遇到空行就断开），
+// 直接在AST上渲染没法还原标签的嵌套关系。这里统一先生成HTML再交给Jsoup，
+// 由它把Markdown生成的标签和原文里手写的标签拼成同一棵DOM树，于是只需要维护DOM->节点这一套转换。
+
+private val flavour = GFMFlavourDescriptor(useSafeLinks = true, makeHttpsAutoLinks = true)
+private val markdownParser = MarkdownParser(flavour)
+
+/**
+ * 把Markdown文本解析成[MarkdownDocument]。纯计算、线程安全，长文本建议放在后台线程调用。
+ *
+ * @param softBreakAsLineBreak 段落内的单个换行是否渲染为换行（聊天场景的习惯）；为false时按CommonMark当作空格
+ */
+fun parseMarkdown(content: String, softBreakAsLineBreak: Boolean = true): MarkdownDocument {
+    // 解析器只认\n作为换行，CRLF里残留的\r会让围栏行匹配不上（比如结尾的```不被当作闭合）
+    val text = normalizeLatexDelimiters(content.replace(LINE_ENDING_REGEX, "\n"))
+    val tree = markdownParser.buildMarkdownTreeFromString(text)
+    val providers = flavour.createHtmlGeneratingProviders(LinkMap.buildLinkMap(tree, text), null) +
+        (MarkdownTokenTypes.HTML_TAG to InlineHtmlTagProvider)
+    val html = HtmlGenerator(text, tree, providers, false).generateHtml(tagRenderer)
+    val body = Jsoup.parse(html).body()
+    return MarkdownDocument(
+        source = content,
+        blocks = DomConverter(text, softBreakAsLineBreak).flow(body.childNodes(), markdown = false),
+    )
 }
 
-internal fun parseBlocks(text: String): List<Block> {
-    val result = mutableListOf<Block>()
-    val lines = text.split("\n")
-    var i = 0
-    val paragraph = StringBuilder()
 
-    fun flushParagraph() {
-        if (paragraph.isNotBlank()) {
-            result.add(Block.Paragraph(paragraph.toString().trim()))
+private val LINE_ENDING_REGEX = Regex("""\r\n?""")
+
+// 第1组匹配代码（围栏未闭合时一直算到结尾），用来跳过代码里的内容；第2、3组分别是\( \)和\[ \]
+private val LATEX_DELIMITER_REGEX =
+    Regex("""(```[\s\S]*?(?:```|\z)|`[^`\n]*`)|\\\((.+?)\\\)|\\\[([\s\S]+?)\\]""")
+private val LATEX_LINE_BREAK_REGEX = Regex("""[ \t]*\r?\n[ \t]*""")
+
+/** 把`\( \)`、`\[ \]`形式的公式定界符换成解析器认识的`$ $`、`$$ $$` */
+internal fun normalizeLatexDelimiters(content: String): String {
+    if ('\\' !in content) return content
+    return LATEX_DELIMITER_REGEX.replace(content) { match ->
+        val inline = match.groups[2]?.value?.trim()
+        when {
+            match.groups[1] != null -> match.value
+            // 解析器要求$内侧不能有空白，而\( x \)这种带空格的写法很常见，所以要去掉
+            inline != null -> if (inline.isEmpty()) match.value else "$$inline$"
+            // 块级公式里的换行会打断解析，合并成一行
+            else -> "$$" + match.groupValues[3].trim().replace(LATEX_LINE_BREAK_REGEX, " ") + "$$"
         }
-        paragraph.setLength(0)
+    }
+}
+
+
+// Markdown生成的这些标签会带上标记，转换时据此区分文本来自Markdown还是手写的HTML（两者的空白处理规则不同）
+private const val MARKDOWN_ATTR = "data-md"
+private val MARKDOWN_TEXT_TAGS = setOf("p", "li", "th", "td", "h1", "h2", "h3", "h4", "h5", "h6")
+
+// HTML里保留不了的源码信息，通过自定义属性带到DOM上
+private val tagRenderer = HtmlGenerator.DefaultTagRenderer(
+    customizer = { node, tagName, attributes ->
+        val tag = tagName.toString()
+        when {
+            tag == "code" && node.type == MarkdownElementTypes.CODE_FENCE -> {
+                val closed = node.children.any { it.type == MarkdownTokenTypes.CODE_FENCE_END }
+                attributes + "data-closed=\"$closed\""
+            }
+
+            tag == "table" -> attributes + "data-src=\"${node.startOffset},${node.endOffset}\""
+            tag in MARKDOWN_TEXT_TAGS -> attributes + MARKDOWN_ATTR
+            else -> attributes
+        }
+    },
+    includeSrcPositions = false,
+)
+
+private val HTML_TAG_NAME_REGEX = Regex("""^</?([a-zA-Z][a-zA-Z0-9-]*)""")
+
+/**
+ * 行内的`<xxx>`只有是已知的HTML标签时才当作HTML输出，否则转义成普通文本。
+ * 不然正文里的`List<String>`、`<answer>`这类内容会被当成未知标签吞掉。
+ */
+private object InlineHtmlTagProvider : GeneratingProvider {
+    override fun processNode(visitor: HtmlGenerator.HtmlGeneratingVisitor, text: String, node: ASTNode) {
+        val tag = node.getTextInNode(text)
+        val name = HTML_TAG_NAME_REGEX.find(tag)?.groupValues?.get(1)
+        if (name != null && !Tag.isKnownTag(name.lowercase())) {
+            visitor.consumeHtml(tag.toString().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+        } else {
+            visitor.consumeHtml(tag)
+        }
+    }
+}
+
+
+private val BLOCK_TAGS = setOf(
+    "p", "div", "section", "article", "aside", "header", "footer", "main", "nav", "figure", "figcaption",
+    "center", "address", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "dl", "dt", "dd", "pre",
+    "blockquote", "table", "hr", "details", "summary", "form", "fieldset",
+)
+
+// 这些标签的内容不是给人看的正文，或者这里画不出来，整棵子树直接跳过
+private val SKIPPED_TAGS = setOf(
+    "script", "style", "head", "title", "meta", "link", "template", "noscript", "svg", "math", "iframe",
+    "object", "embed", "canvas", "video", "audio", "input", "select", "textarea", "button",
+)
+
+private val CODE_TAGS = setOf("code", "kbd", "samp", "tt")
+
+private val BOLD = SpanStyle(fontWeight = FontWeight.Bold)
+private val ITALIC = SpanStyle(fontStyle = FontStyle.Italic)
+private val STRIKETHROUGH = SpanStyle(textDecoration = TextDecoration.LineThrough)
+private val UNDERLINE = SpanStyle(textDecoration = TextDecoration.Underline)
+
+private val TAG_STYLES = mapOf(
+    "b" to BOLD,
+    "strong" to BOLD,
+    "i" to ITALIC,
+    "em" to ITALIC,
+    "cite" to ITALIC,
+    "var" to ITALIC,
+    "dfn" to ITALIC,
+    "del" to STRIKETHROUGH,
+    "s" to STRIKETHROUGH,
+    "strike" to STRIKETHROUGH,
+    "u" to UNDERLINE,
+    "ins" to UNDERLINE,
+    "sub" to SpanStyle(fontSize = 0.75.em, baselineShift = BaselineShift.Subscript),
+    "sup" to SpanStyle(fontSize = 0.75.em, baselineShift = BaselineShift.Superscript),
+    "small" to SpanStyle(fontSize = 0.85.em),
+    "big" to SpanStyle(fontSize = 1.2.em),
+    "mark" to SpanStyle(background = Color(0x66FFEB3B)),
+)
+
+private val HTML_WHITESPACE_REGEX = Regex("""\s+""")
+private val SOFT_BREAK_REGEX = Regex("""[ \t]*\r?\n[ \t]*""")
+
+private class DomConverter(
+    private val source: String,
+    private val softBreakAsLineBreak: Boolean,
+) {
+    /**
+     * 转换一组混排的子节点：块级元素各自成块，夹在中间的连续行内内容合成一个隐式段落。
+     *
+     * @param markdown 这组节点里的裸文本是否来自Markdown（而不是手写的HTML）
+     */
+    fun flow(nodes: List<Node>, markdown: Boolean): List<MarkdownBlock> {
+        val blocks = mutableListOf<MarkdownBlock>()
+        val run = mutableListOf<Node>()
+
+        fun flush() {
+            if (run.isEmpty()) return
+            val content = inlines(run, markdown).trimmed()
+            if (content.isNotEmpty()) blocks += MarkdownBlock.Paragraph(content)
+            run.clear()
+        }
+
+        for (node in nodes) {
+            if (node is Element && node.normalName() in BLOCK_TAGS) {
+                flush()
+                block(node, blocks)
+            } else {
+                run += node
+            }
+        }
+        flush()
+        return blocks
     }
 
-    while (i < lines.size) {
-        val line = lines[i]
-        val trimmed = line.trimStart()
+    private fun block(element: Element, out: MutableList<MarkdownBlock>) {
+        val markdown = element.hasAttr(MARKDOWN_ATTR)
+        when (val tag = element.normalName()) {
+            "p" -> {
+                val content = inlines(element.childNodes(), markdown).trimmed()
+                if (content.isNotEmpty()) out += MarkdownBlock.Paragraph(content, element.blockStyle())
+            }
 
-        if (trimmed.startsWith("```")) {
-            // 单行fenced code（```xxx```在同一行）：若当多行代码块的开头处理会吞掉后续所有行（"---"等就显示不出来）
-            val afterOpen = trimmed.removePrefix("```")
-            val sameLine = afterOpen.indexOf("```")
-            if (sameLine >= 0) {
-                flushParagraph()
-                result.add(Block.CodeBlock("", afterOpen.substring(0, sameLine).trim()))
-                i++; continue
-            }
-            flushParagraph()
-            val lang = trimmed.removePrefix("```").trim()
-            val code = StringBuilder()
-            i++
-            while (i < lines.size && !lines[i].trimStart().startsWith("```")) {
-                code.append(lines[i]).append('\n'); i++
-            }
-            result.add(Block.CodeBlock(lang, code.toString().trimEnd('\n')))
-            if (i < lines.size) i++
-            continue
-        }
-
-        if (trimmed.startsWith("|")) {
-            val tableLines = mutableListOf<String>()
-            var j = i
-            while (j < lines.size && lines[j].trimStart().startsWith("|")) {
-                tableLines.add(lines[j]); j++
-            }
-            if (tableLines.size >= 2 && tableLines.any { isTableSeparator(it) }) {
-                flushParagraph()
-                val headers = splitTableRow(tableLines.first())
-                val sepIdx = tableLines.indexOfFirst { isTableSeparator(it) }
-                val rows = tableLines.withIndex()
-                    .filter { (idx, _) -> idx != 0 && idx != sepIdx }
-                    .map { (_, l) -> splitTableRow(l) }
-                    .map { split ->
-                        if (split.size >= headers.size) split.take(headers.size)
-                        else split + List(headers.size - split.size) { "" }
-                    }
-                result.add(Block.Table(headers, rows))
-                i = j
-                continue
-            }
-        }
-
-                // 块级公式：$$ ... $$或\[ ... \]（含单行闭合）
-                val mathOpen = when {
-                    trimmed.startsWith("$$") -> "$$"
-                    trimmed.startsWith("\\[") -> "\\["
-                    else -> null
+            "h1", "h2", "h3", "h4", "h5", "h6" -> {
+                val content = inlines(element.childNodes(), markdown).trimmed()
+                if (content.isNotEmpty()) {
+                    out += MarkdownBlock.Heading(tag[1].digitToInt(), content, element.blockStyle())
                 }
-                if (mathOpen != null) {
-                    val mathClose = if (mathOpen == "$$") "$$" else "\\]"
-                    val rest = trimmed.removePrefix(mathOpen)
-                    val sameLine = rest.indexOf(mathClose)
-                    if (sameLine >= 0) {
-                        flushParagraph()
-                        result.add(Block.MathBlock(rest.substring(0, sameLine).trim()))
-                        i++; continue
-                    }
-                    val end = lines.indices.firstOrNull { k -> k > i && lines[k].trimStart().startsWith(mathClose) } ?: -1
-                    if (end > i) {
-                        flushParagraph()
-                        result.add(Block.MathBlock(lines.subList(i + 1, end).joinToString("\n")))
-                        i = end + 1; continue
-                    }
+            }
+
+            "ul", "ol" -> out += list(element, ordered = tag == "ol")
+            "pre" -> out += codeBlock(element)
+            "table" -> table(element)?.let { out += it }
+            "hr" -> out += MarkdownBlock.Divider
+            "details" -> out += details(element)
+
+            "blockquote" -> {
+                val children = flow(element.childNodes(), markdown = false)
+                if (children.isNotEmpty()) out += MarkdownBlock.Quote(children)
+            }
+
+            else -> {
+                val children = flow(element.childNodes(), markdown)
+                val style = element.blockStyle()
+                when {
+                    children.isEmpty() -> Unit
+                    style == null -> out += children
+                    else -> out += MarkdownBlock.Container(children, style)
                 }
-        if (trimmed == "---" || trimmed == "***" || trimmed == "___") {
-            flushParagraph(); result.add(Block.Hr); i++; continue
+            }
         }
-        val headingMatch = Regex("^(#{1,6})\\s+(.+)$").matchEntire(trimmed)
-        if (headingMatch != null) {
-            flushParagraph()
-            result.add(Block.Heading(headingMatch.groupValues[1].length, headingMatch.groupValues[2]))
-            i++; continue
-        }
-        if (trimmed.startsWith("> ") || trimmed == ">") {
-            flushParagraph()
-            result.add(Block.Quote(trimmed.removePrefix(">").trimStart()))
-            i++; continue
-        }
-        val bulletMatch = Regex("^[-*+]\\s+(.+)$").matchEntire(trimmed)
-        if (bulletMatch != null) {
-            flushParagraph(); result.add(Block.BulletItem(bulletMatch.groupValues[1])); i++; continue
-        }
-        val numberedMatch = Regex("^(\\d+)[.)]\\s+(.+)$").matchEntire(trimmed)
-        if (numberedMatch != null) {
-            flushParagraph()
-            result.add(Block.NumberedItem(numberedMatch.groupValues[1].toInt(), numberedMatch.groupValues[2]))
-            i++; continue
-        }
-        if (line.isBlank()) { flushParagraph(); i++; continue }
-        if (paragraph.isNotEmpty()) paragraph.append(' ')
-        paragraph.append(line.trim())
-        i++
     }
-    flushParagraph()
+
+    private fun list(element: Element, ordered: Boolean): MarkdownBlock.ListBlock {
+        val items = element.children().filter { it.normalName() == "li" }
+        return MarkdownBlock.ListBlock(
+            ordered = ordered,
+            items = items.map { item ->
+                // 嵌套列表里的复选框排在后面，selectFirst取到的一定是当前项自己的
+                val checkbox = if (item.hasClass("task-list-item")) item.selectFirst("input[type=checkbox]") else null
+                ListItem(
+                    children = flow(item.childNodes(), item.hasAttr(MARKDOWN_ATTR)),
+                    checked = checkbox?.hasAttr("checked"),
+                )
+            },
+            start = element.attr("start").toIntOrNull() ?: 1,
+            // 松散列表（列表项之间有空行）的内容会被包进<p>
+            tight = items.none { item -> item.children().any { it.normalName() == "p" } },
+        )
+    }
+
+    private fun codeBlock(element: Element): MarkdownBlock.CodeBlock {
+        val code = element.selectFirst("code")
+        return MarkdownBlock.CodeBlock(
+            code = (code ?: element).wholeText().trimEnd('\n'),
+            language = code?.classNames()
+                ?.firstOrNull { it.startsWith("language-") }
+                ?.removePrefix("language-")
+                ?.takeIf { it.isNotBlank() },
+            closed = code?.attr("data-closed") != "false",
+        )
+    }
+
+    private fun table(element: Element): MarkdownBlock.Table? {
+        // 不处理嵌套表格的行
+        val rows = element.select("tr").filter { it.closest("table") === element }
+        if (rows.isEmpty()) return null
+
+        // 表格和行上的样式由单元格继承。<table align>指的是表格自身的摆放位置，不算文字对齐
+        val tableStyle = parseBlockStyle(element.attr("style"))
+        fun cells(row: Element): List<TableCell> {
+            val rowStyle = tableStyle.mergeWith(row.blockStyle())
+            return row.children().filter { it.normalName() == "th" || it.normalName() == "td" }.map { cell ->
+                TableCell(
+                    content = inlines(cell.childNodes(), cell.hasAttr(MARKDOWN_ATTR)).trimmed(),
+                    style = rowStyle.mergeWith(cell.blockStyle()),
+                )
+            }
+        }
+
+        val header = cells(rows.first())
+        val sourceRange = element.attr("data-src").split(',').mapNotNull { it.toIntOrNull() }
+        return MarkdownBlock.Table(
+            header = header,
+            rows = rows.drop(1).map(::cells),
+            alignments = header.map { cell -> cell.style?.textAlign?.takeIf { it != TextAlign.Unspecified } },
+            // 手写的HTML也可能带这个属性，范围不合法就当作没有
+            source = sourceRange.takeIf { it.size == 2 && it[0] in 0..it[1] && it[1] <= source.length }
+                ?.let { (start, end) -> source.substring(start, end).trim() },
+        )
+    }
+
+    private fun details(element: Element): MarkdownBlock.Details {
+        val summary = element.children().firstOrNull { it.normalName() == "summary" }
+        return MarkdownBlock.Details(
+            summary = summary?.let { inlines(it.childNodes(), markdown = false).trimmed() }.orEmpty(),
+            children = flow(element.childNodes().filter { it !== summary }, markdown = false),
+            open = element.hasAttr("open"),
+        )
+    }
+
+    private fun inlines(nodes: List<Node>, markdown: Boolean): List<MarkdownInline> {
+        val out = mutableListOf<MarkdownInline>()
+        nodes.forEach { inline(it, markdown, out) }
+        return out
+    }
+
+    private fun inline(node: Node, markdown: Boolean, out: MutableList<MarkdownInline>) {
+        when (node) {
+            is TextNode -> out.appendText(normalizeText(node.wholeText, markdown))
+            is Element -> inlineElement(node, markdown, out)
+        }
+    }
+
+    private fun inlineElement(element: Element, markdown: Boolean, out: MutableList<MarkdownInline>) {
+        val tag = element.normalName()
+        when {
+            tag in SKIPPED_TAGS -> Unit
+            tag == "br" -> out.appendText("\n")
+            tag in CODE_TAGS -> out += MarkdownInline.Code(element.wholeText())
+
+            tag == "img" -> element.attr("src").takeIf { it.isNotBlank() }?.let { src ->
+                out += MarkdownInline.Image(
+                    url = src,
+                    alt = element.attr("alt").takeIf { it.isNotBlank() },
+                    title = element.attr("title").takeIf { it.isNotBlank() },
+                    width = element.attr("width").toIntOrNull(),
+                    height = element.attr("height").toIntOrNull(),
+                )
+            }
+
+            tag == "span" && element.hasClass("math") -> out += MarkdownInline.Math(
+                formula = element.wholeText().trim(),
+                display = element.attr("inline") != "true",
+            )
+
+            tag == "a" && element.attr("href").isNotBlank() -> {
+                val children = inlines(element.childNodes(), markdown)
+                if (children.isNotEmpty()) {
+                    out += MarkdownInline.Link(
+                        destination = element.attr("href"),
+                        children = children,
+                        title = element.attr("title").takeIf { it.isNotBlank() },
+                    )
+                }
+            }
+
+            else -> {
+                // 行内上下文里遇到块级元素（例如单元格里的<p>），退化成换行分隔的文本
+                val isBlock = tag in BLOCK_TAGS
+                if (isBlock && out.isNotEmpty()) out.appendText("\n")
+                val children = inlines(element.childNodes(), if (isBlock) element.hasAttr(MARKDOWN_ATTR) else markdown)
+                val style = element.inlineStyle()
+                when {
+                    children.isEmpty() -> Unit
+                    style == null -> children.forEach { if (it is MarkdownInline.Text) out.appendText(it.text) else out += it }
+                    else -> out += MarkdownInline.Styled(style, children)
+                }
+            }
+        }
+    }
+
+    private fun normalizeText(text: String, markdown: Boolean): String = when {
+        // 手写HTML里的缩进和换行只是排版，按HTML的规则折叠成一个空格
+        !markdown -> text.replace(HTML_WHITESPACE_REGEX, " ")
+        '\n' !in text -> text
+        else -> text.replace(SOFT_BREAK_REGEX, if (softBreakAsLineBreak) "\n" else " ")
+    }
+}
+
+private fun Element.blockStyle(): TextStyle? = parseBlockStyle(
+    css = attr("style"),
+    align = attr("align").ifBlank { if (normalName() == "center") "center" else null },
+)
+
+private fun TextStyle?.mergeWith(other: TextStyle?): TextStyle? = when {
+    this == null -> other
+    other == null -> this
+    else -> merge(other)
+}
+
+private fun Element.inlineStyle(): SpanStyle? {
+    val tag = normalName()
+    val tagStyle = when {
+        tag == "font" -> parseFontTag(color = attr("color"), size = attr("size"), face = attr("face"))
+        // GFM的~~删除线~~生成的是这个class
+        tag == "span" && hasClass("user-del") -> STRIKETHROUGH
+        else -> TAG_STYLES[tag]
+    }
+    val cssStyle = parseSpanStyle(attr("style"))
+    return when {
+        tagStyle == null -> cssStyle
+        cssStyle == null -> tagStyle
+        else -> tagStyle.merge(cssStyle)
+    }
+}
+
+private fun MutableList<MarkdownInline>.appendText(text: String) {
+    val last = lastOrNull() as? MarkdownInline.Text
+    // 换行后面紧跟的空白没有意义：<br>后面的换行符不该再多出一个空行
+    val appended = if (last != null && last.text.endsWith('\n')) text.trimStart() else text
+    if (appended.isEmpty()) return
+    if (last != null) {
+        this[lastIndex] = MarkdownInline.Text(last.text + appended)
+    } else {
+        this += MarkdownInline.Text(appended)
+    }
+}
+
+private fun List<MarkdownInline>.trimmed(): List<MarkdownInline> {
+    if (isEmpty()) return this
+    val result = toMutableList()
+    (result.first() as? MarkdownInline.Text)?.let { first ->
+        val text = first.text.trimStart()
+        if (text.isEmpty()) result.removeAt(0) else result[0] = MarkdownInline.Text(text)
+    }
+    (result.lastOrNull() as? MarkdownInline.Text)?.let { last ->
+        val text = last.text.trimEnd()
+        if (text.isEmpty()) result.removeAt(result.lastIndex) else result[result.lastIndex] = MarkdownInline.Text(text)
+    }
     return result
-}
-
-private fun isTableSeparator(line: String): Boolean {
-    val s = line.trim()
-    // 至少要"|x|"才能取中间段：s="|"会同时startsWith/endsWith，substring(1, 0)直接崩
-    if (s.length < 3 || !s.startsWith("|")) return false
-    val inner = if (s.endsWith("|")) s.substring(1, s.length - 1) else s.substring(1)
-    if (inner.isBlank()) return false
-    return inner.split("|").all { it.trim().matches(Regex("^:?-{1,}:?$")) }
-}
-
-private fun splitTableRow(line: String): List<String> {
-    val s = line.trim()
-    val core = when {
-        s.length >= 2 && s.startsWith("|") && s.endsWith("|") -> s.substring(1, s.length - 1)
-        s.startsWith("|") -> s.substring(1)
-        else -> s
-    }
-    return core.split("|").map { it.trim() }
 }

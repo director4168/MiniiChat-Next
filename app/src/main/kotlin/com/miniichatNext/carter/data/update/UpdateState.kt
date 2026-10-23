@@ -27,21 +27,21 @@ object UpdateState {
 
     /**
      * 启动后台拉取+比对+设pending。
-     * - 调用方传入[ignoredVersions]：被忽略的版本号集合
-     * - 调用方传入[currentVersion]：当前versionName（nullable）
-     * - 命中条件：远端version>currentVersion AND不在ignoredVersions里
+     * - 调用方传入[ignoredVersions]：被忽略的版本码集合
+     * - 调用方传入[localCode]：本地已安装versionCode（数字）
+     * - 命中条件：远端版本码>localCode AND不在ignoredVersions里
      */
     fun tryShowUpdate(
         result: UpdateRepository.Result,
-        currentVersion: String?,
+        localCode: Long,
         ignoredVersions: Set<String>,
     ) {
         if (result !is UpdateRepository.Result.Success) return
         val info = result.info
-        if (info.version.isBlank()) return
-        if (info.version in ignoredVersions) return
-        val cur = currentVersion ?: "?"
-        if (compareVersions(info.version, cur) <= 0) return // 不是新版本
+        val remote = info.remoteVersionCode()
+        if (remote <= 0L) return
+        if (info.ignoreKey() in ignoredVersions || info.version in ignoredVersions) return
+        if (remote <= localCode) return // 不是新版本
         _pending.value = info
     }
 

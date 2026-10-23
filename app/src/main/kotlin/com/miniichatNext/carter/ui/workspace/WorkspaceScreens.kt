@@ -40,6 +40,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,13 +57,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.KeyboardOptions
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.data.workspace.RootfsInstallManager
 import com.miniichatNext.carter.data.workspace.RootfsInstallStage
-import com.miniichatNext.carter.data.workspace.RootfsInstallProgress
+import com.miniichatNext.carter.data.workspace.RootfsInstallState
 import com.miniichatNext.carter.data.workspace.WorkspaceEntity
 import com.miniichatNext.carter.data.workspace.WorkspaceRepository
 import com.miniichatNext.carter.data.workspace.WorkspaceShellStatus
 import com.miniichatNext.carter.data.workspace.WorkspaceStorageArea
-import com.miniichatNext.carter.data.workspace.WorkspaceToolDefaultApprovals
+import com.miniichatNext.carter.data.workspace.WorkspaceCategoryDefaultApprovals
+import com.miniichatNext.carter.data.workspace.WorkspaceToolCategory
+import com.miniichatNext.carter.data.workspace.storageKey
 import com.miniichatNext.carter.ui.components.SettingsTopBar
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -219,10 +223,32 @@ fun WorkspaceDetailScreen(
     val workspace = workspaces.firstOrNull { it.id == workspaceId }
 
     var rootfsUrl by remember { mutableStateOf(DEFAULT_ROOTFS_URL) }
-    var progress by remember { mutableStateOf<RootfsInstallProgress?>(null) }
-    var busy by remember { mutableStateOf(false) }
+    // 安装任务由RootfsInstallManager进程级持有：离开页面不中断，回来还能接上进度
+    val installStates by RootfsInstallManager.states.collectAsState()
+    val installState = installStates[workspaceId]
+    val busy = installState is RootfsInstallState.Running
+    val progress = (installState as? RootfsInstallState.Running)?.progress
     var command by remember { mutableStateOf("") }
     var terminalOut by remember { mutableStateOf("") }
+
+    LaunchedEffect(installState) {
+        when (installState) {
+            is RootfsInstallState.Success -> {
+                Toast.makeText(context, context.getString(R.string.workspace_install_done), Toast.LENGTH_SHORT).show()
+                RootfsInstallManager.clearFinished(workspaceId)
+            }
+            is RootfsInstallState.Failure -> {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.workspace_install_failed, installState.message),
+                    Toast.LENGTH_LONG
+                ).show()
+                RootfsInstallManager.clearFinished(workspaceId)
+            }
+            is RootfsInstallState.Cancelled -> RootfsInstallManager.clearFinished(workspaceId)
+            else -> Unit
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -273,18 +299,7 @@ fun WorkspaceDetailScreen(
                             Button(
                                 enabled = !busy && rootfsUrl.isNotBlank(),
                                 onClick = {
-                                    busy = true
-                                    progress = null
-                                    scope.launch {
-                                        runCatching {
-                                            repository.installRootfs(workspaceId, rootfsUrl.trim()) { p -> progress = p }
-                                        }.onSuccess {
-                                            Toast.makeText(context, context.getString(R.string.workspace_install_done), Toast.LENGTH_SHORT).show()
-                                        }.onFailure {
-                                            Toast.makeText(context, context.getString(R.string.workspace_install_failed, it.message ?: ""), Toast.LENGTH_LONG).show()
-                                        }
-                                        busy = false
-                                    }
+                                    RootfsInstallManager.start(repository, workspaceId, rootfsUrl.trim())
                                 }
                             ) { Text(if (busy) stringResource(R.string.workspace_installing) else stringResource(R.string.workspace_install)) }
                         }
@@ -309,18 +324,7 @@ fun WorkspaceDetailScreen(
                             Button(
                                 enabled = !busy && rootfsUrl.isNotBlank(),
                                 onClick = {
-                                    busy = true
-                                    progress = null
-                                    scope.launch {
-                                        runCatching {
-                                            repository.installRootfs(workspaceId, rootfsUrl.trim()) { p -> progress = p }
-                                        }.onSuccess {
-                                            Toast.makeText(context, context.getString(R.string.workspace_install_done), Toast.LENGTH_SHORT).show()
-                                        }.onFailure {
-                                            Toast.makeText(context, context.getString(R.string.workspace_install_failed, it.message ?: ""), Toast.LENGTH_LONG).show()
-                                        }
-                                        busy = false
-                                    }
+                                    RootfsInstallManager.start(repository, workspaceId, rootfsUrl.trim())
                                 }
                             ) { Text(if (busy) stringResource(R.string.workspace_installing) else stringResource(R.string.workspace_install)) }
                         }
@@ -359,7 +363,6 @@ fun WorkspaceDetailScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // 终端
             Text(
                 stringResource(R.string.workspace_terminal_section),
                 style = MaterialTheme.typography.titleSmall,
@@ -463,7 +466,6 @@ fun WorkspaceDetailScreen(
 
             Spacer(Modifier.height(16.dp))
 
-            // 工具审批
             Text(
                 stringResource(R.string.workspace_approval_section),
                 style = MaterialTheme.typography.titleSmall,
@@ -477,18 +479,32 @@ fun WorkspaceDetailScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
             ) {
                 Column(modifier = Modifier.padding(12.dp)) {
+                    // 202610162134：审批按三类归并（读取/写入/执行），存储键category:NAME
                     val overrides = workspace?.toolApprovalOverrides().orEmpty()
-                    WorkspaceToolDefaultApprovals.forEach { (toolName, default) ->
-                        val current = overrides[toolName] ?: default
+                    listOf(
+                        Triple(
+                            WorkspaceToolCategory.READ_FILE,
+                            stringResource(R.string.workspace_cat_read),
+                            stringResource(R.string.workspace_cat_read_desc),
+                        ),
+                        Triple(
+                            WorkspaceToolCategory.WRITE_FILE,
+                            stringResource(R.string.workspace_cat_write),
+                            stringResource(R.string.workspace_cat_write_desc),
+                        ),
+                        Triple(
+                            WorkspaceToolCategory.EXECUTE_FILE,
+                            stringResource(R.string.workspace_cat_execute),
+                            stringResource(R.string.workspace_cat_execute_desc),
+                        ),
+                    ).forEach { (cat, label, desc) ->
+                        val key = cat.storageKey()
+                        val current = overrides[key] ?: WorkspaceCategoryDefaultApprovals[cat] ?: false
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
+                                Text(label, style = MaterialTheme.typography.bodyMedium)
                                 Text(
-                                    toolName,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontFamily = FontFamily.Monospace,
-                                )
-                                Text(
-                                    stringResource(R.string.mcp_tool_approval),
+                                    desc,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -496,7 +512,9 @@ fun WorkspaceDetailScreen(
                             androidx.compose.material3.Switch(
                                 checked = current,
                                 onCheckedChange = { value ->
-                                    scope.launch { repository.setToolApproval(workspaceId, toolName, value) }
+                                    scope.launch {
+                                        repository.setToolApproval(workspaceId, key, value)
+                                    }
                                 }
                             )
                         }

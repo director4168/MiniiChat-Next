@@ -13,6 +13,8 @@ class MiniiChatApplication : Application() {
         DebugLog.restore(this)
         DebugLog.i("App", "MiniiChatApplication.onCreate")
         CrashLogger.install(this)
+        // 前后台追踪（更新下载完成后决定是否可拉起安装器）
+        registerActivityLifecycleCallbacks(com.miniichatNext.carter.util.AppForeground.callbacks)
         // 不在每次启动清缓存——用户已下载但未安装的APK要保留。
         // 清缓存时机改为：新下载前（UpdateDownloader.start删旧包）/用户主动取消。
         // 启动自动检查更新（用户设置关闭则跳过）
@@ -38,14 +40,12 @@ class MiniiChatApplication : Application() {
                     DebugLog.i("Update", "auto-check disabled, skip")
                     return@launch
                 }
-                val currentVersion = runCatching {
-                    packageManager.getPackageInfo(packageName, 0).versionName
-                }.getOrNull()
+                val localCode = com.miniichatNext.carter.data.update.localVersionCode(this@MiniiChatApplication)
                 val result = com.miniichatNext.carter.data.update.UpdateRepository.checkForUpdate(this@MiniiChatApplication)
                 DebugLog.i("Update", "auto-check: ${result::class.simpleName}")
                 com.miniichatNext.carter.data.update.UpdateState.tryShowUpdate(
                     result = result,
-                    currentVersion = currentVersion,
+                    localCode = localCode,
                     ignoredVersions = ignored,
                 )
             } catch (t: Throwable) {

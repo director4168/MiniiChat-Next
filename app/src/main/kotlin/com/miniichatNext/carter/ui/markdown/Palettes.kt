@@ -14,6 +14,8 @@ internal data class InlinePalette(
     val quoteBar: Color,
     val quoteFg: Color,
     val outline: Color,
+    /** 卡片头部（类型/功能键栏）底色：比codeBg略亮/略暗一档，与内容区分层 */
+    val cardHeaderBg: Color,
     /** 代码块高亮配色（深底palette默认Dark，浅底palette应传Light） */
     val codeHighlight: HighlightPalette = HighlightPalette.Dark,
 )
@@ -33,6 +35,7 @@ internal val BubblePalette = InlinePalette(
     quoteBar = Color(0xFF5A6270),
     quoteFg = Color(0xFFB4BAC4),
     outline = Color(0xFF444A57),
+    cardHeaderBg = Color(0xFF2B3039),
 )
 
 /**
@@ -50,6 +53,7 @@ internal val LightContentPalette = InlinePalette(
     quoteBar = Color(0xFF8C959F),
     quoteFg = Color(0xFF57606A),
     outline = Color(0xFFAFB8C1),
+    cardHeaderBg = Color(0xFFE7E9ED),
     codeHighlight = HighlightPalette.Light,
 )
 

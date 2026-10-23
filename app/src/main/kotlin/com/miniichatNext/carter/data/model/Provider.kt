@@ -21,7 +21,7 @@ enum class ThinkingLevel(val budgetTokens: Int, val effort: String?) {
     val apiValue: String get() = name.lowercase()
 }
 
-/** Anthropic提示缓存的TTL。null表示用服务端默认（5分钟）。 */
+/** Anthropic提示缓存的TTL。null表示用服务端默认（5分钟） */
 enum class PromptCacheTtl(val apiValue: String?) {
     FIVE_MINUTES(null),
     ONE_HOUR("1h")
@@ -40,7 +40,7 @@ data class ModelConfig(
     /**
      * 该模型是否支持推理参数。默认true（保持既有行为不变）；
      * 关掉后不再往请求里塞thinking/reasoning_effort，
-     * 避免对不支持推理的模型（gpt-4o/视觉/embedding）被网关拒绝。
+     * 避免对不支持推理的模型（gpt-4o/视觉/embedding）被网关拒绝
      */
     val supportsReasoning: Boolean = true,
     /** 该模型是否支持工具调用（function calling）；关掉后不向模型提供tools */
@@ -126,7 +126,7 @@ data class ProviderConfig(
 
     /**
      * Response API/提示缓存是「对话级+按服务商」的覆盖：
-     * 对话里在加号菜单设过就用对话的值，否则用服务商配置。
+     * 对话里在加号菜单设过就用对话的值，否则用服务商配置
      */
     fun effectiveResponseApi(modelId: String, override: Boolean?): Boolean =
         override
@@ -173,8 +173,10 @@ object ProviderPresets {
     )
 
     /*
-     * 模型预设。追加条目：Claude格式加type=ProviderType.CLAUDE；
-     * 端点不是/chat/completions的加path；介绍文案放字符串资源（hintRes）。
+     * 模型预设
+     * 追加条目：Anthropic格式加type=ProviderType.CLAUDE；
+     * 端点不是/chat/completions的加path
+     * 介绍文案放字符串资源（hintRes）
      */
     val all: List<Preset> = listOf(
             Preset("OpenAI", "https://api.openai.com/v1",
@@ -182,7 +184,7 @@ object ProviderPresets {
 
             Preset("Anthropic Claude", "https://api.anthropic.com/v1",
                 R.string.provider_preset_claude_hint,
-                type = ProviderType.CLAUDE),
+                type = ProviderType.CLAUDE), // Anthropic兼容格式，必须这样选
 
             Preset("OpenRouter", "https://openrouter.ai/api/v1",
                 R.string.provider_preset_openrouter_hint),
@@ -192,7 +194,7 @@ object ProviderPresets {
 
             Preset("xAI", "https://api.x.ai/v1",
                 R.string.provider_preset_xai_hint,
-                path = "/responses"),
+                path = "/responses"), // 非标端点：xAI走/responses而不是/chat/completions
 
             Preset("Mistral", "https://api.mistral.ai/v1",
                 R.string.provider_preset_mistral_hint),
@@ -208,10 +210,5 @@ object ProviderPresets {
             Preset("SiliconFlow",
                 "https://api.siliconflow.cn/v1",
                 R.string.provider_preset_siliconflow_hint),
-
-            Preset("AK AI Gateway",
-                "https://aigateway.akile.ai/v1",
-                R.string.provider_preset_ak_hint),
-            // CFJYTVZ4QSEN是我的邀请码，如果愿意还请使用一下
         )
 }

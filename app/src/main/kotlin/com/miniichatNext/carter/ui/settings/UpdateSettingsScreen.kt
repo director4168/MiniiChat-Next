@@ -1,6 +1,8 @@
 package com.miniichatNext.carter.ui.settings
 
 import android.widget.Toast
+import com.miniichatNext.carter.data.update.isRemoteNewer
+import com.miniichatNext.carter.data.update.remoteVersionCode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
@@ -110,7 +112,6 @@ fun UpdateSettingsScreen(onBack: () -> Unit) {
         ) {
             Spacer(Modifier.height(8.dp))
 
-            // 启动时自动检查更新（Switch）
             SectionCard {
                 Row(
                     modifier = Modifier
@@ -150,7 +151,6 @@ fun UpdateSettingsScreen(onBack: () -> Unit) {
                 }
             }
 
-            // 立即检查新版本（按钮）
             Spacer(Modifier.height(8.dp))
             SectionCard {
                 Row(
@@ -164,12 +164,8 @@ fun UpdateSettingsScreen(onBack: () -> Unit) {
                                 when (result) {
                                     is com.miniichatNext.carter.data.update.UpdateRepository.Result.Success -> {
                                         val info = result.info
-                                        val ver = runCatching {
-                                            context.packageManager
-                                                .getPackageInfo(context.packageName, 0).versionName
-                                        }.getOrNull() ?: ""
-                                        if (info.version.isBlank() ||
-                                            com.miniichatNext.carter.data.update.compareVersions(info.version, ver) <= 0
+                                        if (info.remoteVersionCode() <= 0L ||
+                                            !info.isRemoteNewer(context)
                                         ) {
                                             Toast.makeText(
                                                 context,

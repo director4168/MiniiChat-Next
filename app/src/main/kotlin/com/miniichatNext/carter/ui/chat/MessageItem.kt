@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.ContentCopy
@@ -24,6 +23,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -58,6 +58,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import com.miniichatNext.carter.data.model.Attachment
 import com.miniichatNext.carter.data.util.AttachmentLoader
+import com.miniichatNext.carter.ui.components.clipDrawing
 import com.miniichatNext.carter.ui.markdown.MarkdownText
 
 @Composable
@@ -149,7 +150,7 @@ internal fun UserBubble(
                 Box {
                     Box(
                         modifier = Modifier
-                            .clip(
+                            .clipDrawing(
                                 RoundedCornerShape(
                                     topStart = 18.dp,
                                     topEnd = 18.dp,
@@ -173,8 +174,8 @@ internal fun UserBubble(
                                 if (message.content.isNotBlank()) Spacer(Modifier.height(8.dp))
                             }
                             if (message.content.isNotEmpty()) {
+                                // 用户消息同样走markdown渲染；长按可选择复制
                                 SelectionContainer {
-                                    // 用户消息也走markdown渲染（与助手侧一致）
                                     com.miniichatNext.carter.ui.markdown.MarkdownText(
                                         text = message.content,
                                         color = MaterialTheme.colorScheme.onPrimary,

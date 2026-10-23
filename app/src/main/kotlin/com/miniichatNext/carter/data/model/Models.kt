@@ -155,6 +155,13 @@ data class Conversation(
      */
     val providerOverrides: Map<String, ProviderOverride> = emptyMap(),
     /**
+     * 对话级模型覆盖（聊天页模型选择器写入；提供商页选的是全局默认，不写这里）。
+     * 成对生效：providerId/modelId任一为空=无覆盖，走助手preferred>全局默认。
+     * 只影响本对话；provider被删除后自动回落默认链。
+     */
+    val modelProviderId: String? = null,
+    val modelId: String? = null,
+    /**
      * 对话级思考等级（覆盖服务商/模型级）。
      * null=自动（AUTO，等价于让服务商决定，旧数据兼容）
      */

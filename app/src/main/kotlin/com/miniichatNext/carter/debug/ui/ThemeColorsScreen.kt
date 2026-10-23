@@ -68,16 +68,14 @@ private data class ThemeOverrideFile(
 @Composable
 fun ThemeColorsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    // 编辑态：light/dark两套role→hex；打开时从持久化读
     var lightMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var darkMap by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    // 导入导出反馈
     var notice by remember { mutableStateOf<String?>(null) }
     var importText by remember { mutableStateOf("") }
     var showImportDialog by remember { mutableStateOf(false) }
     val copy = com.miniichatNext.carter.util.rememberCopyToClipboard()
 
-    // 打开页面：先把软件当前配色（默认Light/Dark定义）预填进各配置框，再叠加已保存的覆盖
+    // 打开页面先预填当前配色，再叠加已保存的覆盖（顺序不能反，否则动态取色被静态默认色压死）
     LaunchedEffect(Unit) {
         val saved = AppThemeOverrides.load(context)
         lightMap = AppThemeOverrides.currentSchemeHexes(dark = false) + saved["light"].orEmpty()
@@ -103,7 +101,6 @@ fun ThemeColorsScreen(onBack: () -> Unit) {
             stringResource(R.string.debug_theme_title),
             onBack,
             actions = {
-                // 顶栏右侧保存按钮
                 IconButton(onClick = { doSave() }) {
                     Icon(Icons.Default.Save, contentDescription = stringResource(R.string.action_save))
                 }
@@ -118,7 +115,6 @@ fun ThemeColorsScreen(onBack: () -> Unit) {
         ) {
             Spacer(Modifier.height(8.dp))
 
-            // 预览卡：用当前覆盖渲染的静态样例（跟随深浅主题各自的覆盖）
             SectionCard {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
@@ -133,7 +129,6 @@ fun ThemeColorsScreen(onBack: () -> Unit) {
             }
             Spacer(Modifier.height(12.dp))
 
-            // 编辑区：两套各一列角色色编辑
             SectionCard {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
@@ -172,7 +167,6 @@ fun ThemeColorsScreen(onBack: () -> Unit) {
         }
         }
 
-        // 右下角工具按钮：保存/恢复默认/导出/导入收进菜单
         androidx.compose.material3.FloatingActionButton(
             onClick = { showToolsSheet = true },
             modifier = Modifier
@@ -181,7 +175,6 @@ fun ThemeColorsScreen(onBack: () -> Unit) {
         ) {
             Icon(Icons.Default.Build, contentDescription = stringResource(R.string.debug_theme_tools))
         }
-        // 工具折叠框：ModalBottomSheet（与模型选择器同款底部弹窗）
         // 必须条件组合：ModalBottomSheet没有显隐参数，无条件组合会进页即弹+关闭后卡死
         if (showToolsSheet) {
         androidx.compose.material3.ModalBottomSheet(
@@ -221,7 +214,6 @@ fun ThemeColorsScreen(onBack: () -> Unit) {
         }
     }
 
-    // 导入弹窗：多行JSON粘贴框（从工具折叠框触发）
     if (showImportDialog) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showImportDialog = false },
@@ -263,7 +255,6 @@ fun ThemeColorsScreen(onBack: () -> Unit) {
         )
     }
 
-    // 恢复默认确认
     if (showResetConfirm) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showResetConfirm = false },
@@ -312,7 +303,6 @@ private fun RoleEditRow(
             textStyle = MaterialTheme.typography.bodySmall,
             singleLine = true,
             leadingIcon = {
-                // 色块可点：打开RGB调色盘
                 Box(
                     modifier = Modifier
                         .size(18.dp)
@@ -343,7 +333,6 @@ private fun RoleEditRow(
             }
         )
     }
-    // RGB调色盘（点击色块打开）
     when (pickerMode) {
         "light" -> ColorPickerDialog(
             title = "$role (light)",

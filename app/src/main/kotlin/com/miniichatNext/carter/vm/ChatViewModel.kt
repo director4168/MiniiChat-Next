@@ -56,6 +56,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     /** 多工作区：一个助手绑定一个workspaceId */
     internal val workspaceStore = WorkspaceStore(app)
     internal val workspaceRepository = WorkspaceRepository(app, workspaceStore)
+
+    fun hasRootfsFor(root: String): Boolean = runCatching {
+        // 与WorkspaceManager.hasRootfs同源：linux/bin/sh存在即可用（文件直查，不经Repository新API）
+        val dir = java.io.File(java.io.File(getApplication<Application>().filesDir, "workspaces"), root)
+        java.io.File(dir, "linux/bin/sh").isFile
+    }.getOrDefault(false)
     internal val mcpClient = com.miniichatNext.carter.data.mcp.McpClient()
 
     init {

@@ -62,7 +62,6 @@ fun DialogTestScreen(
     val context = LocalContext.current
     val copy = rememberCopyToClipboard()
 
-    // 状态：复用组件的弹窗触发
     var showConfirmDelete by remember { mutableStateOf(false) }
     var showInputDialog by remember { mutableStateOf(false) }
     var showOpenUrlDialog by remember { mutableStateOf(false) }
@@ -91,7 +90,6 @@ fun DialogTestScreen(
         ) {
             Spacer(Modifier.height(8.dp))
 
-            // 1) Snackbar三通道
             Text(stringResource(R.string.debug_dialog_section), style = MaterialTheme.typography.titleMedium)
             SectionCard {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -110,11 +108,9 @@ fun DialogTestScreen(
                 }
             }
 
-            // 2)各种弹窗
             Text(stringResource(R.string.debug_dialog_test_section_popups), style = MaterialTheme.typography.titleMedium)
             SectionCard {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // MdDialog演示
                     var showMd by remember { mutableStateOf(false) }
                     TextButton(onClick = { showMd = true }) { Text(stringResource(R.string.debug_dialog_test_md)) }
                     if (showMd) {
@@ -129,7 +125,6 @@ fun DialogTestScreen(
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
 
-                    // ConfirmDeleteDialog
                     TextButton(onClick = { showConfirmDelete = true }) {
                         Text(stringResource(R.string.debug_dialog_test_confirm_delete))
                     }
@@ -148,7 +143,6 @@ fun DialogTestScreen(
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
 
-                    // InputDialog
                     TextButton(onClick = { showInputDialog = true }) {
                         Text(stringResource(R.string.debug_dialog_test_input))
                     }
@@ -170,7 +164,6 @@ fun DialogTestScreen(
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
 
-                    // 自定义内容MdDialog（输入框+发送）
                     var customContent by remember { mutableStateOf("") }
                     // 输入框左占大部分+发送按钮右侧同一高度
                     Row(
@@ -193,11 +186,9 @@ fun DialogTestScreen(
                 }
             }
 
-            // 3)复用组件测试（AssetJsonLoader/openUrl/copyToClipboard）
             Text(stringResource(R.string.debug_test_reuse), style = MaterialTheme.typography.titleMedium)
             SectionCard {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // AssetJsonLoader测：加载assets/data/projects.json
                     TextButton(onClick = {
                         val list = com.miniichatNext.carter.util.AssetJsonLoader.load(
                             context, "data/projects.json",
@@ -212,7 +203,6 @@ fun DialogTestScreen(
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
 
-                    // openUrl测
                     TextButton(onClick = { showOpenUrlDialog = true }) {
                         Text(stringResource(R.string.debug_test_open_url))
                     }
@@ -233,9 +223,7 @@ fun DialogTestScreen(
 
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
 
-                    // copyToClipboard测
                     var copyText by remember { mutableStateOf("") }
-                    // 输入框左占大部分+复制按钮右侧同一高度
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth(),
@@ -260,7 +248,7 @@ fun DialogTestScreen(
         }
     }
 
-    // "已删除"普通md弹窗（ConfirmDeleteDialog onConfirm后触发）——非警告
+    // "已删除"普通md弹窗（onConfirm后触发），非警告样式
     deleteDialogText?.let { text ->
         com.miniichatNext.carter.ui.components.MdDialog(
             text = text,
@@ -270,7 +258,6 @@ fun DialogTestScreen(
         )
     }
 
-    // 自定义内容MdDialog
     if (showCustomContent.isNotEmpty()) {
         com.miniichatNext.carter.ui.components.MdDialog(
             title = showCustomContent.take(40),

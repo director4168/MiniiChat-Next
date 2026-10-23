@@ -62,6 +62,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.model.Message
+import com.miniichatNext.carter.ui.components.clipDrawing
 import com.miniichatNext.carter.ui.markdown.MarkdownText
 import com.miniichatNext.carter.data.avatar.Avatar
 import com.miniichatNext.carter.ui.components.AvatarView
@@ -113,7 +114,6 @@ internal fun AssistantRow(
         ) {
             // 新消息（orderedParts非空）：扫描+分组渲染
             // 连续的Reasoning/Tool段→包成一张ChainOfThought卡片（带collapse+时间线）
-            // Text段→文本气泡
             // 旧消息（orderedParts空）：保留原有COT卡片在上的布局，避免改动历史体验
             if (message.orderedParts.isNotEmpty()) {
                 val toolById = message.toolInvocations.associateBy { it.callId }
@@ -132,6 +132,7 @@ internal fun AssistantRow(
                                 onLongClick = onLongPress,
                                 onCopy = { clipboard.setText(AnnotatedString(seg.text)) },
                                 onFullscreen = onFullscreen,
+                                selectable = !(isLastAssistant && isStreaming),
                             )
                             Spacer(Modifier.height(8.dp))
                         }
@@ -212,6 +213,7 @@ internal fun AssistantRow(
                         onLongClick = onLongPress,
                         onCopy = { clipboard.setText(AnnotatedString(message.content)) },
                         onFullscreen = onFullscreen,
+                        selectable = !(isLastAssistant && isStreaming),
                     )
                 }
             }
@@ -314,11 +316,13 @@ private fun TextBubble(
     onLongClick: () -> Unit,
     onCopy: () -> Unit,
     onFullscreen: ((String, Boolean) -> Unit)? = null,
+    // 流式生成期间关闭文本选择：内容高频重排，选择器会频繁注册/注销拖慢渲染
+    selectable: Boolean = true,
 ) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(
+            .clipDrawing(RoundedCornerShape(
                 topStart = 4.dp,
                 topEnd = 18.dp,
                 bottomStart = 18.dp,
@@ -331,7 +335,7 @@ private fun TextBubble(
             )
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
-        SelectionContainer {
+        val bubbleContent: @Composable () -> Unit = {
             Column {
                 MarkdownText(
                     text = text,
@@ -341,6 +345,8 @@ private fun TextBubble(
                 )
             }
         }
+        // 与rikkahub一致：内容稳定后才套选择容器（流式时内容每帧重排，选择器会拖慢渲染）
+        if (selectable) SelectionContainer { bubbleContent() } else bubbleContent()
     }
 }
 

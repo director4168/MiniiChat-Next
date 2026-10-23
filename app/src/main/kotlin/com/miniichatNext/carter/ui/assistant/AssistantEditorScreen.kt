@@ -102,14 +102,14 @@ fun AssistantEditorScreen(
     }
     var showAvatarPicker by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
-    // 绑定的工作区（在设置→工作区里创建/管理，可绑定多个工作区之一）
+    // 助手绑定的工作区id
     var workspaceId by remember(initial?.id) { mutableStateOf(initial?.workspaceId) }
     // 下拉选项：第一项是“不使用工作区”
     val workspaceOptions = remember(availableWorkspaces) {
         listOf<com.miniichatNext.carter.data.workspace.WorkspaceEntity?>(null) + availableWorkspaces
     }
     val selectedWorkspace = availableWorkspaces.firstOrNull { it.id == workspaceId }
-    // 本助手启用哪些全局MCP服务器（服务器本身在设置→高级功能→MCP服务里管理）
+    // 本助手启用的全局MCP服务器id集合
     var mcpServerIds by remember(initial?.id) {
         mutableStateOf(initial?.mcpServerIds ?: emptySet<String>())
     }
@@ -536,7 +536,7 @@ fun AssistantEditorScreen(
                 }
             }
 
-            // Agent工作区（在设置→工作区里创建与管理；下拉选择，与RikkaHub设置页的颜色模式选择同款）
+            // Agent工作区（下拉单选）
             FieldBox {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -577,7 +577,7 @@ fun AssistantEditorScreen(
                 }
             }
 
-            // MCP服务器（选择全局配置里的哪些对当前助手生效）
+            // MCP服务器（勾选对当前助手生效的）
             FieldBox {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
                     Text(

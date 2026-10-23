@@ -392,12 +392,12 @@ object BuiltInFileTools {
 
         data class Match(val start: Int, val endExclusive: Int)
         val matches: List<Match> = run {
-            // 1) exact
+            // 先试完全匹配，命中就直接返回
             val exact = mutableListOf<Match>()
             var idx = content.indexOf(oldText)
             while (idx >= 0) { exact.add(Match(idx, idx + oldText.length)); idx = content.indexOf(oldText, idx + oldText.length) }
             if (exact.isNotEmpty()) return@run exact
-            // 2) line_trimmed：滑动行窗口，逐行trim比较；替换文本按首行缩进重排
+            // 再试滑动行窗口逐行trim比较，替换文本按首行缩进重排
             val oldLines = oldText.lines().let { if (it.size > 1 && it.last().isEmpty()) it.dropLast(1) else it }
             if (oldLines.any { it.isNotBlank() }) {
                 val oldTrim = oldLines.map { it.trim() }
@@ -428,7 +428,7 @@ object BuiltInFileTools {
                 }
                 if (lm.isNotEmpty()) return@run lm
             }
-            // 3) block_anchor：首尾行锚定（非空）+中间任意
+            // 最后试首尾行锚定（取非空行），中间任意
             val firstOld = oldText.lines().firstOrNull { it.isNotBlank() }?.trim()
             val lastOld = oldText.lines().lastOrNull { it.isNotBlank() }?.trim()
             if (firstOld != null && lastOld != null) {

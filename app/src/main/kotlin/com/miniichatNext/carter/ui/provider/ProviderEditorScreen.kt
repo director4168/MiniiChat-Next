@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -46,6 +47,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
@@ -123,7 +126,7 @@ fun ProviderEditorScreen(
                     val effective = baseUrl.trim().ifEmpty {
                         presetBaseUrl.ifEmpty { initial?.baseUrl ?: "" }
                     }
-                    // Keep the base URL exactly as the user typed it — do not auto-append paths.
+                    // Base URL原样保留，不自动补路径
                     val normalizedUrl = effective.trimEnd('/')
                     val headers = headerRows.filter { it.first.isNotBlank() }
                         .associate { it.first.trim() to it.second.trim() }
@@ -263,17 +266,28 @@ fun ProviderEditorScreen(
             }
 
             FieldSection(stringResource(R.string.provider_name)) {
-                EditableValue(name, "") { name = it }
+                EditableValue(
+                    value = name,
+                    placeholder = "",
+                    onChange = { name = it },
+                )
             }
             FieldSection(stringResource(R.string.setting_base_url)) {
                 EditableValue(
                     value = baseUrl,
                     placeholder = presetBaseUrl.ifEmpty { initial?.baseUrl ?: "https://…" },
-                    monospace = true
-                ) { baseUrl = it }
+                    monospace = true,
+                    onChange = { baseUrl = it },
+                )
             }
             FieldSection(stringResource(R.string.setting_api_key)) {
-                EditableValue(apiKey, "", monospace = true) { apiKey = it }
+                EditableValue(
+                    value = apiKey,
+                    placeholder = "",
+                    monospace = true,
+                    onChange = { apiKey = it },
+                    secret = true,
+                )
             }
 
             if (providerType == com.miniichatNext.carter.data.model.ProviderType.OPENAI) {
@@ -281,8 +295,9 @@ fun ProviderEditorScreen(
                     EditableValue(
                         value = chatCompletionsPath,
                         placeholder = "/chat/completions",
-                        monospace = true
-                    ) { chatCompletionsPath = it }
+                        monospace = true,
+                        onChange = { chatCompletionsPath = it },
+                    )
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -438,8 +453,13 @@ private fun EditableValue(
     value: String,
     placeholder: String,
     monospace: Boolean = false,
-    onChange: (String) -> Unit
+    onChange: (String) -> Unit,
+    /** 密文模式：默认隐藏（全部显示为•），输入框内右侧有显示/隐藏按钮 */
+    secret: Boolean = false,
 ) {
+    var reveal by remember { mutableStateOf(false) }
+    val visualTransformation =
+        if (secret && !reveal) PasswordVisualTransformation() else VisualTransformation.None
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -460,15 +480,29 @@ private fun EditableValue(
         BasicTextField(
             value = value,
             onValueChange = onChange,
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(end = if (secret) 34.dp else 0.dp),
             textStyle = LocalTextStyle.current.copy(
                 color = LocalContentColor.current,
                 fontSize = 14.sp,
                 fontFamily = if (monospace) FontFamily.Monospace else FontFamily.Default
             ),
             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            singleLine = true
+            singleLine = true,
+            visualTransformation = visualTransformation,
         )
+        if (secret) {
+            Text(
+                text = stringResource(if (reveal) R.string.common_hide else R.string.common_show),
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .clickable { reveal = !reveal }
+                    .padding(horizontal = 6.dp, vertical = 4.dp),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

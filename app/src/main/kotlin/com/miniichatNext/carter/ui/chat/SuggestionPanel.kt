@@ -103,7 +103,6 @@ internal fun SuggestionPanel(
         }
 
         if (loading) {
-            // 生成中：4条骨架
             repeat(4) { ShimmerSlot() }
             Text(
                 stringResource(R.string.suggestion_generating),

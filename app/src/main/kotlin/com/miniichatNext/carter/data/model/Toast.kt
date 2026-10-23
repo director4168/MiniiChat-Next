@@ -3,7 +3,7 @@ package com.miniichatNext.carter.data.model
 import com.miniichatNext.carter.util.newId
 
 /**
- * 底部堆叠toast的单条数据。新条目追加到列表末尾=视觉底部，旧的被顶到上面。
+ * 底部堆叠toast的单条数据。新条目追加到列表末尾=视觉底部，旧的被顶到上面
  */
 data class ToastItem(
     val id: String = newId(),

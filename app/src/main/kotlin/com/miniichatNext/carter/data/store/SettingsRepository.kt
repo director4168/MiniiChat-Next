@@ -28,7 +28,7 @@ data class AppSettings(
     val language: String = "system",
     val dynamicColor: Boolean = true,
     val themeMode: String = "system",
-    // providerId::modelId引用辅助功能
+    // 格式providerId::modelId
     val ocrModel: String = "",
     /** OCR触发模式：auto=仅纯文本模型/always=所有带图消息（视觉模型也附加文字）/off=禁用 */
     val ocrMode: String = "auto",

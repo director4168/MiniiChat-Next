@@ -14,6 +14,51 @@ const val WORKSPACE_SERVER_ID = "workspace"
 private const val SHELL_TIMEOUT_MAX_SECONDS = 600L
 private const val MAX_READ_FILE_BYTES = 8L * 1024 * 1024
 
+/** 工作区工具三分类（202610162134：审批粒度从逐工具改为类别开关） */
+enum class WorkspaceToolCategory {
+    /** 读取：read_file/list_files/glob/grep */
+    READ_FILE,
+    /** 写入与编辑：write_file/edit_file/delete_file/move_file/copy_file/mkdir */
+    WRITE_FILE,
+    /** 执行：shell */
+    EXECUTE_FILE,
+}
+
+/** 工具名→类别映射 */
+fun workspaceToolCategory(name: String): WorkspaceToolCategory = when (name) {
+    "workspace_read_file", "workspace_list_files", "workspace_glob", "workspace_grep" ->
+        WorkspaceToolCategory.READ_FILE
+    "workspace_write_file", "workspace_edit_file", "workspace_delete_file",
+    "workspace_move_file", "workspace_copy_file", "workspace_mkdir" ->
+        WorkspaceToolCategory.WRITE_FILE
+    "workspace_shell" -> WorkspaceToolCategory.EXECUTE_FILE
+    else -> WorkspaceToolCategory.WRITE_FILE
+}
+
+/** 类别审批默认值：读=false写=false执行=true */
+val WorkspaceCategoryDefaultApprovals: Map<WorkspaceToolCategory, Boolean> = mapOf(
+    WorkspaceToolCategory.READ_FILE to false,
+    WorkspaceToolCategory.WRITE_FILE to false,
+    WorkspaceToolCategory.EXECUTE_FILE to true,
+)
+
+/** 类别存储键（overrides JSON里用"category:READ_FILE"这类键） */
+fun WorkspaceToolCategory.storageKey(): String = "category:" + name
+
+/**
+ * 三类归并后的审批解析：类别开关优先→per-tool精细覆盖→类别默认表。
+ */
+fun resolveWorkspaceToolApprovalByCategory(
+    name: String,
+    categoryOverrides: Map<String, Boolean>,
+    perToolOverrides: Map<String, Boolean>,
+): Boolean {
+    val cat = workspaceToolCategory(name)
+    categoryOverrides[cat.storageKey()]?.let { return it }
+    perToolOverrides[name]?.let { return it }
+    return WorkspaceCategoryDefaultApprovals[cat] ?: false
+}
+
 val WorkspaceToolDefaultApprovals: Map<String, Boolean> = mapOf(
     "workspace_read_file" to false,
     "workspace_write_file" to false,
@@ -138,7 +183,6 @@ suspend fun executeWorkspaceTool(
     }
 }.getOrElse { fail(it.message ?: "error") }
 
-// 参数解析走全局AppJson
 
 private fun parseArgs(argumentsJson: String): Map<String, String> {
     if (argumentsJson.isBlank()) return emptyMap()
@@ -370,14 +414,14 @@ private suspend fun glob(
     val dir = entryDir(workspaceId, repository, "files")
     val rootDir = java.io.File(dir, base)
     if (!rootDir.isDirectory) return fail("not a directory: ${base.ifBlank { "/" }}")
-    // 简化glob：**→任意深度，*→单层；转正则
+    // 简化glob：双星跨任意深度、单星只跨一层；转正则
     val regex = buildString {
         var i = 0
         while (i < pattern.length) {
             when (val c = pattern[i]) {
                 '*' -> if (i + 1 < pattern.length && pattern[i + 1] == '*') {
                     append(".*"); i += 2
-                    if (i < pattern.length && pattern[i] == '/') i++ // **/合并
+                    if (i < pattern.length && pattern[i] == '/') i++ // 双星后面那个斜杠已被上面追加的点星吃掉
                 } else { append("[^/]*"); i++ }
                 '?' -> { append("[^/]"); i++ }
                 else -> { if ("\\.[]{}()^$+".contains(c)) append('\\'); append(c); i++ }

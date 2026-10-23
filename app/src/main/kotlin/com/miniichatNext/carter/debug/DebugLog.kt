@@ -349,7 +349,6 @@ object DebugLog {
             }
         }
 
-        // 组装manifest，然后创建zip
         val manifest = StringBuilder()
         runCatching {
             val info = context.packageManager.getPackageInfo(context.packageName, 0)

@@ -57,7 +57,6 @@ fun AuxModelPickerSheet(
                 .padding(horizontal = 16.dp)
                 .heightIn(max = 640.dp)
         ) {
-            // 标题+未设置按钮
             Box(
                 modifier = Modifier
                     .fillMaxWidth()

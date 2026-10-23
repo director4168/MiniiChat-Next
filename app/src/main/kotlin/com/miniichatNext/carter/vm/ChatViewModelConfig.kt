@@ -15,39 +15,10 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
+/** 设置全局默认模型（提供商页选择写入；新对话默认用它。聊天页选模型走setConversationModel，只记在对话里） */
 internal fun ChatViewModel.selectModel(providerId: String, model: String) {
     viewModelScope.launch {
         settingsRepo.update { it.copy(activeProviderId = providerId, activeModel = model) }
-    }
-}
-
-/**
- * 就地修改某个已配置模型的设置
- *
- * 只改models列表里已有的那一项；如果这个模型还没被加到服务商配置里（比如刚fetch完还没保存），就自动补一条，否则用户在模型选择页改不动任何东西
- */
-internal fun ChatViewModel.updateModelConfig(
-    providerId: String,
-    modelId: String,
-    transform: (ModelConfig) -> ModelConfig
-) {
-    if (providerId.isBlank() || modelId.isBlank()) return
-    viewModelScope.launch {
-        val provider = providerStore.snapshot().firstOrNull { it.id == providerId } ?: return@launch
-        val models = provider.models.toMutableList()
-        val idx = models.indexOfFirst { it.modelId == modelId }
-        val transformed = transform(
-            if (idx >= 0) models[idx] else ModelConfig(modelId = modelId)
-        )
-        if (transformed.isDefault()) {
-            // 全默认=无覆盖：从列表删除（避免空配置导致ModelChip误高亮）
-            if (idx >= 0) models.removeAt(idx)
-        } else if (idx >= 0) {
-            models[idx] = transformed
-        } else {
-            models += transformed
-        }
-        providerStore.upsert(provider.copy(models = models))
     }
 }
 
@@ -133,6 +104,18 @@ internal fun ChatViewModel.fetchModels(providerId: String) {
                     .map { ModelConfig(modelId = it, displayName = it) }
                 val updated = provider.copy(models = provider.models + newConfigs)
                 providerStore.upsert(updated)
+                // 首次拉取（软件清空重配/新建provider）：activeModel为空时自动选中
+                // 第一个新模型——否则用户拉完模型回聊天页仍是"未选择模型"，无从下手
+                if (settings.value.activeModel.isBlank()
+                    && (settings.value.activeProviderId == providerId || settings.value.activeProviderId.isBlank())
+                ) {
+                    settingsRepo.update {
+                        it.copy(
+                            activeProviderId = if (it.activeProviderId.isBlank()) providerId else it.activeProviderId,
+                            activeModel = newConfigs.first().modelId,
+                        )
+                    }
+                }
                 _toast.trySend(getApplication<Application>()
                         .getString(
                         com.miniichatNext.carter.R.string.models_fetched,

@@ -44,6 +44,8 @@ import com.miniichatNext.carter.debug.ui.DialogTestScreen
 import kotlinx.coroutines.launch
 import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.model.UserProfile
+import com.miniichatNext.carter.data.update.ignoreKey
+import com.miniichatNext.carter.data.update.displayVersion
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.debug.DebugLevel
 import androidx.compose.foundation.clickable
@@ -61,7 +63,6 @@ import com.miniichatNext.carter.ui.mcp.McpServersScreen
 import com.miniichatNext.carter.ui.navigation.AppBackDispatcher
 import com.miniichatNext.carter.ui.navigation.AppNavHost
 import com.miniichatNext.carter.ui.navigation.NavController
-import com.miniichatNext.carter.ui.provider.ModelEditScreen
 import com.miniichatNext.carter.ui.provider.ProviderEditorScreen
 import com.miniichatNext.carter.ui.provider.ProvidersScreen
 import com.miniichatNext.carter.ui.settings.AboutScreen
@@ -85,6 +86,7 @@ import com.miniichatNext.carter.vm.effectiveMcpServerIds
 import com.miniichatNext.carter.vm.effectiveSkillIds
 import com.miniichatNext.carter.vm.effectiveSkillIdsFlow
 import com.miniichatNext.carter.vm.effectiveWorkspaceId
+import com.miniichatNext.carter.vm.effectiveConversationModel
 import com.miniichatNext.carter.vm.ensureActiveConversationId
 import com.miniichatNext.carter.vm.fetchModels
 import com.miniichatNext.carter.vm.generateSuggestions
@@ -97,6 +99,7 @@ import com.miniichatNext.carter.vm.removeModel
 import com.miniichatNext.carter.vm.saveSkill
 import com.miniichatNext.carter.vm.saveSkillFiles
 import com.miniichatNext.carter.vm.selectAssistant
+import com.miniichatNext.carter.vm.setConversationModel
 import com.miniichatNext.carter.vm.selectModel
 import com.miniichatNext.carter.vm.sendMessage
 import com.miniichatNext.carter.vm.setConversationMcpServer
@@ -104,7 +107,6 @@ import com.miniichatNext.carter.vm.setConversationWorkspace
 import com.miniichatNext.carter.vm.setSkillEnabled
 import com.miniichatNext.carter.vm.toggleAssistantSkill
 import com.miniichatNext.carter.vm.toggleTemporarySkill
-import com.miniichatNext.carter.vm.updateModelConfig
 import com.miniichatNext.carter.vm.updateUserProfile
 import com.miniichatNext.carter.vm.upsertAssistant
 import com.miniichatNext.carter.vm.upsertProvider
@@ -126,7 +128,7 @@ import android.widget.Toast
 
 /** 路由表：新增页面只需在这里加一项（配合AppNavRegistry可自定义过渡动画） */
 internal enum class Screen {
-    Chat, Settings, Providers, ProviderEdit, ModelEdit, Assistants, AssistantEdit,
+    Chat, Settings, Providers, ProviderEdit, Assistants, AssistantEdit,
     Skills, UserProfile, About, Debug, DialogTest, ThemeColors, UpdateSettings, Acknowledgements,
     Workspace, WorkspaceDetail, WorkspaceTerminal,
     Mcp, McpDetail, McpEdit, McpBuiltIn,
@@ -149,10 +151,6 @@ fun AppRoot(vm: ChatViewModel) {
     val nav = rememberSaveable(saver = NavController.Saver) { NavController(Screen.Chat.name) }
     // 统一返回调度：页面可注册层级内返回（如MCP详情→列表），未消费时才弹栈
     val backDispatcher = remember { AppBackDispatcher() }
-    // 后期自定义示例：给单个路由换一套动画
-    // AppNavRegistry.registerRouteTransition(Screen.Debug.name, NavTransitionPresets.Scale.forward)
-    // 后期自定义示例：注册全局返回兜底（比如“再按一次退出”）
-    // backDispatcher.fallback = { ... ; true }
 
     LaunchedEffect(nav.current.route) {
         DebugLog.v("Nav", "route -> ${nav.current.route} (depth=${nav.current.depth})")
@@ -160,11 +158,30 @@ fun AppRoot(vm: ChatViewModel) {
 
     var showModelPicker by rememberSaveable { mutableStateOf(false) }
     var editingProvider by remember { mutableStateOf<ProviderConfig?>(null) }
-    var editingModelId by remember { mutableStateOf<String?>(null) }
     var editingAssistant by remember { mutableStateOf<Assistant?>(null) }
     // 启动时auto-check触发的更新弹窗：监听全局UpdateState.pending，
     // 任意页面都能弹出（不依赖用户在AboutScreen里）。
     val pendingUpdate by com.miniichatNext.carter.data.update.UpdateState.pending.collectAsState()
+    // 独立下载弹窗状态（提升到AppRoot级：内容弹窗关闭后下载继续）
+    var updateDownloadState by remember { mutableStateOf<com.miniichatNext.carter.ui.settings.update.UpdateDownloadState?>(null) }
+    var updateDownloadInfo by remember { mutableStateOf<com.miniichatNext.carter.data.update.UpdateInfo?>(null) }
+    // 下载完成后的安装启动（前台自动/待安装态手动共用；失败时转Failed态提示）
+    val installFromDownload: (java.io.File) -> Unit = { file ->
+        scope.launch {
+            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.miniichatNext.carter.data.update.UpdateInstaller.install(context, file)
+            }
+            if (ok) {
+                updateDownloadState = null
+            } else {
+                updateDownloadState = com.miniichatNext.carter.ui.settings.update.UpdateDownloadState.Failed(
+                    version = updateDownloadInfo?.displayVersion() ?: "",
+                    message = context.getString(com.miniichatNext.carter.R.string.update_install_failed),
+                    file = file,
+                )
+            }
+        }
+    }
     val currentVersionName = remember {
         runCatching {
             context.packageManager.getPackageInfo(context.packageName, 0).versionName
@@ -249,13 +266,24 @@ fun AppRoot(vm: ChatViewModel) {
     // busy态按对话隔离：对话a的流未结束不该让新建的对话显示停止键
     val conversationBusy = (isStreaming && streamingConvId == activeConv?.id) ||
         (toolBusy && pendingConvId == activeConv?.id)
-    val activeProvider = providers.firstOrNull { it.id == settings.activeProviderId }
+    // 侧滑栏"进行中"标记：流式或等审批/等澄清的对话id集合
+    val busyConversationIds: Set<String> = buildSet {
+        if (isStreaming) streamingConvId?.let { add(it) }
+        if (toolBusy) pendingConvId?.let { add(it) }
+    }
+    // 聊天页实际生效的模型（对话覆盖>助手preferred>全局默认），展示与enabled都以它为准
+    val effectiveModel = effectiveConversationModel(
+        assistantConversations.firstOrNull { it.id == activeId },
+        activeAssistant, settings, providers
+    )
+    val activeProvider = effectiveModel?.first
+        ?: providers.firstOrNull { it.id == settings.activeProviderId }
     // 工具开关可能在还没发消息的新会话里被点击，这里按需建一条会话
     val ensureConvId: () -> String = { activeId ?: vm.newConversation() }
 
     val clipboard = LocalClipboardManager.current
     val openProvidersLabel = stringResource(R.string.error_open_providers)
-    // 服务商/模型类错误改用对话框展示：snackbar的action在部分机型上点了没反应，而AlertDialog是模态的
+    // 服务商/模型类错误用对话框：snackbar的action在部分机型上点了没反应
     var providerFixDialog by remember { mutableStateOf<String?>(null) }
     // 底部堆叠式toast：三通道统一写入一个栈（新条目在底部，旧的被顶上去）
     // 每条独立计时（从自己显示后2s），无跨条race；snackbarHost由ToastStackHost替换
@@ -265,7 +293,17 @@ fun AppRoot(vm: ChatViewModel) {
         Toast.makeText(context, context.getString(R.string.copied), Toast.LENGTH_SHORT).show()
     }
     val manageAction: (com.miniichatNext.carter.data.model.ToastItem) -> Unit = { item ->
-        (item.action as? com.miniichatNext.carter.data.model.ToastAction.Manage)?.let { gotoSettingsAt(it.kind) }
+        (item.action as? com.miniichatNext.carter.data.model.ToastAction.Manage)?.let { m ->
+            if (m.kind.startsWith("workspace:")) {
+                // 跳到对应工作区的管理页（详情页含Rootfs安装/修复）
+                nav.push(
+                    Screen.WorkspaceDetail.name,
+                    mapOf("workspaceId" to m.kind.removePrefix("workspace:")),
+                )
+            } else {
+                gotoSettingsAt(m.kind)
+            }
+        }
     }
     val onToastAction: (com.miniichatNext.carter.data.model.ToastItem) -> Unit = { item ->
         vm.removeToast(item.id)
@@ -351,6 +389,7 @@ fun AppRoot(vm: ChatViewModel) {
                                 GlassDrawer(
                                     conversations = assistantConversations,
                                     activeId = activeId,
+                                    busyConversationIds = busyConversationIds,
                                     assistants = assistants,
                                     activeAssistantId = settings.activeAssistantId,
                                     onSelectAssistant = { vm.selectAssistant(it) },
@@ -379,6 +418,7 @@ fun AppRoot(vm: ChatViewModel) {
                                 conversation = activeConv,
                                 settings = settings,
                                 activeProvider = activeProvider,
+                                effectiveModelId = effectiveModel?.second ?: "",
                                 isStreaming = conversationBusy,
                                 streamingOverlay = streamingOverlay,
                                 assistant = activeAssistant,
@@ -406,15 +446,27 @@ fun AppRoot(vm: ChatViewModel) {
                                 onResetToolOverrides = { vm.clearConversationToolOverrides(ensureConvId()) },
                                 onOpenTerminal = {
                                     DebugLog.i("Nav", "+ menu terminal tapped")
-                                    // 终端不依赖对话绑定：优先绑定的工作区，否则最近使用的工作区
+                                    // 前置校验（202610162134）：必须对话已绑定工作区且已装Rootfs
+                                    // 结构：errorReason非null=校验失败（toast后直接返回，不进入导航）
                                     val wsId = effectiveWorkspaceId(activeConv, activeAssistant)
                                     val ws = wsId?.let { id -> workspaces.firstOrNull { it.id == id } }
-                                        ?: workspaces.maxByOrNull { it.lastAccessAt ?: it.updatedAt }
                                     if (ws == null) {
                                         vm.pushToast(com.miniichatNext.carter.data.model.ToastItem(
                                             message = context.getString(
-                                                com.miniichatNext.carter.R.string.workspace_terminal_unbound
+                                                com.miniichatNext.carter.R.string.workspace_terminal_unbound_reason
                                             ),
+                                            action = com.miniichatNext.carter.data.model.ToastAction.Copy,
+                                            withDismiss = true,
+                                        ))
+                                    } else if (!vm.hasRootfsFor(ws.root)) {
+                                        vm.pushToast(com.miniichatNext.carter.data.model.ToastItem(
+                                            message = context.getString(
+                                                com.miniichatNext.carter.R.string.workspace_terminal_not_installed_reason
+                                            ),
+                                            action = com.miniichatNext.carter.data.model.ToastAction.Manage(
+                                                kind = "workspace:" + ws.id
+                                            ),
+                                            withDismiss = true,
                                         ))
                                     } else {
                                         DebugLog.i("Nav", "open terminal: root=" + ws.root)
@@ -700,31 +752,7 @@ fun AppRoot(vm: ChatViewModel) {
                             onFetchModels = { vm.fetchModels(it) },
                             onAddManualModel = { id, m -> vm.addManualModel(id, m) },
                             onRemoveModel = { id, m -> vm.removeModel(id, m) },
-                            onSelectModel = { id, m -> vm.selectModel(id, m) },
-                            onEditModel = { p, m ->
-                                editingProvider = p
-                                editingModelId = m
-                                nav.push(Screen.ModelEdit.name)
-                            }
-                        )
-                    }
-
-                    Screen.ModelEdit -> {
-                        val mp = editingProvider ?: return@AppNavHost
-                        val mid = editingModelId ?: ""
-                        com.miniichatNext.carter.ui.provider.ModelEditScreen(
-                            provider = mp,
-                            modelId = mid,
-                            onBack = {
-                                editingModelId = null
-                                editingProvider = null
-                                nav.back()
-                            },
-                            onSave = { cfg ->
-                                vm.updateModelConfig(mp.id, mid) { cfg }
-                                editingModelId = null
-                                editingProvider = null
-                            },
+                            onSelectModel = { id, m -> vm.selectModel(id, m) }
                         )
                     }
 
@@ -784,22 +812,25 @@ fun AppRoot(vm: ChatViewModel) {
     }
 
     if (showModelPicker) {
-        // 必须用和生成时完全相同的provider解析顺序，否则UI写进去的key与请求读的key对不上→开关看着能点、实际不生效
-        // 顺序：助手的preferredProviderId>全局activeProviderId
+        // 对话/提供商模型选择解耦：聊天页选的是「本对话的模型」（写Conversation），
+        // 提供商页选的是「全局默认模型」（写settings）——两边互不影响。
+        // 显示与写入都用effectiveConversationModel解析：对话覆盖>助手preferred>全局默认，
+        // 与生成端完全同源，不会出现「显示A发消息用B」。
         val pickerConv = conversations.firstOrNull { it.id == activeId }
         val pickerAssistant = assistants.firstOrNull {
             it.id == (pickerConv?.assistantId ?: settings.activeAssistantId)
         }
-        val pickerProviderId = pickerAssistant?.preferredProviderId?.takeIf { it.isNotBlank() }
-            ?: settings.activeProviderId
+        val effective = effectiveConversationModel(pickerConv, pickerAssistant, settings, providers)
+        val pickerProviderId = effective?.first?.id ?: settings.activeProviderId
+        val pickerModelId = effective?.second ?: ""
         // 没有活跃对话时也要能开（否则所有的设置项都会被静默丢弃）
         val pickerConvId = activeId ?: vm.ensureActiveConversationId()
 
         ModelPickerSheet(
             providers = providers,
             activeProviderId = pickerProviderId,
-            activeModel = settings.activeModel,
-            onPick = { pid, m -> vm.selectModel(pid, m) },
+            activeModel = pickerModelId,
+            onPick = { pid, m -> vm.setConversationModel(pickerConvId, pid, m) },
             onDismiss = { showModelPicker = false },
             // 思考等级写到对话切换服务商/模型时仍然保留
             onThinkingChange = { lvl -> vm.setConversationThinkingLevel(pickerConvId, lvl) },
@@ -842,12 +873,46 @@ fun AppRoot(vm: ChatViewModel) {
             onIgnore = if (!info.compulsory) {
                 {
                     scope.launch {
-                        settingsRepo.ignoreUpdateVersion(info.version)
-                        com.miniichatNext.carter.data.update.UpdateState.addIgnoredVersion(info.version)
+                        settingsRepo.ignoreUpdateVersion(info.ignoreKey())
+                        com.miniichatNext.carter.data.update.UpdateState.addIgnoredVersion(info.ignoreKey())
                     }
                     com.miniichatNext.carter.data.update.UpdateState.clearPending()
                 }
             } else null,
+            onStartDownload = { dInfo ->
+                // 内容弹窗已关闭（上面onDismiss先执行）→记录信息并启动独立下载流程
+                updateDownloadInfo = dInfo
+                com.miniichatNext.carter.ui.settings.update.startUpdateDownload(
+                    context = context,
+                    scope = scope,
+                    info = dInfo,
+                    onState = { updateDownloadState = it },
+                    onFinished = { updateDownloadState = null },
+                    onInstallNow = installFromDownload,
+                )
+            },
+        )
+    }
+
+    // 独立下载进度弹窗：进度/校验失败重试/强制安装；成功后自动拉起安装器并关闭
+    updateDownloadState?.let { st ->
+        com.miniichatNext.carter.ui.settings.update.UpdateDownloadDialog(
+            state = st,
+            onRetry = {
+                updateDownloadInfo?.let { dInfo ->
+                    com.miniichatNext.carter.ui.settings.update.startUpdateDownload(
+                        context = context,
+                        scope = scope,
+                        info = dInfo,
+                        onState = { updateDownloadState = it },
+                        onFinished = { updateDownloadState = null },
+                        onInstallNow = installFromDownload,
+                    )
+                }
+            },
+            onForceInstall = installFromDownload,
+            onInstallNow = installFromDownload,
+            onDismiss = { updateDownloadState = null },
         )
     }
 }

@@ -63,6 +63,8 @@ fun ChatScreen(
     conversation: Conversation?,
     settings: AppSettings,
     activeProvider: ProviderConfig?,
+    /** 本对话实际生效的模型id（对话覆盖>助手preferred>全局默认），气泡标签与enabled用它 */
+    effectiveModelId: String = "",
     isStreaming: Boolean,
     streamingOverlay: Pair<String, String>? = null,
     assistant: com.miniichatNext.carter.data.model.Assistant? = null,
@@ -134,18 +136,17 @@ fun ChatScreen(
         label = "immersive-alpha"
     )
 
-    // 只在"新消息出现"时滚动到底：
-    // 1) isStreaming结束不再触发（流式高度增长后最后一次滚动会把消息顶部对齐视口顶）
-    // 2)首次进入/从全屏等页面返回（ChatScreen重组重启本Effect）也不滚
-    // 记住上一次的size，size真的变了才滚（保住用户的浏览位置）
-    // 滚动策略（按会话隔离的三步状态机）：
-    // 1)切换会话（该会话首次见到）→直接跳到最新消息（无动画）
-    // 2)同会话内新消息出现（count>seen）→平滑滚到底
-    // 3)重组重启（从全屏/其他页面返回）/消息截断→不滚，保住浏览位置
-    // 进入编辑态不主动滚动：BasicTextField聚焦时LazyColumn的bringIntoView
-    // 会自动把可见区域调整到输入框位置；强行animateScrollToItem反而会把
-    // 消息顶部对齐视口顶（长消息生硬跳变），加上键盘弹出又跳一次（用户报的bug）
-    // 参考rikkahub ChatPage.onEdit：只改inputState.editingMessage，不做任何滚动
+    // 滚动策略（按会话隔离）：
+    // 流式结束不触发滚动：高度增长后最后一次滚动会把消息顶部对齐视口顶
+    // 首次进入/从全屏等页面返回也不滚（重组会重启本Effect）
+    // 记住上一次的size，真的变了才滚，保住浏览位置
+    // 切会话（该会话首次见到）直接跳到最新消息，无动画
+    // 同会话内新消息出现（count>seen）平滑滚到底
+    // 重组重启和消息截断都不滚
+    // 进编辑态不主动滚：BasicTextField聚焦时LazyColumn的bringIntoView
+    // 会把可见区域调整到输入框位置，强行animateScrollToItem反而把
+    // 消息顶部对齐视口顶（长消息生硬跳变），键盘弹出再跳一次（用户报的bug）
+    // 同rikkahub ChatPage.onEdit：只改inputState.editingMessage，不滚动
     var rememberedLastMsgId by rememberSaveable { mutableStateOf("") }
     var rememberedCount by rememberSaveable { mutableIntStateOf(-1) }
     var rememberedSession by rememberSaveable { mutableStateOf("") }
@@ -383,7 +384,7 @@ fun ChatScreen(
                             assistant?.avatar ?: "🤖", assistant?.avatarPath
                         ),
                         senderLabel = if (msg.role == "user") stringResource(R.string.profile_default_name)
-                        else settings.activeModel.ifBlank { activeProvider?.name ?: stringResource(R.string.assistant) },
+                        else effectiveModelId.ifBlank { activeProvider?.name ?: stringResource(R.string.assistant) },
                         isLastAssistant = msg.id == visibleMessages.lastOrNull()?.id && msg.role == "assistant",
                         isStreaming = isStreaming,
                         onStartEdit = {
@@ -396,7 +397,8 @@ fun ChatScreen(
                         onDelete = { onDeleteMessage(msg.id) },
                         onRegenerateFrom = { retellTargetId = msg.id },
                         onApproveTool = onApproveTool,
-                        onRejectTool = onRejectTool
+                        onRejectTool = onRejectTool,
+                        onFullscreen = onFullscreen,
                     )
                 }
             }
@@ -496,7 +498,11 @@ fun ChatScreen(
             },
             onStop = onStop,
             isStreaming = isStreaming,
-            enabled = activeProvider != null && settings.activeModel.isNotBlank(),
+            enabled = activeProvider != null && effectiveModelId.isNotBlank(),
+            // 模型选择按钮独立于"已选模型"状态：恒可点。未选/未配置时点进去
+            // 由AppRoot分流（有提供商→选择器，无提供商→添加提供商），
+            // 绝不能再被activeModel/activeProvider为空连带置灰（否则死循环）
+            canPickModel = true,
             // 同上：底栏保持自身背景，不被自定义背景影响
             transparent = false,
             addPanelOpen = addPanelOpen,

@@ -126,6 +126,8 @@ fun InputBar(
     onStop: () -> Unit,
     isStreaming: Boolean,
     enabled: Boolean = true,
+    /** 模型选择按钮独立可用：activeModel为空（未选过模型）时仍要能点进去选择 */
+    canPickModel: Boolean = true,
     // CSS/图片背景模式下让输入栏容器透明
     transparent: Boolean = false,
     // 菜单面板，开关状态由ChatScreen持有，方便点空白处统一收起
@@ -225,7 +227,6 @@ fun InputBar(
     ) { uris: List<Uri> ->
         if (uris.isNotEmpty()) importScope.launch { doImport(uris) }
     }
-    // 多选任意文件
     val pickFiles = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
     ) { uris: List<Uri> ->
@@ -243,7 +244,6 @@ fun InputBar(
             )
             .padding(WindowInsets.navigationBars.asPaddingValues())
     ) {
-        // 编辑模式横幅：提示+取消
         if (editing) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
@@ -295,7 +295,6 @@ fun InputBar(
             Column(
                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
             ) {
-                // 附件chips：容器内部（rikkahub的MediaFileInputRow位置）
                 if (attachments.isNotEmpty()) {
                     LazyRow(
                         modifier = Modifier
@@ -313,7 +312,6 @@ fun InputBar(
                     }
                 }
 
-                // 输入框：占满一行，多行拓展封顶200dp
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -349,7 +347,7 @@ fun InputBar(
                     )
                 }
 
-                // 底部功能键行：永远显示，焊死在容器底部（rikkahub ChatInput模式）
+                // 底部功能键行，焊死在容器底部
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -365,7 +363,7 @@ fun InputBar(
                         IconActionVec(
                             icon = Icons.Default.AutoAwesome,
                             contentDescription = stringResource(R.string.select_model),
-                            enabled = enabled,
+                            enabled = canPickModel,
                             onClick = onPickModel
                         )
                         IconActionVec(
@@ -430,7 +428,6 @@ fun InputBar(
                             .background(sendBg)
                             .clickable(enabled = isStreaming || canSend) {
                                 if (editing) {
-                                    // 编辑模式：发送键=保存键
                                     keyboard?.hide()
                                     focus.clearFocus()
                                     onCommitEdit(value)
@@ -529,7 +526,6 @@ fun InputBar(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        // 全屏内主操作键（编辑=保存/正常=发送）
                         val fsCanSend = if (editing) value.trim().isNotEmpty() && enabled
                             else (value.trim().isNotEmpty() || attachments.isNotEmpty()) && !isStreaming && enabled
                         TextButton(

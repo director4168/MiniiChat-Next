@@ -2,8 +2,7 @@
 -keepattributes *Annotation*, InnerClasses, EnclosingMethod, Signature, Exceptions
 
 # Android组件（Application / Activity / Service / Receiver / Provider）
-# 默认proguard-android-optimize.txt应该有这些规则，但AGP 8.13.2+R8激进模式下偶发失效，
-# 显式keep避免ClassNotFoundException启动崩溃。
+# 默认proguard-android-optimize.txt应该有这些规则，但AGP 8.13.2+R8激进模式下偶发失效，显式keep避免ClassNotFoundException启动崩溃
 -keep public class * extends android.app.Application
 -keep public class * extends android.app.Activity
 -keep public class * extends android.app.Service
@@ -13,7 +12,7 @@
 # 自己写的Application类
 -keep class com.miniichatNext.carter.MiniiChatApplication { *; }
 
-# Mermaid WebView 的 JS 桥：@JavascriptInterface 方法名不能被混淆，否则JS调用失败
+# Mermaid WebView的JS桥：@JavascriptInterface方法名不能被混淆，否则JS调用失败
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
@@ -67,6 +66,9 @@
 -dontwarn io.ktor.**
 -dontwarn androidx.compose.ui.tooling.**
 
-# jlatexmath native bridge（jlamex-math-android 内含 native 库，需保留反射入口）
+# jlatexmath native bridge（jlamex-math-android内含native库，需保留反射入口）
 -keep class org.scilab.forge.jlatexmath.** { *; }
 -keep class ru.noties.jlatexmath.** { *; }
+
+# intellij-markdown GFM解析器（元素类型注册表/惰性单例，混淆后AST类型比较可能失效）
+-keep class org.intellij.markdown.** { *; }

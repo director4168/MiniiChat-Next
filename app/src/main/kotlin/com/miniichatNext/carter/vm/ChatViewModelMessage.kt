@@ -20,7 +20,7 @@ import com.miniichatNext.carter.data.model.ToolInvocationState
 import com.miniichatNext.carter.data.workspace.WorkspaceEntity
 import com.miniichatNext.carter.data.workspace.executeWorkspaceTool
 import com.miniichatNext.carter.data.workspace.isWorkspaceTool
-import com.miniichatNext.carter.data.workspace.resolveWorkspaceToolApproval
+import com.miniichatNext.carter.data.workspace.resolveWorkspaceToolApprovalByCategory
 import com.miniichatNext.carter.data.workspace.WORKSPACE_SERVER_ID
 import com.miniichatNext.carter.data.workspace.workspaceToolSpecs
 import com.miniichatNext.carter.debug.DebugLog
@@ -48,20 +48,14 @@ internal fun ChatViewModel.sendMessage(
     val app = getApplication<Application>()
     val current = settings.value
     val assistant = activeAssistant()
+    // store.snapshot()是suspend，sendMessage本身不是suspend——先取内存缓存的conversations StateFlow
+    val conv = conversations.value.firstOrNull { it.id == _activeId.value }
 
-    val provider = assistant?.preferredProviderId
-        ?.let { id -> providers.value.firstOrNull { it.id == id } }
-        ?: activeProvider()
-    if (provider == null) {
-        _error.value = app.getString(com.miniichatNext.carter.R.string.error_no_provider)
-        return
-    }
-
-    val model = assistant?.preferredModel?.takeIf { it.isNotBlank() } ?: current.activeModel
-    if (model.isBlank()) {
-        _error.value = app.getString(com.miniichatNext.carter.R.string.error_no_model)
-        return
-    }
+    val (provider, model) = effectiveConversationModel(conv, assistant, current, providers.value)
+        ?: run {
+            _error.value = app.getString(com.miniichatNext.carter.R.string.error_no_provider)
+            return
+        }
 
     if (provider.apiKey.isBlank()
         && !provider.baseUrl.contains("localhost")
@@ -123,10 +117,12 @@ internal fun ChatViewModel.triggerGeneration(cid: String, reuseMsgId: String? = 
                 reuse = res.msgId
                 if (res.pending.isEmpty()) break
                 // 有pending等待用户操作（审批/澄清选择）：保持忙碌态（按键=停止），等用户处理后重启生成
-                _hasPendingTools.value = true
+                val hasPending = res.pending.any { it.state == ToolInvocationState.PENDING_APPROVAL }
+                _hasPendingTools.value = hasPending
                 _pendingConvId.value = cid
                 if (!executeAutoApprovedTools(cid, res.pending)) {
-                    waitingApproval = true
+                    // 只有确实停在等审批才保留busy；没有待审批说明该结束了
+                    waitingApproval = hasPending
                     break
                 }
             }
@@ -154,18 +150,9 @@ private data class RoundResult(val msgId: String, val pending: List<ToolInvocati
 private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: String?): RoundResult? {
     val conv = store.snapshot().firstOrNull { it.id == cid } ?: return null
     val assistant = assistantForConversation(conv)
-    val provider = assistant?.preferredProviderId
-        ?.let { id -> providers.value.firstOrNull { it.id == id } }
-        ?: activeProvider() ?: run {
+    val (provider, model) = effectiveConversationModel(conv, assistant, settings.value, providers.value) ?: run {
         _error.value = getApplication<Application>()
             .getString(com.miniichatNext.carter.R.string.error_no_provider)
-        return null
-    }
-    val model = assistant?.preferredModel?.takeIf { it.isNotBlank() }
-        ?: settings.value.activeModel
-    if (model.isBlank()) {
-        _error.value = getApplication<Application>()
-            .getString(com.miniichatNext.carter.R.string.error_no_model)
         return null
     }
 
@@ -325,7 +312,12 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
     usage?.let { settingsRepo.addTokenUsage(it) }
     generateTitle()
     // 候选词只在用户打开候选面板时才生成（SuggestionPanel的LaunchedEffect触发）
-    return RoundResult(assistantMsg.id, invocations)
+    // 只返回仍待用户审批的调用：已执行完的（含上一轮续写携带）不能再算pending，
+    // 否则会误判为"等待用户操作"，busy状态永远不清（表现为"已完成仍显示回复中"）
+    return RoundResult(
+        assistantMsg.id,
+        invocations.filter { it.state == ToolInvocationState.PENDING_APPROVAL }
+    )
 }
 
 private suspend fun ChatViewModel.persistAssistantStep(
@@ -502,17 +494,24 @@ private suspend fun ChatViewModel.executeAutoApprovedTools(
 
     for (inv in invocations) {
         if (states[inv.callId] != ToolInvocationState.PENDING_APPROVAL) continue
-        // interactive_clarification默认免审批：自动"执行"（记录调用），真正的用户交互
-        // 发生在InteractiveClarificationCard（渲染与state无关，onApprove提交后继续生成）
+        // 澄清工具：必须等用户在卡片里作答，绝不能自动执行续写（否则AI跳过提问直接回答）
+        if (inv.toolName == "interactive_clarification") {
+            states[inv.callId] = ToolInvocationState.PENDING_APPROVAL
+            continue
+        }
 
         val (enabled, requiresApproval) = if (isWorkspaceTool(inv.toolName)) {
-            // 工作区工具：mcpStore全局开关（内置工具页写的，serverId=workspace）优先覆盖，
-            // 未设置时回退per-workspace overrides→默认表。此前恒enabled且无视设置页开关。
+            // 工作区工具（202610162134三类归并）：mcpStore全局enabled开关；
+            // requiresApproval=类别开关优先→per-tool覆盖→类别默认表
             val perm = perms.firstOrNull {
                 it.toolName == inv.toolName && it.serverId == WORKSPACE_SERVER_ID
             }
             val requires = perm?.requireApproval
-                ?: resolveWorkspaceToolApproval(inv.toolName, workspace?.toolApprovalOverrides().orEmpty())
+                ?: resolveWorkspaceToolApprovalByCategory(
+                    inv.toolName,
+                    workspace?.toolApprovalOverrides().orEmpty(),
+                    workspace?.toolApprovalOverrides().orEmpty(),
+                )
             (perm?.enabled ?: true) to requires
         } else {
             val perm = perms.firstOrNull { it.toolName == inv.toolName }

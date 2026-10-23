@@ -1,4 +1,5 @@
 [versions]
+markdown = "d79a97cc8e"
 agp = "8.13.2"
 kotlin = "2.3.21"
 
@@ -22,8 +23,10 @@ kotlinxSerialization = "1.7.3"
 jlatexmath = "1.5"
 termux = "0.118.0"
 kotlinxCoroutines = "1.9.0"
+jsoup = "1.18.3"
 
 [libraries]
+jetbrains-markdown = { module = "com.github.rikkahub:markdown", version.ref = "markdown" }
 androidx-core-ktx                       = { group = "androidx.core",                name = "core-ktx",                  version.ref = "coreKtx" }
 androidx-activity-compose                = { group = "androidx.activity",            name = "activity-compose",          version.ref = "activityCompose" }
 androidx-lifecycle-runtime-ktx           = { group = "androidx.lifecycle",           name = "lifecycle-runtime-ktx",     version.ref = "lifecycle" }
@@ -64,6 +67,7 @@ ktor-client-logging                     = { group = "io.ktor",                  
 
 kotlinx-serialization-json              = { group = "org.jetbrains.kotlinx",         name = "kotlinx-serialization-json",        version.ref = "kotlinxSerialization" }
 kotlinx-coroutines-android              = { group = "org.jetbrains.kotlinx",         name = "kotlinx-coroutines-android",        version.ref = "kotlinxCoroutines" }
+jsoup                                   = { module = "org.jsoup:jsoup",               version.ref = "jsoup" }
 
 [plugins]
 android-application = { id = "com.android.application",                version.ref = "agp" }

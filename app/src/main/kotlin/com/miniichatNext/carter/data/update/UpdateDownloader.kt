@@ -139,7 +139,6 @@ class UpdateDownloader(
                 onProgress: (Progress) -> Unit,
                 onResult: (Result) -> Unit,
             ): Job = scope.launch(Dispatchers.IO) {
-                // 新下载前删旧包
                 targetFile.parentFile?.listFiles()?.forEach { it.delete() }
                 val downloader = UpdateDownloader(targetFile)
                 val result = downloader.download(context, url, expectedSha256, onProgress)

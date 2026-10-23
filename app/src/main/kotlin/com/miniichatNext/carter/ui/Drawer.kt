@@ -43,6 +43,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.OutlinedTextField
@@ -73,6 +74,7 @@ import com.miniichatNext.carter.ui.markdown.MarkdownText
 fun GlassDrawer(
     conversations: List<Conversation>,
     activeId: String?,
+    busyConversationIds: Set<String> = emptySet(),
     assistants: List<com.miniichatNext.carter.data.model.Assistant>,
     activeAssistantId: String,
     onSelectAssistant: (String) -> Unit,
@@ -204,6 +206,7 @@ fun GlassDrawer(
                             ChatRow(
                                 conv = conv,
                                 selected = conv.id == activeId,
+                                busy = conv.id in busyConversationIds,
                                 onClick = { onSelect(conv.id) },
                                 onRename = { renameTarget = conv },
                                 onDelete = { deleteTarget = conv }
@@ -343,7 +346,8 @@ private fun ChatRow(
     selected: Boolean,
     onClick: () -> Unit,
     onRename: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    busy: Boolean = false
 ) {
     var menuOpen by remember { mutableStateOf(false) }
     val bg = if (selected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent
@@ -357,6 +361,14 @@ private fun ChatRow(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        if (busy) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(14.dp),
+                strokeWidth = 2.dp,
+                color = MaterialTheme.colorScheme.primary,
+            )
+            Spacer(Modifier.width(8.dp))
+        }
         Text(
             conv.title.ifBlank { stringResource(R.string.untitled) },
             modifier = Modifier.weight(1f),
