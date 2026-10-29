@@ -26,6 +26,7 @@ object AppThemeOverrides {
         "surface", "onSurface", "surfaceVariant", "onSurfaceVariant",
         "outline", "outlineVariant",
         "error", "onError",
+        "workspaceWarning", "workspaceDanger", "toastWarningAction",
     )
 
     /** 当前覆盖：{"light": {role: hex}, "dark": {role: hex}}；解析失败返回空 */
@@ -117,9 +118,15 @@ object AppThemeOverrides {
             put("outlineVariant", toHex(scheme.outlineVariant))
             put("error", toHex(scheme.error))
             put("onError", toHex(scheme.onError))
+            put("workspaceWarning", if (dark) "#FFCA5C" else "#8A5A00")
+            put("workspaceDanger", if (dark) "#FFB4AB" else "#BA1A1A")
+            put("toastWarningAction", "#B1A4FF")
         }
     }
 
+
+    fun customColor(overrides: Map<String, String>, role: String, fallback: Color): Color =
+        overrides[role]?.let(::parseHex) ?: fallback
 
     fun parseHex(s: String): Color? = runCatching {
         val v = s.removePrefix("#").removePrefix("0x").removePrefix("0X")

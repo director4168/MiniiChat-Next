@@ -2,6 +2,7 @@ package com.miniichatNext.carter.ui.settings
 
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -66,6 +68,7 @@ import com.miniichatNext.carter.ui.components.SectionCard
 import com.miniichatNext.carter.ui.components.SectionHeader
 import com.miniichatNext.carter.ui.components.SettingsTopBar
 import com.miniichatNext.carter.ui.components.AvatarView
+import java.util.Locale
 
 @Composable
 fun SettingsScreen(
@@ -83,6 +86,7 @@ fun SettingsScreen(
     onOpenAbout: () -> Unit,
     onOpenUpdateSettings: () -> Unit = {},
     onOpenAcknowledgements: () -> Unit = {},
+    onOpenMorePreferences: () -> Unit = {},
     onOpenWorkspace: () -> Unit = {},
     onOpenMcp: () -> Unit = {},
     onOpenBuiltInTools: () -> Unit = {},
@@ -209,6 +213,55 @@ fun SettingsScreen(
                     Icon(Icons.Default.ChevronRight, contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+
+            SectionHeader(stringResource(R.string.section_preferences))
+            SectionCard {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                    Text(stringResource(R.string.setting_appearance), style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.height(8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(stringResource(R.string.setting_dynamic_color), style = MaterialTheme.typography.bodyLarge)
+                            Text(stringResource(R.string.setting_dynamic_color_hint), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = settings.dynamicColor,
+                            onCheckedChange = { value -> onChange { it.copy(dynamicColor = value) } },
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text(stringResource(R.string.setting_theme_mode), style = MaterialTheme.typography.labelLarge)
+                    SegmentedRow(
+                        options = listOf(
+                            "system" to stringResource(R.string.setting_theme_system),
+                            "light" to stringResource(R.string.setting_theme_light),
+                            "dark" to stringResource(R.string.setting_theme_dark),
+                        ),
+                        selectedKey = settings.themeMode,
+                        onSelect = { value -> onChange { it.copy(themeMode = value) } },
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(stringResource(R.string.setting_language), style = MaterialTheme.typography.labelLarge)
+                    SegmentedRow(
+                        options = listOf(
+                            "system" to stringResource(R.string.setting_language_system),
+                            "en" to stringResource(R.string.setting_language_en),
+                            "zh" to stringResource(R.string.setting_language_zh),
+                        ),
+                        selectedKey = settings.language,
+                        onSelect = { value -> onChange { it.copy(language = value) } },
+                    )
+                }
+            }
+            SectionCard {
+                SettingsNavRow(
+                    icon = Icons.Default.Tune,
+                    title = stringResource(R.string.more_preferences_title),
+                    subtitle = stringResource(R.string.more_preferences_sub),
+                    onClick = onOpenMorePreferences,
+                )
             }
 
             SectionHeader(stringResource(R.string.section_behavior))
@@ -355,53 +408,6 @@ fun SettingsScreen(
                             }
                         )
                     }
-                }
-            }
-
-            SectionHeader(stringResource(R.string.setting_appearance))
-            SectionCard {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(stringResource(R.string.setting_dynamic_color),
-                                style = MaterialTheme.typography.bodyLarge)
-                            Text(stringResource(R.string.setting_dynamic_color_hint),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Switch(
-                            checked = settings.dynamicColor,
-                            onCheckedChange = { v ->
-                                onChange { s -> s.copy(dynamicColor = v) }
-                            }
-                        )
-                    }
-                    Spacer(Modifier.height(12.dp))
-                    Text(stringResource(R.string.setting_theme_mode),
-                        style = MaterialTheme.typography.labelLarge)
-                    Spacer(Modifier.height(6.dp))
-                    SegmentedRow(
-                        options = listOf(
-                            "system" to stringResource(R.string.setting_theme_system),
-                            "light" to stringResource(R.string.setting_theme_light),
-                            "dark" to stringResource(R.string.setting_theme_dark)
-                        ),
-                        selectedKey = settings.themeMode,
-                        onSelect = { k -> onChange { s -> s.copy(themeMode = k) } }
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text(stringResource(R.string.setting_language),
-                        style = MaterialTheme.typography.labelLarge)
-                    Spacer(Modifier.height(6.dp))
-                    SegmentedRow(
-                        options = listOf(
-                            "system" to stringResource(R.string.setting_language_system),
-                            "en" to stringResource(R.string.setting_language_en),
-                            "zh" to stringResource(R.string.setting_language_zh)
-                        ),
-                        selectedKey = settings.language,
-                        onSelect = { k -> onChange { s -> s.copy(language = k) } }
-                    )
                 }
             }
 
@@ -600,13 +606,30 @@ private fun TokenStatRow(
             modifier = Modifier.weight(1f)
         )
         Text(
-            "%,d".format(value),
+            formatTokenCount(value),
             style = if (emphasize) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyMedium,
             color = if (emphasize) MaterialTheme.colorScheme.primary
                 else MaterialTheme.colorScheme.onSurfaceVariant,
             fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Normal
         )
     }
+}
+
+internal fun formatTokenCount(value: Int): String {
+    val count = value.coerceAtLeast(0)
+    return when {
+        count >= 1_000_000_000 -> formatScaledTokenCount(count, 100_000_000, "B")
+        count >= 1_000_000 -> formatScaledTokenCount(count, 100_000, "M")
+        else -> "%,d".format(Locale.getDefault(), count)
+    }
+}
+
+private fun formatScaledTokenCount(value: Int, tenthUnit: Int, suffix: String): String {
+    var tenths = (value.toLong() + tenthUnit / 2L) / tenthUnit
+    if (suffix == "M" && tenths >= 10_000L) tenths = 9_999L
+    val whole = tenths / 10
+    val fraction = tenths % 10
+    return if (fraction == 0L) "$whole$suffix" else "$whole.$fraction$suffix"
 }
 
 @Composable
@@ -629,8 +652,14 @@ private fun SegmentedRow(
                     .weight(1f)
                     .clip(RoundedCornerShape(10.dp))
                     .background(
-                        if (selected) MaterialTheme.colorScheme.surface
+                        if (selected) MaterialTheme.colorScheme.primaryContainer
                         else androidx.compose.ui.graphics.Color.Transparent
+                    )
+                    .border(
+                        width = if (selected) 1.dp else 0.dp,
+                        color = if (selected) MaterialTheme.colorScheme.primary
+                        else androidx.compose.ui.graphics.Color.Transparent,
+                        shape = RoundedCornerShape(10.dp),
                     )
                     .clickable { onSelect(key) }
                     .padding(vertical = 8.dp),
@@ -639,7 +668,7 @@ private fun SegmentedRow(
                 Text(
                     label,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = if (selected) MaterialTheme.colorScheme.onSurface
+                    color = if (selected) MaterialTheme.colorScheme.onPrimaryContainer
                     else MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }

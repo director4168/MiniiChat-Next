@@ -5,6 +5,7 @@ import android.widget.Toast
 import com.miniichatNext.carter.data.util.AttachmentImporter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -71,6 +72,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -173,12 +175,16 @@ fun InputBar(
     // 普通lambda没有@Composable上下文。所以把scope提到composable顶层，
     // launcher callback里scope.launch { ... }启动协程。
     val importScope = rememberCoroutineScope()
-    suspend fun doImport(picked: List<Uri>) {
+    val latestAttachments by rememberUpdatedState(attachments)
+    val latestOnAttachmentsChange by rememberUpdatedState(onAttachmentsChange)
+    val importMutex = remember { kotlinx.coroutines.sync.Mutex() }
+    suspend fun doImport(picked: List<Uri>) = importMutex.withLock {
+        val ownerAtStart = latestAttachments.map { it.id }
         val result = withContext(Dispatchers.IO) {
             AttachmentImporter.importAll(
                 context = ctx,
                 uris = picked,
-                existingHashes = attachments.mapNotNull { it.sha256.takeIf { h -> h.isNotBlank() } }.toSet(),
+                existingHashes = latestAttachments.mapNotNull { it.sha256.takeIf { h -> h.isNotBlank() } }.toSet(),
             )
         }
         val msg = buildList {
@@ -217,7 +223,15 @@ fun InputBar(
                             Toast.LENGTH_LONG
                         ).show()
                     }
-                    onAttachmentsChange(attachments + result.added)
+                    val latest = latestAttachments
+                    if (latest.map { it.id } == ownerAtStart) {
+                        latestOnAttachmentsChange(latest + result.added)
+                    } else {
+                        // 导入期间附件列表发生变化，合并到最新列表而不是用过期快照覆盖。
+                        val hashes = latest.mapNotNull { it.sha256.takeIf(String::isNotBlank) }.toSet()
+                        val merged = result.added.filter { it.sha256 !in hashes }
+                        latestOnAttachmentsChange(latest + merged)
+                    }
                 }
     }
 

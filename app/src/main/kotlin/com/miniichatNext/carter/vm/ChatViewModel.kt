@@ -1,5 +1,7 @@
 package com.miniichatNext.carter.vm
 
+import androidx.compose.runtime.Immutable
+
 import android.app.Application
 import com.miniichatNext.carter.R
 import androidx.lifecycle.AndroidViewModel
@@ -11,6 +13,7 @@ import com.miniichatNext.carter.data.store.AssistantStore
 import com.miniichatNext.carter.data.model.Conversation
 import com.miniichatNext.carter.data.store.ConversationStore
 import com.miniichatNext.carter.data.model.ProviderConfig
+import com.miniichatNext.carter.data.model.MessageSegment
 import com.miniichatNext.carter.data.model.ToolInvocationState
 import com.miniichatNext.carter.data.store.ProviderStore
 import com.miniichatNext.carter.data.store.SettingsRepository
@@ -101,8 +104,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     val mcpPerms: StateFlow<List<McpToolPermission>> = mcpStore.permsFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
-    internal val _streamingOverlay = MutableStateFlow<Pair<String, String>?>(null)
-    val streamingOverlay: StateFlow<Pair<String, String>?> = _streamingOverlay.asStateFlow()
+    internal val _streamingOverlay = MutableStateFlow<StreamOverlay?>(null)
+    val streamingOverlay: StateFlow<StreamOverlay?> = _streamingOverlay.asStateFlow()
 
     internal val _activeId = MutableStateFlow<String?>(null)
     val activeId: StateFlow<String?> = _activeId.asStateFlow()
@@ -164,11 +167,21 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     val tempSkillOverrides: StateFlow<Map<String, Map<String, Boolean>>> = _tempSkillOverrides.asStateFlow()
 
     internal var streamingJob: Job? = null
+    internal var taskSession: ChatTaskSession? = null
+    internal val stoppedToolCalls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     init {
         viewModelScope.launch {
             store.migrateAssistantId(settings.value.activeAssistantId)
-            skillStore.refresh()
+            val loadedSkills = skillStore.refresh()
+            // 旧助手可能保存的是技能名称；目录技能现在有稳定id，首次加载时迁移引用。
+            assistantStore.updateAll { assistants ->
+                assistants.map { assistant ->
+                    assistant.copy(enabledSkillIds = assistant.enabledSkillIds.map { value ->
+                        loadedSkills.firstOrNull { it.id == value || it.name == value }?.id ?: value
+                    }.distinct())
+                }
+            }
             workspaceRepository.checkIntegrity()
         }
         pruneOrphanAvatars()
@@ -232,7 +245,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun deleteConversation(id: String) {
         // 删除前先切断该对话的生成与pending工具（停止键同款清理），再落盘删除
-        if (_activeId.value == id) stopStreaming()
+        if (taskSession?.conversationId == id) stopTaskSession()
         viewModelScope.launch {
             store.delete(id)
             if (_activeId.value == id) _activeId.value = null
@@ -244,36 +257,35 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stopStreaming() {
-        streamingJob?.cancel()
+        val session = taskSession ?: return
+        if (session.conversationId == _activeId.value) stopTaskSession()
+    }
+
+    internal fun stopTaskSession() {
+        val session = taskSession ?: return
+        val cid = session.conversationId
+        val callIds = conversations.value.firstOrNull { it.id == cid }?.messages
+            ?.flatMap { it.toolInvocations }?.map { it.callId }?.toSet().orEmpty() + session.toolCallIds()
+        stoppedToolCalls.addAll(callIds)
+        session.cancel()
+        taskSession = null
         streamingJob = null
+        _streamingOverlay.value = null
         _isStreaming.value = false
         _hasPendingTools.value = false
         _streamingConvId.value = null
         _pendingConvId.value = null
-        // 同步把当前对话最后一条assistant消息里未结束的工具调用标成CANCELLED，
-        // 否则UI一直显示"执行中/待审批"的进度条（即使对话已终止）。
-        // 注意：不要覆盖SUCCESS/ERROR/REJECTED——这些是历史上正常收尾的结果。
-        val cid = _activeId.value ?: return
         val stoppedNote = getApplication<Application>().getString(R.string.chat_stopped_tool_note)
         viewModelScope.launch {
             store.updateMessages(cid) { msgs ->
-                if (msgs.isEmpty()) return@updateMessages msgs
-                val lastIdx = msgs.indexOfLast { it.role == "assistant" }
-                if (lastIdx < 0) return@updateMessages msgs
-                val last = msgs[lastIdx]
-                if (last.toolInvocations.isEmpty()) return@updateMessages msgs
-                val cleaned = last.toolInvocations.map { inv ->
-                    when (inv.state) {
-                        ToolInvocationState.EXECUTING,
-                        ToolInvocationState.PENDING_APPROVAL ->
-                            inv.copy(
-                                state = ToolInvocationState.CANCELLED,
-                                error = inv.error ?: stoppedNote,
-                            )
-                        else -> inv
-                    }
+                msgs.map { msg ->
+                    msg.copy(toolInvocations = msg.toolInvocations.map { inv ->
+                        if (inv.callId in callIds && (inv.state == ToolInvocationState.EXECUTING ||
+                                inv.state == ToolInvocationState.PENDING_APPROVAL)) {
+                            inv.copy(state = ToolInvocationState.CANCELLED, error = stoppedNote)
+                        } else inv
+                    })
                 }
-                msgs.toMutableList().also { it[lastIdx] = last.copy(toolInvocations = cleaned) }
             }
         }
     }
@@ -297,3 +309,15 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { settingsRepo.update(transform) }
     }
 }
+
+/**
+ * 流式输出覆盖层：只带目标消息的实时正文/思考/节点，
+ * 聊天列表按消息id分发给对应行，不再每个token复制整份会话。
+ */
+@Immutable
+data class StreamOverlay(
+    val messageId: String,
+    val content: String,
+    val reasoning: String,
+    val parts: List<MessageSegment>,
+)

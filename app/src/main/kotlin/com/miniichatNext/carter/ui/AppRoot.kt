@@ -68,6 +68,8 @@ import com.miniichatNext.carter.ui.provider.ProvidersScreen
 import com.miniichatNext.carter.ui.settings.AboutScreen
 import com.miniichatNext.carter.ui.settings.SettingsScreen
 import com.miniichatNext.carter.ui.settings.UserProfileScreen
+import com.miniichatNext.carter.ui.markdown.LocalMarkdownPreferences
+import com.miniichatNext.carter.ui.markdown.MarkdownPreferences
 import com.miniichatNext.carter.ui.skills.SkillsScreen
 import com.miniichatNext.carter.ui.workspace.WorkspaceDetailScreen
 import com.miniichatNext.carter.ui.workspace.WorkspaceListScreen
@@ -129,7 +131,7 @@ import android.widget.Toast
 /** 路由表：新增页面只需在这里加一项（配合AppNavRegistry可自定义过渡动画） */
 internal enum class Screen {
     Chat, Settings, Providers, ProviderEdit, Assistants, AssistantEdit,
-    Skills, UserProfile, About, Debug, DialogTest, ThemeColors, UpdateSettings, Acknowledgements,
+    Skills, UserProfile, About, Debug, DialogTest, ThemeColors, MorePreferences, UpdateSettings, Acknowledgements,
     Workspace, WorkspaceDetail, WorkspaceTerminal,
     Mcp, McpDetail, McpEdit, McpBuiltIn,
     MermaidPreview
@@ -168,9 +170,7 @@ fun AppRoot(vm: ChatViewModel) {
     // 下载完成后的安装启动（前台自动/待安装态手动共用；失败时转Failed态提示）
     val installFromDownload: (java.io.File) -> Unit = { file ->
         scope.launch {
-            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                com.miniichatNext.carter.data.update.UpdateInstaller.install(context, file)
-            }
+            val ok = com.miniichatNext.carter.data.update.UpdateInstaller.install(context, file)
             if (ok) {
                 updateDownloadState = null
             } else {
@@ -225,7 +225,6 @@ fun AppRoot(vm: ChatViewModel) {
     val pendingConvId by vm.pendingConvId.collectAsState()
     // 忙碌态=生成中或存在等待用户操作的工具调用（审批/澄清）——输入栏按键在此期间保持"停止"
     val toolBusy by vm.hasPendingTools.collectAsState()
-    val streamingOverlay by vm.streamingOverlay.collectAsState()
     val error by vm.error.collectAsState()
     // 终端是全屏工具页：切换对话时自动退回聊天（否则用户无法从终端页切对话）
     LaunchedEffect(activeId) {
@@ -293,15 +292,14 @@ fun AppRoot(vm: ChatViewModel) {
         Toast.makeText(context, context.getString(R.string.copied), Toast.LENGTH_SHORT).show()
     }
     val manageAction: (com.miniichatNext.carter.data.model.ToastItem) -> Unit = { item ->
-        (item.action as? com.miniichatNext.carter.data.model.ToastAction.Manage)?.let { m ->
-            if (m.kind.startsWith("workspace:")) {
-                // 跳到对应工作区的管理页（详情页含Rootfs安装/修复）
+        (item.action as? com.miniichatNext.carter.data.model.ToastAction.Manage)?.let { manage ->
+            if (manage.kind.startsWith("workspace:")) {
                 nav.push(
                     Screen.WorkspaceDetail.name,
-                    mapOf("workspaceId" to m.kind.removePrefix("workspace:")),
+                    mapOf("workspaceId" to manage.kind.removePrefix("workspace:")),
                 )
             } else {
-                gotoSettingsAt(m.kind)
+                gotoSettingsAt(manage.kind)
             }
         }
     }
@@ -329,6 +327,7 @@ fun AppRoot(vm: ChatViewModel) {
                 message = payload.substringAfter(':'),
                 action = com.miniichatNext.carter.data.model.ToastAction.Manage(kind),
                 withDismiss = true,
+                tone = com.miniichatNext.carter.data.model.ToastTone.Warning,
             ))
         }
     }
@@ -346,6 +345,7 @@ fun AppRoot(vm: ChatViewModel) {
                 message = msg,
                 action = com.miniichatNext.carter.data.model.ToastAction.Copy,
                 withDismiss = true,
+                tone = com.miniichatNext.carter.data.model.ToastTone.Error,
             ))
         }
         vm.clearError()
@@ -380,6 +380,13 @@ fun AppRoot(vm: ChatViewModel) {
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalMarkdownPreferences provides MarkdownPreferences(
+                    codeWrap = settings.codeWrap,
+                    codeFold = settings.codeFold,
+                    latexEnabled = settings.latexEnabled,
+                )
+            ) {
             AppNavHost(nav = nav) { key ->
                 when (Screen.entries.firstOrNull { it.name == key.route } ?: Screen.Chat) {
                     Screen.Chat -> {
@@ -420,7 +427,7 @@ fun AppRoot(vm: ChatViewModel) {
                                 activeProvider = activeProvider,
                                 effectiveModelId = effectiveModel?.second ?: "",
                                 isStreaming = conversationBusy,
-                                streamingOverlay = streamingOverlay,
+                                streamingOverlay = vm.streamingOverlay,
                                 assistant = activeAssistant,
                                 userProfile = userProfile,
                                 assistants = assistants,
@@ -457,6 +464,7 @@ fun AppRoot(vm: ChatViewModel) {
                                             ),
                                             action = com.miniichatNext.carter.data.model.ToastAction.Copy,
                                             withDismiss = true,
+                                            tone = com.miniichatNext.carter.data.model.ToastTone.Warning,
                                         ))
                                     } else if (!vm.hasRootfsFor(ws.root)) {
                                         vm.pushToast(com.miniichatNext.carter.data.model.ToastItem(
@@ -467,6 +475,7 @@ fun AppRoot(vm: ChatViewModel) {
                                                 kind = "workspace:" + ws.id
                                             ),
                                             withDismiss = true,
+                                            tone = com.miniichatNext.carter.data.model.ToastTone.Warning,
                                         ))
                                     } else {
                                         DebugLog.i("Nav", "open terminal: root=" + ws.root)
@@ -524,6 +533,7 @@ fun AppRoot(vm: ChatViewModel) {
                             onOpenAbout = { nav.push(Screen.About.name) },
                             onOpenUpdateSettings = { nav.push(Screen.UpdateSettings.name) },
                             onOpenAcknowledgements = { nav.push(Screen.Acknowledgements.name) },
+                            onOpenMorePreferences = { nav.push(Screen.MorePreferences.name) },
                             onOpenWorkspace = { nav.push(Screen.Workspace.name) },
                             onOpenMcp = { nav.push(Screen.Mcp.name) },
                             onOpenBuiltInTools = { nav.push(Screen.McpBuiltIn.name) },
@@ -611,19 +621,11 @@ fun AppRoot(vm: ChatViewModel) {
                     Screen.WorkspaceDetail -> {
                         WorkspaceDetailScreen(
                             repository = vm.workspaceRepository,
-                            workspaceId = nav.current.args["workspaceId"].orEmpty(),
+                            workspaceId = key.args["workspaceId"].orEmpty(),
                             onBack = { nav.back() },
                             onOpenTerminal = {
-                                DebugLog.i("Nav", "+ menu terminal tapped")
-                                // 终端不依赖对话绑定：优先绑定的工作区，否则最近使用的工作区
-                                val wsId = effectiveWorkspaceId(activeConv, activeAssistant)
-                                DebugLog.i(
-                                    "Nav",
-                                    "open terminal: wsId=" + (wsId ?: "unbound") +
-                                        " recentWs=" + (workspaces.maxByOrNull { it.lastAccessAt ?: it.updatedAt }?.root ?: "none")
-                                )
-                                val ws = wsId?.let { id -> workspaces.firstOrNull { it.id == id } }
-                                    ?: workspaces.maxByOrNull { it.lastAccessAt ?: it.updatedAt }
+                                val wsId = key.args["workspaceId"]
+                                val ws = workspaces.firstOrNull { it.id == wsId }
                                 if (ws == null) {
                                     vm.pushToast(com.miniichatNext.carter.data.model.ToastItem(
                                         message = context.getString(
@@ -674,6 +676,13 @@ fun AppRoot(vm: ChatViewModel) {
                         )
                     }
 
+                    Screen.MorePreferences -> {
+                        com.miniichatNext.carter.ui.settings.MorePreferencesScreen(
+                            settings = settings,
+                            onChange = { vm.updateSettings(it) },
+                            onBack = { nav.back() },
+                        )
+                    }
                     Screen.UpdateSettings -> {
                         com.miniichatNext.carter.ui.settings.UpdateSettingsScreen(
                             onBack = { nav.back() },
@@ -797,6 +806,7 @@ fun AppRoot(vm: ChatViewModel) {
             }
 
         }
+    }
     }
 
     // 如果上次运行发生崩溃，再次启动时优先展示崩溃报告页

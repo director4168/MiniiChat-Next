@@ -2,6 +2,7 @@ package com.miniichatNext.carter.data.workspace
 
 import com.miniichatNext.carter.debug.DebugLog
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,6 +33,7 @@ object RootfsInstallManager {
     private const val TAG = "RootfsInstallManager"
     private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val jobs = ConcurrentHashMap<String, Job>()
+    private val starts = ConcurrentHashMap<String, Any>()
     private val _states = MutableStateFlow<Map<String, RootfsInstallState>>(emptyMap())
 
     /** workspaceId->当前安装状态（含终态，待UI消费） */
@@ -41,30 +43,51 @@ object RootfsInstallManager {
 
     /** 启动安装；同一工作区已有任务或url为空时返回false（不重复启动） */
     fun start(repository: WorkspaceRepository, workspaceId: String, url: String): Boolean {
-        if (url.isBlank() || isRunning(workspaceId)) return false
-        _states.update { it + (workspaceId to RootfsInstallState.Running(null)) }
-        jobs[workspaceId] = appScope.launch {
-            try {
-                val ok = repository.installRootfs(workspaceId, url) { p ->
-                    _states.update { it + (workspaceId to RootfsInstallState.Running(p)) }
+        if (url.isBlank()) return false
+        val gate = starts.computeIfAbsent(workspaceId) { Any() }
+        synchronized(gate) {
+            if (isRunning(workspaceId) || WorkspaceRuntimeCoordinator.isBlocked(workspaceId)) return false
+            _states.update { it + (workspaceId to RootfsInstallState.Running(null)) }
+            lateinit var job: Job
+            job = appScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                try {
+                    val ok = repository.installRootfs(workspaceId, url) { progress ->
+                        _states.update { states ->
+                            if (jobs[workspaceId] === job) states + (workspaceId to RootfsInstallState.Running(progress)) else states
+                        }
+                    }
+                    _states.update { states ->
+                        if (jobs[workspaceId] !== job) states
+                        else states + (workspaceId to if (ok) RootfsInstallState.Success
+                        else RootfsInstallState.Failure("Workspace not found: $workspaceId"))
+                    }
+                } catch (e: CancellationException) {
+                    _states.update { states ->
+                        if (jobs[workspaceId] === job) states + (workspaceId to RootfsInstallState.Cancelled) else states
+                    }
+                    throw e
+                } catch (e: Throwable) {
+                    DebugLog.e(TAG, "rootfs install failed: workspace=$workspaceId", e)
+                    _states.update { states ->
+                        if (jobs[workspaceId] === job) states + (workspaceId to RootfsInstallState.Failure(e.message ?: e.javaClass.simpleName)) else states
+                    }
+                } finally {
+                    synchronized(gate) {
+                        jobs.remove(workspaceId, job)
+                        if (!jobs.containsKey(workspaceId)) starts.remove(workspaceId, gate)
+                    }
                 }
-                _states.update {
-                    it + (workspaceId to if (ok) RootfsInstallState.Success
-                    else RootfsInstallState.Failure("Workspace not found: $workspaceId"))
-                }
-            } catch (e: CancellationException) {
-                _states.update { it + (workspaceId to RootfsInstallState.Cancelled) }
-                throw e
-            } catch (e: Throwable) {
-                DebugLog.e(TAG, "rootfs install failed: workspace=$workspaceId", e)
-                _states.update {
-                    it + (workspaceId to RootfsInstallState.Failure(e.message ?: e.javaClass.simpleName))
-                }
-            } finally {
-                jobs.remove(workspaceId)
             }
+            jobs[workspaceId] = job
+            job.start()
+            return true
         }
-        return true
+    }
+
+    suspend fun cancelAndJoin(workspaceId: String) {
+        val gate = starts.computeIfAbsent(workspaceId) { Any() }
+        val job = synchronized(gate) { jobs[workspaceId]?.also { it.cancel() } } ?: return
+        job.join()
     }
 
     /** UI消费完终态后清除（运行中的任务不受影响） */

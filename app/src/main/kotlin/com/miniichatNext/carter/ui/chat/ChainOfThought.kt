@@ -10,7 +10,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -53,6 +52,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -101,6 +101,7 @@ fun ChainOfThought(
     steps: List<ThoughtStep>,
     modifier: Modifier = Modifier,
     collapsedVisibleCount: Int = 2,
+    animateSize: Boolean = true,
     onApprove: ((ToolInvocation, String?) -> Unit)? = null,
     onReject: ((ToolInvocation) -> Unit)? = null,
 ) {
@@ -109,7 +110,6 @@ fun ChainOfThought(
     val canCollapse = steps.size > collapsedVisibleCount
     val visibleSteps = if (expanded || !canCollapse) steps else steps.takeLast(collapsedVisibleCount)
     val lineColor = MaterialTheme.colorScheme.outlineVariant
-
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -120,7 +120,7 @@ fun ChainOfThought(
         Column(
             modifier = Modifier
                 .padding(horizontal = 12.dp, vertical = 6.dp)
-                .animateContentSize()
+                .then(if (animateSize) Modifier.animateContentSize() else Modifier)
         ) {
             if (canCollapse) {
                 Row(
@@ -165,14 +165,21 @@ fun ChainOfThought(
                 }
             ) {
                 Column {
-                    visibleSteps.forEach { step ->
-                        when (step) {
-                            is ThoughtStep.Reasoning -> ReasoningStep(step.text)
-                            is ThoughtStep.Tool -> ToolStep(
-                                invocation = step.invocation,
-                                onApprove = onApprove,
-                                onReject = onReject
-                            )
+                    val startIndex = steps.size - visibleSteps.size
+                    visibleSteps.forEachIndexed { offset, step ->
+                        val stepKey = when (step) {
+                            is ThoughtStep.Reasoning -> "reasoning:${startIndex + offset}"
+                            is ThoughtStep.Tool -> "tool:${step.invocation.callId}"
+                        }
+                        key(stepKey) {
+                            when (step) {
+                                is ThoughtStep.Reasoning -> ReasoningStep(step.text)
+                                is ThoughtStep.Tool -> ToolStep(
+                                    invocation = step.invocation,
+                                    onApprove = onApprove,
+                                    onReject = onReject
+                                )
+                            }
                         }
                     }
                 }
@@ -241,7 +248,6 @@ private fun ReasoningStep(text: String) {
                 text = text,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.heightIn(max = 320.dp).verticalScroll(rememberScrollState())
             )
         } else {
             Text(
@@ -424,6 +430,7 @@ private fun CodeBlock(label: String, text: String) {
                 .clip(RoundedCornerShape(8.dp))
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
                 .heightIn(max = 220.dp)
+                .verticalScroll(rememberScrollState())
                 .padding(vertical = 8.dp)
         ) {
             // 行号栏（固定在左侧，代码横向滚动）
@@ -455,15 +462,15 @@ private fun CodeBlock(label: String, text: String) {
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .horizontalScroll(rememberScrollState())
-                    .verticalScroll(rememberScrollState())
                     .padding(start = 8.dp, end = 8.dp)
             ) {
                 lines.forEach { line ->
                     Text(
-                        text = line,
+                        text = line.ifEmpty { " " },
                         style = codeStyle,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.fillMaxWidth(),
+                        softWrap = true,
                     )
                 }
             }

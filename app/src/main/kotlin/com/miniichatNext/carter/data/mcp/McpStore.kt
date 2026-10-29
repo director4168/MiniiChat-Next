@@ -66,40 +66,41 @@ class McpStore(private val context: Context) {
     }
 
     suspend fun upsertServer(server: McpServerConfig) {
-        val cur = snapshot().toMutableList()
-        val idx = cur.indexOfFirst { it.id == server.id }
-        if (idx >= 0) cur[idx] = server else cur.add(server)
-        saveServers(cur)
+        context.mcpDataStore.edit { prefs ->
+            val cur = decode(prefs[serversKey], McpServerConfig.serializer()).toMutableList()
+            val index = cur.indexOfFirst { it.id == server.id }
+            if (index >= 0) cur[index] = server else cur.add(server)
+            prefs[serversKey] = json.encodeToString(ListSerializer(McpServerConfig.serializer()), cur)
+        }
     }
 
     suspend fun deleteServer(id: String) {
-        saveServers(snapshot().filterNot { it.id == id })
-        saveTools(toolsSnapshot().filterNot { it.serverId == id })
-        savePerms(permsSnapshot().filterNot { it.serverId == id })
+        context.mcpDataStore.edit { prefs ->
+            val servers = decode(prefs[serversKey], McpServerConfig.serializer()).filterNot { it.id == id }
+            val tools = decode(prefs[toolsKey], McpTool.serializer()).filterNot { it.serverId == id }
+            val permissions = decode(prefs[permsKey], McpToolPermission.serializer()).filterNot { it.serverId == id }
+            prefs[serversKey] = json.encodeToString(ListSerializer(McpServerConfig.serializer()), servers)
+            prefs[toolsKey] = json.encodeToString(ListSerializer(McpTool.serializer()), tools)
+            prefs[permsKey] = json.encodeToString(ListSerializer(McpToolPermission.serializer()), permissions)
+        }
     }
 
     suspend fun replaceToolsForServer(serverId: String, tools: List<McpTool>) {
-        val cur = toolsSnapshot().filterNot { it.serverId == serverId }.toMutableList()
-        cur.addAll(tools.map { it.copy(serverId = serverId) })
-        saveTools(cur)
+        context.mcpDataStore.edit { prefs ->
+            val cur = decode(prefs[toolsKey], McpTool.serializer()).filterNot { it.serverId == serverId }
+            prefs[toolsKey] = json.encodeToString(ListSerializer(McpTool.serializer()), cur + tools.map { it.copy(serverId = serverId) })
+        }
     }
 
-    suspend fun setToolPermission(
-        serverId: String,
-        toolName: String,
-        enabled: Boolean,
-        requireApproval: Boolean
-    ) {
-        val cur = permsSnapshot().toMutableList()
-        val idx = cur.indexOfFirst { it.serverId == serverId && it.toolName == toolName }
-        val newPerm = McpToolPermission(
-            serverId = serverId,
-            toolName = toolName,
-            enabled = enabled,
-            requireApproval = requireApproval
-        )
-        if (idx >= 0) cur[idx] = newPerm else cur.add(newPerm)
-        savePerms(cur)
+    suspend fun setToolPermission(serverId: String, toolName: String, enabled: Boolean, requireApproval: Boolean) {
+        context.mcpDataStore.edit { prefs ->
+            val cur = decode(prefs[permsKey], McpToolPermission.serializer()).toMutableList()
+            val index = cur.indexOfFirst { it.serverId == serverId && it.toolName == toolName }
+            val next = McpToolPermission(toolName = toolName, serverId = serverId,
+                enabled = enabled, requireApproval = requireApproval)
+            if (index >= 0) cur[index] = next else cur.add(next)
+            prefs[permsKey] = json.encodeToString(ListSerializer(McpToolPermission.serializer()), cur)
+        }
     }
 
     suspend fun exportFullJson(): String = json.encodeToString(
@@ -108,11 +109,11 @@ class McpStore(private val context: Context) {
     )
 
     suspend fun importFullJson(raw: String) {
-        runCatching {
-            val payload = json.decodeFromString(McpBackupPayload.serializer(), raw)
-            saveServers(payload.servers)
-            saveTools(payload.tools)
-            savePerms(payload.perms)
+        val payload = json.decodeFromString(McpBackupPayload.serializer(), raw)
+        context.mcpDataStore.edit { prefs ->
+            prefs[serversKey] = json.encodeToString(ListSerializer(McpServerConfig.serializer()), payload.servers)
+            prefs[toolsKey] = json.encodeToString(ListSerializer(McpTool.serializer()), payload.tools)
+            prefs[permsKey] = json.encodeToString(ListSerializer(McpToolPermission.serializer()), payload.perms)
         }
     }
 }

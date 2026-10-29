@@ -19,6 +19,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,6 +38,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Image
+
+@Immutable
+data class MarkdownPreferences(
+    val codeWrap: Boolean = true,
+    val codeFold: Boolean = true,
+    val latexEnabled: Boolean = true,
+)
+
+val LocalMarkdownPreferences = staticCompositionLocalOf { MarkdownPreferences() }
 
 /** Markdown的视觉参数 */
 @Immutable

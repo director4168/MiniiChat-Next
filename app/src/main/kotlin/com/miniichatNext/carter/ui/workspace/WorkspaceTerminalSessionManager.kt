@@ -3,6 +3,7 @@ package com.miniichatNext.carter.ui.workspace
 import android.content.Context
 import android.util.Log
 import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.data.workspace.WorkspaceRuntimeCoordinator
 import com.termux.terminal.TerminalSession
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -89,11 +90,17 @@ internal object WorkspaceTerminalSessionManager {
     }
 
     /** 工作区rootfs被替换或删除前停止其全部会话 */
+    internal fun isCreating(root: String): Boolean = synchronized(creationJobs) { creationJobs[root]?.isActive == true }
+
+    internal fun hasSessions(root: String): Boolean = currentState(root).tabs.isNotEmpty()
+
     internal suspend fun closeWorkspace(root: String) = withContext(Dispatchers.Main.immediate) {
-        creationJobs[root]?.cancelAndJoin()
+        val create = synchronized(creationJobs) { creationJobs[root] }
+        create?.cancelAndJoin()
 
         val state = workspaceStates.getAndUpdate { states -> states - root }[root]
-            ?: return@withContext
+        activeModes.remove(root)
+        if (state == null) return@withContext
         state.tabs.forEach { tab ->
             DebugLog.i(TAG, "workspace closed, finishing tab: root=" + root + " tab=" + tab.id)
             tab.client.terminalView = null
@@ -102,21 +109,23 @@ internal object WorkspaceTerminalSessionManager {
     }
 
     private fun launchCreateTab(root: String, onlyIfEmpty: Boolean, shellCompatibilityMode: Boolean) {
-        if (root in creationJobs) return
-
-        lateinit var job: Job
-        job = appScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
-            try {
-                createTabInternal(root = root, onlyIfEmpty = onlyIfEmpty, shellCompatibilityMode = shellCompatibilityMode)
-            } finally {
-                creationJobs.remove(root, job)
+        synchronized(creationJobs) {
+            if (creationJobs[root]?.isActive == true) return
+            lateinit var job: Job
+            job = appScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                try {
+                    createTabInternal(root = root, onlyIfEmpty = onlyIfEmpty, shellCompatibilityMode = shellCompatibilityMode)
+                } finally {
+                    synchronized(creationJobs) { creationJobs.remove(root, job) }
+                }
             }
+            creationJobs[root] = job
+            job.start()
         }
-        creationJobs[root] = job
-        job.start()
     }
 
     private suspend fun createTabInternal(root: String, onlyIfEmpty: Boolean, shellCompatibilityMode: Boolean) = withContext(Dispatchers.Main.immediate) {
+        if (WorkspaceRuntimeCoordinator.isBlocked(root)) return@withContext
         val initialState = currentState(root)
         if (initialState.isCreating) return@withContext
         // 兼容模式变化：旧会话不会应用新模式，必须关闭重建（否则"开了开关没用"）

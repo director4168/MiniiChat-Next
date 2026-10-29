@@ -1,10 +1,13 @@
 package com.miniichatNext.carter.vm
 
 import android.app.Application
+import com.miniichatNext.carter.R
 import androidx.lifecycle.viewModelScope
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.api.ChatMessage
 import com.miniichatNext.carter.data.model.Message
+import com.miniichatNext.carter.data.model.mergeCompressedMessages
+import kotlinx.coroutines.CancellationException
 import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.flow.catch
@@ -27,7 +30,8 @@ internal fun ChatViewModel.resolveModelRef(ref: String): Pair<ProviderConfig, St
 private suspend fun ChatViewModel.runAuxCompletionOnce(
     provider: ProviderConfig,
     model: String,
-    prompt: String
+    prompt: String,
+    conversationId: String?,
 ): String? {
     if (provider.apiKey.isBlank()
         && !provider.baseUrl.contains("localhost")
@@ -36,7 +40,8 @@ private suspend fun ChatViewModel.runAuxCompletionOnce(
         return null
     }
     val current = settings.value
-    val assistant = activeAssistant()
+    val conv = conversations.value.firstOrNull { it.id == conversationId }
+    val assistant = assistants.value.firstOrNull { it.id == conv?.assistantId } ?: activeAssistant()
     val effectiveSettings = current.copy(
         stream = false,
         temperature = assistant?.temperature ?: current.temperature
@@ -50,6 +55,8 @@ private suspend fun ChatViewModel.runAuxCompletionOnce(
             messages = listOf(ChatMessage("user", prompt))
         ).collect { delta -> if (delta.text.isNotEmpty()) sb.append(delta.text) }
         sb.toString().trim().ifBlank { null }
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         // 失败原因留日志（Toast文案保持简洁；排查时看logcat）
         android.util.Log.w("AuxCompletion", "aux model ${provider.name}/$model failed", e)
@@ -63,12 +70,13 @@ private suspend fun ChatViewModel.runAuxCompletionOnce(
  */
 internal suspend fun ChatViewModel.runAuxCompletion(
     modelRef: String,
-    prompt: String
+    prompt: String,
+    conversationId: String? = _activeId.value,
 ): String? {
     val resolved = resolveModelRef(modelRef)
     if (resolved != null) {
         val (provider, model) = resolved
-        val result = runAuxCompletionOnce(provider, model, prompt)
+        val result = runAuxCompletionOnce(provider, model, prompt, conversationId)
         if (result != null) return result
         if (!settings.value.auxFallbackToActive) {
             // 未开启回退：辅助模型失败即失败（不回退到当前模型），留日志说明
@@ -77,13 +85,14 @@ internal suspend fun ChatViewModel.runAuxCompletion(
     }
     if (!settings.value.auxFallbackToActive) return null
     // 回退目标=当前对话实际生效的模型（对话覆盖>助手preferred>全局默认），与生成端同源
-    val conv = conversations.value.firstOrNull { it.id == _activeId.value }
-    val active = effectiveConversationModel(conv, activeAssistant(), settings.value, providers.value)
+    val conv = conversations.value.firstOrNull { it.id == conversationId }
+    val assistant = assistants.value.firstOrNull { it.id == conv?.assistantId } ?: activeAssistant()
+    val active = effectiveConversationModel(conv, assistant, settings.value, providers.value)
     if (active == null) return null
     val (providerCfg, activeModel) = active
     // 辅助模型与当前模型相同则无需重复调用
     if (resolved != null && resolved.first.id == providerCfg.id && resolved.second == activeModel) return null
-    return runAuxCompletionOnce(providerCfg, activeModel, prompt)
+    return runAuxCompletionOnce(providerCfg, activeModel, prompt, conversationId)
 }
 
 
@@ -113,11 +122,12 @@ internal suspend fun ChatViewModel.describeImagesWithOcr(
     }
     val cache = getApplication<Application>()
         .getSharedPreferences(OCR_CACHE_PREFS, android.content.Context.MODE_PRIVATE)
+    val cachePrefix = "ocr_" + sha256Text(ref) + "_"
     val out = mutableMapOf<String, String>()
     val needOcr = mutableListOf<com.miniichatNext.carter.data.model.Attachment>()
     for (att in images) {
         // 第一层快路径：内容sha256（零解码成本）
-        val shaKey = "sha_" + att.sha256.ifBlank { att.uri.hashCode().toString() + "_" + att.sizeBytes }
+        val shaKey = cachePrefix + "sha_" + att.sha256.ifBlank { att.uri.hashCode().toString() + "_" + att.sizeBytes }
         val hit = readOcrCache(cache, shaKey)
         if (hit != null) {
             DebugLog.i("Ocr", "cache hit(sha) ${att.name}")
@@ -143,7 +153,7 @@ internal suspend fun ChatViewModel.describeImagesWithOcr(
         }.getOrNull() ?: continue  // 本图加载失败：只跳过该图，不算模型失败
         val dataUri = "data:${loaded.mimeType};base64,${loaded.base64}"
         // 第二层命中：aHash感知哈希（同图重编码/压缩/去元数据也能命中）
-        val aKey = computeAHash(loaded.base64)?.let { "ahash_$it" }
+        val aKey = computeAHash(loaded.base64)?.let { cachePrefix + "ahash_$it" }
         val aHit = aKey?.let { readOcrCache(cache, it) }
         if (aHit != null) {
             DebugLog.i("Ocr", "cache hit(ahash) ${att.name}")
@@ -171,7 +181,7 @@ internal suspend fun ChatViewModel.describeImagesWithOcr(
         clearOcrFails(ref)
         clearAuxModelFailed(ref)
         DebugLog.i("Ocr", "ocr done ${att.name} (${desc.length} chars)")
-        writeOcrCache(cache, aKey ?: ("sha_" + att.sha256), desc)
+        writeOcrCache(cache, aKey ?: (cachePrefix + "sha_" + att.sha256), desc)
         out[att.id] = formatOcrSegment(att.name, desc)
     }
     return out
@@ -226,6 +236,9 @@ private fun computeAHash(base64: String): String? = runCatching {
     for (i in 0 until 64) if (grays[i] > avg) bits = bits or (1L shl i)
     String.format("%016X", bits)
 }.getOrNull()
+
+private fun sha256Text(value: String): String = java.security.MessageDigest.getInstance("SHA-256")
+    .digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }.take(16)
 
 /** 读OCR缓存条目（ts|text编码，30天TTL；无|的旧格式视为有效并兼容） */
 private fun readOcrCache(cache: android.content.SharedPreferences, key: String): String? {
@@ -302,6 +315,8 @@ private suspend fun ChatViewModel.runOcrCompletion(
             ))
         ).collect { delta -> if (delta.text.isNotEmpty()) sb.append(delta.text) }
         sb.toString().trim().ifBlank { null }
+    } catch (e: CancellationException) {
+        throw e
     } catch (e: Exception) {
         android.util.Log.w("AuxCompletion", "ocr model ${provider.name}/$model failed", e)
         null
@@ -309,8 +324,7 @@ private suspend fun ChatViewModel.runOcrCompletion(
 }
 
 /** 完成一次兑换后，根据第一条对话生成标题 */
-internal fun ChatViewModel.generateTitle() {
-    val convId = _activeId.value ?: return
+internal fun ChatViewModel.generateTitle(convId: String) {
     val conv = conversations.value.firstOrNull { it.id == convId } ?: return
     // 仅在完成第一轮对话（user+assistant各1条=共2条消息）后触发一次；后续该对话不再生成
     if (conv.messages.size != 2) return
@@ -336,12 +350,14 @@ internal fun ChatViewModel.generateTitle() {
             append("Use this language: ").append(locale).append("\n\n")
             append(content)
         }
-        val title = runAuxCompletion(ref, prompt)
+        val title = runAuxCompletion(ref, prompt, convId)
         if (title.isNullOrBlank()) {
             _auxError.trySend("title:" + getApplication<Application>()
                     .getString(com.miniichatNext.carter.R.string.aux_title_failed))
         } else {
-            store.rename(convId, title)
+            store.updateConversation(convId) { current ->
+                if (current.title == conv.title) current.copy(title = title) else current
+            }
         }
     }
 }
@@ -413,7 +429,7 @@ internal fun ChatViewModel.generateSuggestions(anchorMessageId: String, page: In
                 append(content)
             }
             // runAuxCompletion内部尊重回退开关：开启失败回退当前模型，关闭则失败
-            val text = runAuxCompletion(ref, prompt)
+            val text = runAuxCompletion(ref, prompt, convId)
             if (text.isNullOrBlank()) {
                 markAuxModelFailed(ref)
                 _auxError.trySend("suggestion:" + getApplication<Application>()
@@ -427,14 +443,13 @@ internal fun ChatViewModel.generateSuggestions(anchorMessageId: String, page: In
                 .distinct()
                 .take(4)
             if (suggestions.isEmpty()) return@launch
-            val latest = store.snapshot().firstOrNull { it.id == convId } ?: return@launch
-            // 写入(锚点,页)，保留最近4个锚点
-            val updated = LinkedHashMap(latest.chatSuggestionsByMsg)
-            updated[cacheKey] = suggestions
-            val anchorOrder = updated.keys.map { it.substringBeforeLast('#') }.distinct()
-            val keepAnchors = anchorOrder.takeLast(4).toSet()
-            val capped = updated.filterKeys { it.substringBeforeLast('#') in keepAnchors }
-            store.upsert(latest.copy(chatSuggestionsByMsg = capped, updatedAt = System.currentTimeMillis()))
+            store.updateConversation(convId) { current ->
+                if (current.messages.none { it.id == anchorMessageId }) return@updateConversation current
+                val updated = LinkedHashMap(current.chatSuggestionsByMsg)
+                updated[cacheKey] = suggestions
+                val keepAnchors = updated.keys.map { it.substringBeforeLast('#') }.distinct().takeLast(4).toSet()
+                current.copy(chatSuggestionsByMsg = updated.filterKeys { it.substringBeforeLast('#') in keepAnchors })
+            }
         } finally {
             _suggestionsGenerating.value = _suggestionsGenerating.value - cacheKey
         }
@@ -454,17 +469,14 @@ internal fun ChatViewModel.compressContext(targetTokens: Int, keepRecentMessages
     viewModelScope.launch {
         val all = conv.messages
         val messagesToCompress: List<Message>
-        val messagesToKeep: List<Message>
         if (keepRecentMessages > 0 && all.size > keepRecentMessages) {
             messagesToCompress = all.dropLast(keepRecentMessages)
-            messagesToKeep = all.takeLast(keepRecentMessages)
         } else if (keepRecentMessages > 0) {
             _toast.trySend(getApplication<Application>()
                     .getString(com.miniichatNext.carter.R.string.compress_not_enough))
             return@launch
         } else {
             messagesToCompress = all
-            messagesToKeep = emptyList()
         }
 
         val content = messagesToCompress.joinToString("\n\n") { m ->
@@ -483,22 +495,26 @@ internal fun ChatViewModel.compressContext(targetTokens: Int, keepRecentMessages
             }
             append("\n<conversation>\n").append(content).append("\n</conversation>")
         }
-        val summary = runAuxCompletion(ref, prompt) ?: run {
+        val summary = runAuxCompletion(ref, prompt, convId) ?: run {
             _auxError.trySend("compress:" + getApplication<Application>()
                     .getString(com.miniichatNext.carter.R.string.aux_compress_failed))
             return@launch
         }
-        val latest = store.snapshot().firstOrNull { it.id == convId } ?: return@launch
         val summaryMsg = Message(
             id = newId(),
             role = "user",
             content = "[Summary of previous conversation]\n$summary"
         )
-        store.upsert(
-            latest.copy(
-                messages = listOf(summaryMsg) + messagesToKeep,
-                updatedAt = System.currentTimeMillis()
-            )
-        )
+        var committed = false
+        store.updateConversation(convId) { current ->
+            val merged = mergeCompressedMessages(current.messages, messagesToCompress, summaryMsg)
+                ?: return@updateConversation current
+            committed = true
+            current.copy(messages = merged)
+        }
+        if (!committed) {
+            DebugLog.w("ChatVM", "compression source changed; discarded stale summary")
+            _toast.trySend(getApplication<Application>().getString(R.string.compress_source_changed))
+        }
     }
 }

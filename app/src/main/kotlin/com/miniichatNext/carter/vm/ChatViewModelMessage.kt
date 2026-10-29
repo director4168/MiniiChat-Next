@@ -9,6 +9,10 @@ import com.miniichatNext.carter.api.ChatMessage
 import com.miniichatNext.carter.api.ToolCall
 import com.miniichatNext.carter.api.ToolSpec
 import com.miniichatNext.carter.data.mcp.BuiltInFileTools
+import com.miniichatNext.carter.data.mcp.EffectiveToolPermission
+import com.miniichatNext.carter.data.mcp.McpServerConfig
+import com.miniichatNext.carter.data.mcp.exposedMcpToolName
+import com.miniichatNext.carter.data.mcp.resolveToolPermission
 import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.model.Attachment
 import com.miniichatNext.carter.data.model.Conversation
@@ -29,6 +33,10 @@ import com.miniichatNext.carter.data.util.InlineAttachment
 import com.miniichatNext.carter.data.util.PromptVars
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -36,6 +44,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 internal fun ChatViewModel.sendMessage(
     text: String,
@@ -68,30 +78,13 @@ internal fun ChatViewModel.sendMessage(
         return
     }
 
-    val activeAssistantId = current.activeAssistantId
-    viewModelScope.launch {
-        val activeId = _activeId.value ?: newId().also { _activeId.value = it }
-        val existing = store.snapshot().firstOrNull { it.id == activeId && it.assistantId == activeAssistantId }
-        val baseTitle = trimmed.take(30).replace("\n", " ")
+    val activeId = ensureActiveConversationId()
+    val userMsg = Message(id = newId(), role = "user", content = trimmed, attachments = attachments)
+    stopTaskSession()
+    val session = ChatTaskSession(activeId, viewModelScope)
+    taskSession = session
+    launchGeneration(session, null, userMsg, current.activeAssistantId)
 
-        val userMsg = Message(id = newId(), role = "user", content = trimmed, attachments = attachments)
-        val conv = (existing ?: Conversation(id = activeId, title = baseTitle, assistantId = activeAssistantId))
-            .let { c ->
-                c.copy(
-                    title = if (c.messages.isEmpty()) baseTitle else c.title,
-                    messages = c.messages + userMsg,
-                    updatedAt = System.currentTimeMillis()
-                )
-            }
-        store.upsert(conv)
-
-        DebugLog.i(
-            "ChatVM",
-            "send chars=${trimmed.length} atts=${attachments.size} provider=${provider.name} " +
-                "model=$model assistant=$activeAssistantId"
-        )
-        triggerGeneration(activeId)
-    }
 }
 
 /** 从持久化消息重建请求历史并发起流式生成；自动放行的工具会串行执行后继续生成 */
@@ -101,54 +94,95 @@ internal fun ChatViewModel.sendMessage(
  * [reuseMsgId]不为空时会续写那一条助手消息（工具调用后继续生成属于同一轮回复），而不是每条消息开一个新气泡
  */
 internal fun ChatViewModel.triggerGeneration(cid: String, reuseMsgId: String? = null) {
-    streamingJob?.cancel()
-    streamingJob = viewModelScope.launch {
+    stopTaskSession()
+    val session = ChatTaskSession(cid, viewModelScope)
+    taskSession = session
+    launchGeneration(session, reuseMsgId)
+}
+
+private fun ChatViewModel.ownsSession(session: ChatTaskSession): Boolean =
+    taskSession === session && session.isActive
+
+private fun ChatViewModel.launchGeneration(
+    session: ChatTaskSession,
+    reuseMsgId: String?,
+    initialMessage: Message? = null,
+    assistantId: String = settings.value.activeAssistantId,
+) {
+    if (!ownsSession(session)) return
+    val cid = session.conversationId
+    _isStreaming.value = true
+    _streamingConvId.value = cid
+    val job = session.launchGeneration { version ->
         _isStreaming.value = true
         _streamingConvId.value = cid
+        _hasPendingTools.value = false
+        _pendingConvId.value = null
         _streamingOverlay.value = null
-        // 本次执行是否停在"等用户审批"（true=保留busy态；false=流真正结束，清busy）
         var waitingApproval = false
         try {
+            if (initialMessage != null) {
+                val title = initialMessage.content.take(30).replace("\n", " ")
+                store.updateConversation(cid,
+                    create = { Conversation(id = cid, title = title, assistantId = assistantId) },
+                ) { current ->
+                    current.copy(title = if (current.messages.isEmpty()) title else current.title,
+                        messages = current.messages + initialMessage)
+                }
+            }
             var round = 0
             var reuse = reuseMsgId
             while (round < MAX_TOOL_ROUNDS) {
+                currentCoroutineContext().ensureActive()
                 round++
-                val res = runGenerationRound(cid, reuse) ?: return@launch
+                val res = runGenerationRound(cid, reuse) ?: break
                 reuse = res.msgId
                 if (res.pending.isEmpty()) break
-                // 有pending等待用户操作（审批/澄清选择）：保持忙碌态（按键=停止），等用户处理后重启生成
-                val hasPending = res.pending.any { it.state == ToolInvocationState.PENDING_APPROVAL }
-                _hasPendingTools.value = hasPending
-                _pendingConvId.value = cid
                 if (!executeAutoApprovedTools(cid, res.pending)) {
-                    // 只有确实停在等审批才保留busy；没有待审批说明该结束了
-                    waitingApproval = hasPending
+                    val latest = store.snapshot().firstOrNull { it.id == cid }
+                        ?.messages?.firstOrNull { it.id == res.msgId }
+                    waitingApproval = latest?.toolInvocations?.any { it.isUnanswered() } == true
+                    _hasPendingTools.value = waitingApproval
+                    _pendingConvId.value = cid.takeIf { waitingApproval }
                     break
                 }
+                if (round == MAX_TOOL_ROUNDS) {
+                    _error.value = getApplication<Application>().getString(R.string.tool_round_limit)
+                }
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (ownsSession(session)) _error.value = e.message ?: "Request failed"
+            DebugLog.e("ChatVM", "generation failed", e)
         } finally {
-            _streamingOverlay.value = null
-            _isStreaming.value = false
-            _streamingConvId.value = null
-            streamingJob = null
-            // 流真正结束（非等审批）时清busy——否则"回复已结束仍显示未结束"（审批后续写走新一轮，会正常清）
-            if (!waitingApproval) {
-                _hasPendingTools.value = false
-                _pendingConvId.value = null
+            if (ownsSession(session) && session.generationVersion == version) {
+                _streamingOverlay.value = null
+                _isStreaming.value = false
+                _streamingConvId.value = null
+                streamingJob = null
+                _hasPendingTools.value = waitingApproval
+                _pendingConvId.value = cid.takeIf { waitingApproval }
             }
         }
     }
+    streamingJob = job.takeIf { ownsSession(session) && it.isActive }
 }
+
+private fun ToolInvocation.isUnanswered(): Boolean =
+    state == ToolInvocationState.PENDING_APPROVAL || state == ToolInvocationState.EXECUTING
 
 private const val MAX_TOOL_ROUNDS = 8
 /** 流式期间DataStore节流落库间隔（ms）；toolCalls delta在流末尾统一到达，流结束后的强制落库兜底 */
 private const val PERSIST_INTERVAL_MS = 800L
+private const val STREAM_OVERLAY_INTERVAL_MS = 33L
 
 /** 跑一轮流式生成并落库，返回本轮待处理的工具调用；返回null表示无法继续 */
 private data class RoundResult(val msgId: String, val pending: List<ToolInvocation>)
 
 private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: String?): RoundResult? {
     val conv = store.snapshot().firstOrNull { it.id == cid } ?: return null
+    currentCoroutineContext().ensureActive()
     val assistant = assistantForConversation(conv)
     val (provider, model) = effectiveConversationModel(conv, assistant, settings.value, providers.value) ?: run {
         _error.value = getApplication<Application>()
@@ -215,29 +249,58 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
                 existing?.content?.takeIf { it.isNotBlank() }
                     ?.let { add(com.miniichatNext.carter.data.model.MessageSegment.Text(it)) }
             }.toMutableList())
-    /**
-     * 把一段文本/思考按"末尾合并"策略追加到parts：
-     * - 末尾是同类型段→拼接
-     * - 否则→新建一段
-     * 不用inline fun+reified（不能在普通函数里定义inline函数），手工两份版本。
-     */
+    // 先在StringBuilder里聚合delta，避免每个token都复制整个末尾段字符串。
+    val pendingText = StringBuilder()
+    val pendingReasoning = StringBuilder()
+
+    fun flushPendingParts() {
+        if (pendingText.isNotEmpty()) {
+            val last = parts.lastOrNull()
+            if (last is com.miniichatNext.carter.data.model.MessageSegment.Text) {
+                parts[parts.lastIndex] = last.copy(text = last.text + pendingText.toString())
+            } else {
+                parts.add(com.miniichatNext.carter.data.model.MessageSegment.Text(pendingText.toString()))
+            }
+            pendingText.setLength(0)
+        }
+        if (pendingReasoning.isNotEmpty()) {
+            val last = parts.lastOrNull()
+            if (last is com.miniichatNext.carter.data.model.MessageSegment.Reasoning) {
+                parts[parts.lastIndex] = last.copy(text = last.text + pendingReasoning.toString())
+            } else {
+                parts.add(com.miniichatNext.carter.data.model.MessageSegment.Reasoning(pendingReasoning.toString()))
+            }
+            pendingReasoning.setLength(0)
+        }
+    }
+
     fun appendText(chunk: String) {
-        val last = parts.lastOrNull()
-        if (last is com.miniichatNext.carter.data.model.MessageSegment.Text) {
-            parts[parts.lastIndex] = last.copy(text = last.text + chunk)
-        } else {
-            parts.add(com.miniichatNext.carter.data.model.MessageSegment.Text(chunk))
-        }
+        if (pendingReasoning.isNotEmpty()) flushPendingParts()
+        pendingText.append(chunk)
     }
+
     fun appendReasoning(chunk: String) {
-        val last = parts.lastOrNull()
-        if (last is com.miniichatNext.carter.data.model.MessageSegment.Reasoning) {
-            parts[parts.lastIndex] = last.copy(text = last.text + chunk)
-        } else {
-            parts.add(com.miniichatNext.carter.data.model.MessageSegment.Reasoning(chunk))
-        }
+        if (pendingText.isNotEmpty()) flushPendingParts()
+        pendingReasoning.append(chunk)
     }
-    fun mergedParts(): List<com.miniichatNext.carter.data.model.MessageSegment> = parts.toList()
+
+    fun mergedParts(): List<com.miniichatNext.carter.data.model.MessageSegment> {
+        flushPendingParts()
+        return parts.toList()
+    }
+
+    var lastOverlayAt = 0L
+    fun publishOverlay(force: Boolean = false) {
+        val now = SystemClock.elapsedRealtime()
+        if (!force && now - lastOverlayAt < STREAM_OVERLAY_INTERVAL_MS) return
+        lastOverlayAt = now
+        _streamingOverlay.value = StreamOverlay(
+            assistantMsg.id,
+            mergedContent(),
+            mergedReasoning(),
+            mergedParts(),
+        )
+    }
 
     client.chatStream(provider, effectiveSettings, model, apiMessages, tools,
         override = conv.providerOverride(provider.id),
@@ -253,13 +316,15 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
             if (delta.text.isNotEmpty()) {
                 text.append(delta.text)
                 appendText(delta.text)
-                _streamingOverlay.value = assistantMsg.id to mergedContent()
+                publishOverlay()
             }
             if (delta.reasoning.isNotEmpty()) {
                 reasoning.append(delta.reasoning)
                 appendReasoning(delta.reasoning)
+                publishOverlay()
             }
             delta.toolCalls.forEach { tc ->
+                taskSession?.takeIf { it.conversationId == cid }?.rememberTool(tc.id)
                 val idx = invocations.indexOfFirst { it.callId == tc.id }
                 if (idx >= 0) {
                     invocations[idx] = invocations[idx].copy(arguments = tc.argumentsJson)
@@ -273,9 +338,11 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
                         )
                     )
                     // 工具节点：按出现顺序追加；后续同id的delta只更新参数，不再重复append
+                    flushPendingParts()
                     parts.add(com.miniichatNext.carter.data.model.MessageSegment.Tool(tc.id))
                 }
             }
+            if (delta.toolCalls.isNotEmpty()) publishOverlay()
 
             val elapsed = (SystemClock.elapsedRealtime() - startTime).coerceAtLeast(1)
             if (delta.usage != null) usage = delta.usage
@@ -309,8 +376,8 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
         persistAssistantStep(cid, assistantMsg.id, mergedContent(), mergedReasoning(), invocations, usage, orderedParts = mergedParts())
     }
 
-    usage?.let { settingsRepo.addTokenUsage(it) }
-    generateTitle()
+    settingsRepo.addTokenUsage(usage)
+    generateTitle(cid)
     // 候选词只在用户打开候选面板时才生成（SuggestionPanel的LaunchedEffect触发）
     // 只返回仍待用户审批的调用：已执行完的（含上一轮续写携带）不能再算pending，
     // 否则会误判为"等待用户操作"，busy状态永远不清（表现为"已完成仍显示回复中"）
@@ -340,7 +407,7 @@ private suspend fun ChatViewModel.persistAssistantStep(
             ) else m
         }
     }
-    _streamingOverlay.value = msgId to content
+    _streamingOverlay.value = StreamOverlay(msgId, content, reasoning, orderedParts)
 }
 
 internal fun ChatViewModel.approveToolCall(inv: ToolInvocation, customResult: String? = null) {
@@ -354,50 +421,103 @@ internal fun ChatViewModel.rejectToolCall(inv: ToolInvocation) {
 }
 
 internal fun ChatViewModel.approveToolCall(cid: String, inv: ToolInvocation, customResult: String? = null) {
-    viewModelScope.launch {
-        updateToolInvocationState(cid, inv.callId, ToolInvocationState.RUNNING)
-        val result = if (!customResult.isNullOrBlank()) {
-            true to customResult
-        } else {
-            executeTool(cid, inv.toolName, inv.arguments)
+    val session = sessionForApproval(cid, inv.callId) ?: return
+    session.launchTool(inv.callId) {
+        if (!ownsSession(session)) return@launchTool
+        try {
+            val claimed = claimPendingTool(cid, inv.callId, ToolInvocationState.RUNNING) ?: return@launchTool
+            val available = resolveAvailableTool(cid, claimed.toolName)
+            val result = if (!available.permission.enabled) {
+                false to "Tool is disabled or not available in this conversation"
+            } else if (!customResult.isNullOrBlank() && claimed.toolName == "interactive_clarification") {
+                true to customResult
+            } else {
+                executeTool(cid, claimed.toolName, claimed.arguments)
+            }
+            currentCoroutineContext().ensureActive()
+            if (!ownsSession(session)) return@launchTool
+            updateToolInvocationState(cid, inv.callId,
+                if (result.first) ToolInvocationState.SUCCESS else ToolInvocationState.ERROR, result.second)
+            continueIfAllToolsAnswered(session, inv.callId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (ownsSession(session)) {
+                updateToolInvocationState(cid, inv.callId, ToolInvocationState.ERROR, e.message ?: "Tool failed")
+                continueIfAllToolsAnswered(session, inv.callId)
+            }
         }
-        updateToolInvocationState(
-            cid,
-            inv.callId,
-            if (result.first) ToolInvocationState.SUCCESS else ToolInvocationState.ERROR,
-            result.second
-        )
-        continueIfAllToolsAnswered(cid, inv.callId)
     }
 }
 
 internal fun ChatViewModel.rejectToolCall(cid: String, inv: ToolInvocation) {
-    viewModelScope.launch {
-        updateToolInvocationState(cid, inv.callId, ToolInvocationState.REJECTED, "User rejected this tool call.")
-        continueIfAllToolsAnswered(cid, inv.callId)
+    val session = sessionForApproval(cid, inv.callId) ?: return
+    session.launchTool(inv.callId) {
+        if (!ownsSession(session)) return@launchTool
+        try {
+            claimPendingTool(cid, inv.callId, ToolInvocationState.REJECTED) ?: return@launchTool
+            updateToolInvocationState(cid, inv.callId, ToolInvocationState.REJECTED, "User rejected this tool call.")
+            continueIfAllToolsAnswered(session, inv.callId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            if (ownsSession(session)) _error.value = e.message ?: "Tool failed"
+            DebugLog.e("Tool", "reject failed", e)
+        }
     }
 }
 
-/**
- * 同一条助手消息里可能一次返回多个工具调用（有的自动放行、有的要审批）
- * OpenAI/Anthropic都要求assistant.tool_calls后面跟着每一个tool_call_id的响应，少一个就直接400（insufficient tool messages following tool_calls message）
- * 所以只要还有任何一个调用停在待审批，就不能继续生成——等用户处理完最后一个再续写
- */
-private suspend fun ChatViewModel.continueIfAllToolsAnswered(cid: String, callId: String) {
-    if (hasUnansweredToolCalls(cid, callId)) return
-    // 续写回「发起这次工具调用的那条助手消息」，不要新开气泡（对齐rikkahub）
-    val ownerId = store.snapshot().firstOrNull { it.id == cid }
-        ?.messages
-        ?.firstOrNull { msg -> msg.toolInvocations.any { it.callId == callId } }
-        ?.id
-    triggerGeneration(cid, reuseMsgId = ownerId)
+private fun ChatViewModel.sessionForApproval(cid: String, callId: String): ChatTaskSession? {
+    if (callId in stoppedToolCalls) return null
+    val current = taskSession
+    if (current != null && current.isActive) {
+        if (current.conversationId == cid) {
+            current.rememberTool(callId)
+            return current
+        }
+        if (_isStreaming.value || _hasPendingTools.value) return null
+        stopTaskSession()
+    }
+    val pending = conversations.value.firstOrNull { it.id == cid }?.messages
+        ?.flatMap { it.toolInvocations }
+        ?.any { it.callId == callId && it.state == ToolInvocationState.PENDING_APPROVAL } == true
+    if (!pending) return null
+    return ChatTaskSession(cid, viewModelScope).also {
+        taskSession = it
+        it.rememberTool(callId)
+        _hasPendingTools.value = true
+        _pendingConvId.value = cid
+    }
 }
 
-private suspend fun ChatViewModel.hasUnansweredToolCalls(cid: String, callId: String): Boolean {
-    val conv = store.snapshot().firstOrNull { it.id == cid } ?: return false
-    val owner = conv.messages.firstOrNull { msg -> msg.toolInvocations.any { it.callId == callId } }
-        ?: return false
-    return owner.toolInvocations.any { it.state == ToolInvocationState.PENDING_APPROVAL }
+private suspend fun ChatViewModel.claimPendingTool(
+    cid: String,
+    callId: String,
+    state: String,
+): ToolInvocation? {
+    var claimed: ToolInvocation? = null
+    store.updateMessages(cid) { msgs ->
+        msgs.map { msg ->
+            msg.copy(toolInvocations = msg.toolInvocations.map { inv ->
+                if (inv.callId == callId && callId !in stoppedToolCalls &&
+                    inv.state == ToolInvocationState.PENDING_APPROVAL && claimed == null) {
+                    claimed = inv
+                    inv.copy(state = state)
+                } else inv
+            })
+        }
+    }
+    return claimed
+}
+
+private suspend fun ChatViewModel.continueIfAllToolsAnswered(session: ChatTaskSession, callId: String) {
+    val cid = session.conversationId
+    if (!ownsSession(session)) return
+    val owner = store.snapshot().firstOrNull { it.id == cid }?.messages
+        ?.firstOrNull { msg -> msg.toolInvocations.any { it.callId == callId } } ?: return
+    if (owner.toolInvocations.any { it.isUnanswered() || it.state == ToolInvocationState.CANCELLED }) return
+    val batchKey = owner.id + ":" + owner.toolInvocations.joinToString(",") { it.callId }
+    if (session.claimContinuation(batchKey)) launchGeneration(session, owner.id)
 }
 
 private suspend fun ChatViewModel.updateToolInvocationState(
@@ -411,7 +531,8 @@ private suspend fun ChatViewModel.updateToolInvocationState(
             if (msg.toolInvocations.none { it.callId == callId }) msg
             else msg.copy(
                 toolInvocations = msg.toolInvocations.map { inv ->
-                    if (inv.callId == callId) inv.copy(
+                    if (inv.callId == callId && callId !in stoppedToolCalls &&
+                        inv.state != ToolInvocationState.CANCELLED) inv.copy(
                         state = state,
                         result = resultOutput ?: inv.result,
                         error = if (state == ToolInvocationState.ERROR) resultOutput else inv.error
@@ -422,16 +543,19 @@ private suspend fun ChatViewModel.updateToolInvocationState(
     }
 }
 
-/**
- * 是否需要「所有文件访问权限」（MANAGE_EXTERNAL_STORAGE）的工具
- * - shell可访问任意路径→需要
- * - BuiltInFileTools的文件类被safeFile重定向到appFilesDir→不需要
- * - 所有MCP工具保守设为需要（不知MCP server实现细节）
- */
-private fun toolsRequiringAllFilesAccess(toolName: String): Boolean {
+private fun toolTargetsPublicStorage(toolName: String, argsJson: String): Boolean {
     if (toolName == "execute_shell") return true
-    if (com.miniichatNext.carter.data.mcp.BuiltInFileTools.isBuiltIn(toolName)) return false
-    return true
+    if (!BuiltInFileTools.isBuiltIn(toolName)) return false
+    val args = runCatching { AppJson.parseObject(argsJson) }.getOrDefault(JsonObject(emptyMap()))
+    val paths = listOf("path", "from", "to").mapNotNull { key ->
+        args[key]?.jsonPrimitive?.contentOrNull
+    }
+    if (paths.isEmpty()) return true
+    return paths.any { raw ->
+        val path = raw.trim()
+        !path.startsWith("/data/") && !path.startsWith("/proc/") &&
+            !path.startsWith("/system/") && !path.startsWith("/storage/emulated/0/Android/data/")
+    }
 }
 
 private fun hasAllFilesAccessPermission(context: android.content.Context): Boolean {
@@ -443,35 +567,70 @@ private fun hasAllFilesAccessPermission(context: android.content.Context): Boole
     }
 }
 
+private data class AvailableTool(
+    val permission: EffectiveToolPermission,
+    val server: McpServerConfig? = null,
+    val workspaceId: String? = null,
+)
+
+private suspend fun ChatViewModel.resolveAvailableTool(cid: String, name: String): AvailableTool {
+    val disabled = AvailableTool(EffectiveToolPermission(false, true))
+    val conv = store.snapshot().firstOrNull { it.id == cid } ?: return disabled
+    val assistant = assistantForConversation(conv)
+    val perms = mcpStore.permsSnapshot()
+    if (isWorkspaceTool(name)) {
+        val id = effectiveWorkspaceId(conv, assistant) ?: return disabled
+        val workspace = workspaceStore.snapshot().firstOrNull { it.id == id } ?: return disabled
+        val overrides = workspace.toolApprovalOverrides()
+        return AvailableTool(resolveToolPermission(name, WORKSPACE_SERVER_ID, perms, true,
+            categoryApproval = resolveWorkspaceToolApprovalByCategory(name, overrides, overrides)), workspaceId = id)
+    }
+    if (BuiltInFileTools.isBuiltIn(name)) {
+        return AvailableTool(resolveToolPermission(name, "", perms, BuiltInFileTools.defaultRequireApproval(name)))
+    }
+    val ids = effectiveMcpServerIds(conv, assistant)
+    val servers = mcpStore.snapshot().filter { it.enabled && it.id in ids }
+    val allTools = mcpStore.toolsSnapshot().filter { tool -> servers.any { it.id == tool.serverId } }
+    val namespaced = allTools.firstOrNull { exposedMcpToolName(it.serverId, it.name) == name }
+    val rawMatches = allTools.filter { it.name == name }
+    val tool = namespaced ?: rawMatches.singleOrNull() ?: return disabled
+    val server = servers.first { it.id == tool.serverId }
+    return AvailableTool(resolveToolPermission(tool.name, server.id, perms, server.requireApproval), server)
+}
+
 private suspend fun ChatViewModel.executeTool(
     cid: String,
     toolName: String,
     argsJson: String
 ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-    // 工具需要「所有文件访问权限」但用户未授权→设state触发ChatScreen弹窗（ChatViewModelMessage不直接弹）
-    if (toolsRequiringAllFilesAccess(toolName) && !hasAllFilesAccessPermission(getApplication())) {
+    currentCoroutineContext().ensureActive()
+    val resolved = resolveAvailableTool(cid, toolName)
+    if (!resolved.permission.enabled) return@withContext false to "Tool is disabled or not available in this conversation"
+    if (toolTargetsPublicStorage(toolName, argsJson) && !hasAllFilesAccessPermission(getApplication())) {
         requestPermission(toolName)
         return@withContext false to getApplication<Application>().getString(R.string.permission_manage_storage_required)
     }
     try {
         if (isWorkspaceTool(toolName)) {
-            val workspaceId = workspaceIdFor(cid)
+            val workspaceId = resolved.workspaceId
                 ?: return@withContext false to "This assistant is not bound to a workspace"
             val res = executeWorkspaceTool(toolName, argsJson, workspaceId, workspaceRepository)
             return@withContext res.ok to res.content.ifBlank { res.error ?: "" }
         }
 
         if (BuiltInFileTools.isBuiltIn(toolName)) {
-            val res = BuiltInFileTools.execute(getApplication(), toolName, argsJson)
+            val res = runInterruptible(Dispatchers.IO) { BuiltInFileTools.execute(getApplication(), toolName, argsJson) }
             return@withContext res.ok to (if (res.ok) res.content else (res.error ?: "unknown error"))
         }
 
-        val tool = mcpStore.toolsSnapshot().firstOrNull { it.name == toolName && it.serverId.isNotBlank() }
-        val server = mcpStore.snapshot().firstOrNull { it.id == tool?.serverId }
+        val server = resolved.server
             ?: return@withContext false to "No MCP server provides tool $toolName"
-        val res = mcpClient.callTool(server, toolName, argsJson)
+        val rawName = mcpStore.toolsSnapshot().firstOrNull { exposedMcpToolName(it.serverId, it.name) == toolName }?.name ?: toolName
+        val res = mcpClient.callTool(server, rawName, argsJson)
         res.ok to (if (res.ok) res.content
             else (res.error ?: getApplication<Application>().getString(R.string.common_execution_failed)))
+    } catch (e: CancellationException) {
+        throw e
     } catch (t: Throwable) {
         DebugLog.e("Tool", "execute $toolName failed", t)
         false to (t.message ?: t::class.simpleName ?: "error")
@@ -486,78 +645,43 @@ private suspend fun ChatViewModel.executeAutoApprovedTools(
     cid: String,
     invocations: List<ToolInvocation>
 ): Boolean {
-    val workspace = workspaceFor(cid)
-    val perms = mcpStore.permsSnapshot()
-    // 本地跟踪每个调用的状态：invocations是生成时的快照，不会随落库更新
-    val states = invocations.associate { it.callId to it.state }.toMutableMap()
-    var executedAny = false
-
+    var answeredAny = false
     for (inv in invocations) {
-        if (states[inv.callId] != ToolInvocationState.PENDING_APPROVAL) continue
-        // 澄清工具：必须等用户在卡片里作答，绝不能自动执行续写（否则AI跳过提问直接回答）
-        if (inv.toolName == "interactive_clarification") {
-            states[inv.callId] = ToolInvocationState.PENDING_APPROVAL
+        currentCoroutineContext().ensureActive()
+        val resolved = resolveAvailableTool(cid, inv.toolName)
+        if (!resolved.permission.enabled) {
+            if (claimPendingTool(cid, inv.callId, ToolInvocationState.REJECTED) != null) {
+                updateToolInvocationState(cid, inv.callId, ToolInvocationState.REJECTED,
+                    "Tool is disabled or not available in this conversation")
+                answeredAny = true
+            }
             continue
         }
-
-        val (enabled, requiresApproval) = if (isWorkspaceTool(inv.toolName)) {
-            // 工作区工具（202610162134三类归并）：mcpStore全局enabled开关；
-            // requiresApproval=类别开关优先→per-tool覆盖→类别默认表
-            val perm = perms.firstOrNull {
-                it.toolName == inv.toolName && it.serverId == WORKSPACE_SERVER_ID
-            }
-            val requires = perm?.requireApproval
-                ?: resolveWorkspaceToolApprovalByCategory(
-                    inv.toolName,
-                    workspace?.toolApprovalOverrides().orEmpty(),
-                    workspace?.toolApprovalOverrides().orEmpty(),
-                )
-            (perm?.enabled ?: true) to requires
-        } else {
-            val perm = perms.firstOrNull { it.toolName == inv.toolName }
-            // 默认值与内置工具页UI同源（BuiltInFileTools.defaultRequireApproval），
-            // 否则"UI显示需要审批、实际免审批"的双轨不一致
-            (perm?.enabled ?: true) to (
-                perm?.requireApproval
-                    ?: BuiltInFileTools.defaultRequireApproval(inv.toolName)
-            )
-        }
-        if (!enabled || requiresApproval) continue
-
-        states[inv.callId] = ToolInvocationState.RUNNING
-        updateToolInvocationState(cid, inv.callId, ToolInvocationState.RUNNING)
-        DebugLog.i("Tools", "auto-execute: " + inv.toolName)
-        val (ok, output) = executeTool(cid, inv.toolName, inv.arguments)
-        states[inv.callId] = if (ok) ToolInvocationState.SUCCESS else ToolInvocationState.ERROR
-        updateToolInvocationState(
-            cid,
-            inv.callId,
-            if (ok) ToolInvocationState.SUCCESS else ToolInvocationState.ERROR,
-            output
-        )
-        executedAny = true
+        if (inv.toolName == "interactive_clarification" || resolved.permission.requireApproval) continue
+        val claimed = claimPendingTool(cid, inv.callId, ToolInvocationState.RUNNING) ?: continue
+        val (ok, output) = executeTool(cid, claimed.toolName, claimed.arguments)
+        currentCoroutineContext().ensureActive()
+        updateToolInvocationState(cid, inv.callId,
+            if (ok) ToolInvocationState.SUCCESS else ToolInvocationState.ERROR, output)
+        answeredAny = true
     }
-
-    // 只要还有调用停在待审批，就不能续写：缺任何一个tool响应，网关都会直接400
-    val stillPending = states.values.any { it == ToolInvocationState.PENDING_APPROVAL }
-    if (stillPending) {
-        DebugLog.i(
-            "Tools",
-            "waiting user approval: " + states.count { it.value == ToolInvocationState.PENDING_APPROVAL } + " pending"
-        )
-    }
-    return executedAny && !stillPending
+    val ids = invocations.map { it.callId }.toSet()
+    val current = store.snapshot().firstOrNull { it.id == cid }?.messages
+        ?.flatMap { it.toolInvocations }?.filter { it.callId in ids }.orEmpty()
+    return answeredAny && current.none { it.isUnanswered() }
 }
 
 internal fun ChatViewModel.regenerate() {
     val cid = _activeId.value ?: return
+    stopTaskSession()
     viewModelScope.launch {
         val conv = store.snapshot().firstOrNull { it.id == cid } ?: return@launch
         val lastUserIdx = conv.messages.indexOfLast { it.role == "user" }
         if (lastUserIdx < 0) return@launch
-        store.upsert(
-            conv.copy(messages = conv.messages.subList(0, lastUserIdx + 1), updatedAt = System.currentTimeMillis())
-        )
+        store.updateMessages(cid) { current ->
+            val index = current.indexOfLast { it.role == "user" }
+            if (index < 0) current else current.take(index + 1)
+        }
         triggerGeneration(cid)
     }
 }
@@ -568,6 +692,7 @@ internal fun ChatViewModel.regenerate() {
  * 目标为助手消息：连同该消息一起丢掉后重新生成
  */
 internal fun ChatViewModel.regenerateFrom(messageId: String) {
+    stopTaskSession()
     viewModelScope.launch {
         val cid = findConvIdForMessage(messageId) ?: return@launch
         val conv = store.snapshot().firstOrNull { it.id == cid } ?: return@launch
@@ -577,9 +702,10 @@ internal fun ChatViewModel.regenerateFrom(messageId: String) {
         val keep = if (target.role == "user") idx + 1 else idx
         // 截断后必须仍有用户消息，否则没有可重说的内容
         if (keep <= 0 || conv.messages.take(keep).none { it.role == "user" }) return@launch
-        store.upsert(
-            conv.copy(messages = conv.messages.subList(0, keep), updatedAt = System.currentTimeMillis())
-        )
+        store.updateMessages(cid) { current ->
+            val index = current.indexOfFirst { it.id == messageId }
+            if (index < 0) current else current.take(if (target.role == "user") index + 1 else index)
+        }
         triggerGeneration(cid)
     }
 }
@@ -674,25 +800,31 @@ internal suspend fun ChatViewModel.collectToolSpecs(
     assistant: Assistant?,
 ): List<ToolSpec> {
     val specs = mutableListOf<ToolSpec>()
-    BuiltInFileTools.schema(getApplication()).forEach { specs += ToolSpec(it.name, it.description, it.inputSchema) }
+    val perms = mcpStore.permsSnapshot()
+    BuiltInFileTools.schema(getApplication())
+        .filter { resolveToolPermission(it.name, "", perms, BuiltInFileTools.defaultRequireApproval(it.name)).enabled }
+        .forEach { specs += ToolSpec(it.name, it.description, it.inputSchema) }
 
     val enabledServerIds = effectiveMcpServerIds(conv, assistant)
     val servers = mcpStore.snapshot().filter { server ->
         server.enabled && server.id in enabledServerIds
     }
-    val perms = mcpStore.permsSnapshot()
     mcpStore.toolsSnapshot()
         .filter { tool -> servers.any { it.id == tool.serverId } }
         .filter { tool ->
             perms.firstOrNull { it.toolName == tool.name && it.serverId == tool.serverId }?.enabled ?: true
         }
-        .forEach { specs += ToolSpec(it.name, it.description, it.inputSchema) }
+        .forEach { specs += ToolSpec(exposedMcpToolName(it.serverId, it.name), it.description, it.inputSchema) }
 
     val wsId = effectiveWorkspaceId(conv, assistant)
     if (!wsId.isNullOrBlank()) {
-        workspaceToolSpecs().forEach { specs += ToolSpec(it.name, it.description, it.inputSchema) }
+        workspaceToolSpecs()
+            .filter { resolveToolPermission(it.name, WORKSPACE_SERVER_ID, perms, false).enabled }
+            .forEach { specs += ToolSpec(it.name, it.description, it.inputSchema) }
     }
-    return specs
+    val duplicates = specs.groupingBy { it.name }.eachCount().filterValues { it > 1 }.keys
+    if (duplicates.isNotEmpty()) DebugLog.w("Tools", "ambiguous tool names omitted: $duplicates")
+    return specs.filterNot { it.name in duplicates }
 }
 
 private suspend fun ChatViewModel.buildApiMessages(
@@ -705,7 +837,7 @@ private suspend fun ChatViewModel.buildApiMessages(
     val resolver = app.contentResolver
     val messages = mutableListOf<ChatMessage>()
 
-    val enabledSkills = activeEnabledSkills(assistant)
+    val enabledSkills = activeEnabledSkills(assistant, conv.id)
     val skillsBlock = if (enabledSkills.isEmpty()) "" else buildString {
         append("\n\n# Active Skills\n")
         enabledSkills.forEach { s ->
@@ -726,6 +858,7 @@ private suspend fun ChatViewModel.buildApiMessages(
 
     val truncatedNames = mutableListOf<String>()
     val notInlinedNames = mutableListOf<String>()
+    val readFailedNames = mutableListOf<String>()
 
     for (msg in conv.messages) {
         when (msg.role) {
@@ -770,7 +903,11 @@ private suspend fun ChatViewModel.buildApiMessages(
                                 uri = android.net.Uri.parse(att.uri),
                                 mimeFallback = att.mimeType.ifBlank { "image/jpeg" }
                             )
-                        }.getOrNull() ?: continue
+                        }.getOrNull()
+                        if (loaded == null) {
+                            readFailedNames += att.name
+                            continue
+                        }
                         parts.add(
                             com.miniichatNext.carter.api.ChatPart.ImageUrl(
                                 com.miniichatNext.carter.api.ChatPart.ImageUrl.ImageUrlData(
@@ -863,6 +1000,8 @@ private suspend fun ChatViewModel.buildApiMessages(
             add(app.getString(R.string.attachment_list_truncated, truncatedNames.joinToString(listSeparator)))
         if (notInlinedNames.isNotEmpty())
             add(app.getString(R.string.attachment_list_not_inlined, notInlinedNames.joinToString(listSeparator)))
+        if (readFailedNames.isNotEmpty())
+            add(app.getString(R.string.attachment_read_failed, readFailedNames.joinToString(listSeparator)))
     }
     if (notes.isNotEmpty()) {
         _toast.trySend(app.getString(

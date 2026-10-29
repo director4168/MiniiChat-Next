@@ -44,6 +44,8 @@ sealed class UpdateDownloadState {
     data class ReadyToInstall(
         val version: String,
         val file: File,
+        val downloadLocation: String? = null,
+        val publishedToDownloads: Boolean = false,
     ) : UpdateDownloadState()
 
     data class Failed(
@@ -51,6 +53,7 @@ sealed class UpdateDownloadState {
         val message: String,
         /** SHA校验失败时保留文件，可"强制安装"；HTTP/网络错误为null */
         val file: File? = null,
+        val downloadLocation: String? = null,
     ) : UpdateDownloadState()
 }
 
@@ -77,29 +80,28 @@ fun startUpdateDownload(
             url = info.DownloadUrl,
             targetFile = apkFile,
             expectedSha256 = info.SHA256,
-            onProgress = { p -> onState(UpdateDownloadState.Downloading(version, p)) },
+            onProgress = { p ->
+                scope.launch(Dispatchers.Main.immediate) {
+                    onState(UpdateDownloadState.Downloading(version, p))
+                }
+            },
             onResult = { result ->
                 com.miniichatNext.carter.debug.DebugLog.i("Update", "download result: " + result::class.simpleName)
                 when (result) {
                     is UpdateDownloader.Result.Success -> {
-                        // 移入系统Download目录（带版本号），清理旧版本安装包与缓存中间文件
-                        val finalFile = try {
-                            val final = com.miniichatNext.carter.data.update.UpdateInstaller
-                                .downloadsApk(context, version)
-                            result.apkFile.copyTo(final, overwrite = true)
-                            result.apkFile.delete()
-                            com.miniichatNext.carter.data.update.UpdateInstaller
-                                .cleanOldDownloads(context, final)
-                            final
-                        } catch (t: Throwable) {
-                            com.miniichatNext.carter.debug.DebugLog.e("Update", "move to Downloads failed", t)
-                            result.apkFile
-                        }
-                        if (AppForeground.isForeground()) {
-                            onInstallNow(finalFile)
-                        } else {
-                            com.miniichatNext.carter.debug.DebugLog.i("Update", "background, wait for manual install")
-                            onState(UpdateDownloadState.ReadyToInstall(version, finalFile))
+                        scope.launch(Dispatchers.IO) {
+                            val published = runCatching {
+                                UpdateInstaller.publishToDownloads(context, result.apkFile, version)
+                            }.onFailure { com.miniichatNext.carter.debug.DebugLog.e("Update", "publish update to Downloads failed", it) }
+                            val location = published.getOrNull()
+                            withContext(Dispatchers.Main) {
+                                if (AppForeground.isForeground()) onInstallNow(result.apkFile)
+                                else {
+                                    com.miniichatNext.carter.debug.DebugLog.i("Update", "background, wait for manual install")
+                                    onState(UpdateDownloadState.ReadyToInstall(version, result.apkFile, location,
+                                        publishedToDownloads = published.isSuccess && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q))
+                                }
+                            }
                         }
                     }
                     is UpdateDownloader.Result.Failure -> {
@@ -168,11 +170,14 @@ fun UpdateDownloadDialog(
                         }
                     }
                     is UpdateDownloadState.ReadyToInstall -> {
-                        Text(
-                            text = state.version,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        Text(text = state.version, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        state.downloadLocation?.let { location ->
+                            Text(text = stringResource(
+                                if (state.publishedToDownloads) R.string.update_saved_location else R.string.update_saved_copy,
+                                location), style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                     is UpdateDownloadState.Failed -> {
                         Text(

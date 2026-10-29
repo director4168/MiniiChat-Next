@@ -108,7 +108,7 @@ internal data class ChatChunk(
 
     @Serializable
     data class ToolCallChunk(
-        val index: Int,
+        val index: Int = 0,
         val id: String? = null,
         val type: String? = null,
         val function: FunctionCall? = null,
@@ -123,8 +123,16 @@ internal data class ChatChunk(
     @Serializable
     data class ResponseMessage(
         val role: String = "assistant",
-        val content: String = "",
-        @SerialName("tool_calls") val toolCalls: List<ToolCallChunk>? = null,
+        val content: String? = "",
+        @SerialName("tool_calls") val toolCalls: List<NonStreamToolCall>? = null,
+        @SerialName("reasoning_content") val reasoningContent: String? = null,
+    )
+
+    @Serializable
+    data class NonStreamToolCall(
+        val id: String? = null,
+        val type: String? = null,
+        val function: FunctionCall? = null,
     )
 
     @Serializable
@@ -137,9 +145,15 @@ internal data class ChatChunk(
 
 @Serializable
 internal data class ChatResponse(
-    val choices: List<ChatChunk.Choice> = emptyList(),
+    val choices: List<Choice> = emptyList(),
     val usage: ChatChunk.UsageDto? = null,
-)
+) {
+    @Serializable
+    data class Choice(
+        val message: ChatChunk.ResponseMessage? = null,
+        @SerialName("finish_reason") val finishReason: String? = null,
+    )
+}
 
 @Serializable
 internal data class ModelEntry(val id: String)

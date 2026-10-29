@@ -7,7 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -88,7 +89,6 @@ internal fun AssistantRow(
 
     Column(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            // 助手消息头像：渲染真实助手头像
             com.miniichatNext.carter.ui.components.AvatarView(
                 avatar = avatar,
                 fallbackInitial = "M",
@@ -116,10 +116,16 @@ internal fun AssistantRow(
             // 连续的Reasoning/Tool段→包成一张ChainOfThought卡片（带collapse+时间线）
             // 旧消息（orderedParts空）：保留原有COT卡片在上的布局，避免改动历史体验
             if (message.orderedParts.isNotEmpty()) {
-                val toolById = message.toolInvocations.associateBy { it.callId }
+                val toolById = remember(message.toolInvocations) {
+                    message.toolInvocations.associateBy { it.callId }
+                }
                 // callId去重：数据层任何时候出现重复Tool段，只有首个渲染成工具卡，其余跳过
                 val seenCallIds = mutableSetOf<String>()
-                val lastTextIdx = message.orderedParts.indexOfLast { it is com.miniichatNext.carter.data.model.MessageSegment.Text }
+                val lastTextIdx = remember(message.orderedParts) {
+                    message.orderedParts.indexOfLast {
+                        it is com.miniichatNext.carter.data.model.MessageSegment.Text
+                    }
+                }
                 val parts = message.orderedParts
                 var i = 0
                 while (i < parts.size) {
@@ -142,6 +148,7 @@ internal fun AssistantRow(
                         val clusterStart = i
                         while (i < parts.size && parts[i] !is com.miniichatNext.carter.data.model.MessageSegment.Text) i++
                         val cluster = parts.subList(clusterStart, i)
+                        key("cluster:$clusterStart") {
                         // 拆成(思考/澄清)和(工具/批)两组，分别渲染
                         val cotSteps = buildList<ThoughtStep> {
                             cluster.forEach { s ->
@@ -164,6 +171,7 @@ internal fun AssistantRow(
                         if (cotSteps.isNotEmpty()) {
                             ChainOfThought(
                                 steps = cotSteps,
+                                animateSize = !(isLastAssistant && isStreaming),
                                 onApprove = onApproveTool,
                                 onReject = onRejectTool
                             )
@@ -182,6 +190,7 @@ internal fun AssistantRow(
                                 }
                             }
                         }
+                        }
                     }
                 }
             } else {
@@ -197,6 +206,7 @@ internal fun AssistantRow(
                 if (steps.isNotEmpty()) {
                     ChainOfThought(
                         steps = steps,
+                        animateSize = !(isLastAssistant && isStreaming),
                         onApprove = onApproveTool,
                         onReject = onRejectTool
                     )
@@ -318,6 +328,7 @@ private fun TextBubble(
     onFullscreen: ((String, Boolean) -> Unit)? = null,
     // 流式生成期间关闭文本选择：内容高频重排，选择器会频繁注册/注销拖慢渲染
     selectable: Boolean = true,
+    // 流式期间也走Markdown，解析器使用conflate丢弃过时快照。
 ) {
     Box(
         modifier = Modifier
@@ -356,10 +367,11 @@ private fun TextBubble(
  */
 @Composable
 private fun StepRow(
+    modifier: Modifier = Modifier,
     icon: @Composable () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
+    Row(modifier = modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
         Box(
             modifier = Modifier
                 .width(24.dp)
@@ -416,7 +428,6 @@ private fun ReasoningBlock(text: String) {
                 text = text,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.heightIn(max = 320.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())
             )
         } else {
             Text(
@@ -614,6 +625,7 @@ private fun StepCodeBlock(label: String, text: String) {
                 .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f))
                 .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
                 .heightIn(max = 220.dp)
+                .verticalScroll(rememberScrollState())
                 .padding(vertical = 8.dp)
         ) {
             val gutterDivider = MaterialTheme.colorScheme.outlineVariant
@@ -643,15 +655,15 @@ private fun StepCodeBlock(label: String, text: String) {
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .horizontalScroll(androidx.compose.foundation.rememberScrollState())
-                    .verticalScroll(androidx.compose.foundation.rememberScrollState())
                     .padding(start = 8.dp, end = 8.dp)
             ) {
                 lines.forEach { line ->
                     Text(
-                        text = line,
+                        text = line.ifEmpty { " " },
                         style = codeStyle,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.fillMaxWidth(),
+                        softWrap = true,
                     )
                 }
             }

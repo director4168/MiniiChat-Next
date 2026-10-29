@@ -40,7 +40,7 @@ The AGPL-3.0 copyleft requirement is satisfied by:
 
 1. The full text of the license in [`LICENSE`](LICENSE).
 2. This AGPL_NOTICE.md file.
-3. The package metadata (`app/build.gradle.kts`: `versionName = "1.5.0-beta"`)
+3. The package metadata (`app/build.gradle.kts`: `versionName = "v1.5.0-beta.3"`)
    and APK artifact publication under the same license.
 
 Minis233/miniichat code that has been further rewritten in this fork
@@ -175,6 +175,18 @@ modules resolved to different major versions.
 | `vm/ChatViewModelMessage.kt` (`triggerGeneration` / `approveToolCall` / `rejectToolCall` / `executeAutoApprovedTools` / `executeTool`) | `vm/ChatViewModelMessage.kt` — same approval state machine; adapted to this fork's `store` / skills / attachment inlining / aux-model plumbing, and auto-approved tools are executed serially before a single follow-up generation (avoiding concurrent `triggerGeneration` cancellation). `buildApiMessages` also **unconditionally** emits a `tool` role message for every tool_call_id (including pending-approval ones) so the gateway never 400s on an "assistant with tool_calls followed by non-tool". |
 | `ui/chat/ToolInvocationCard.kt` (Flutter prototype) | **Replaced by** `ui/chat/ChainOfThought.kt` (a RikkaHub-style timeline card: each step is either `Reasoning` or `Tool`, default-collapsed to the last 2, expandable) **plus** an inline `InteractiveClarificationCard` for the `interactive_clarification` tool (it has to be filled in, so it doesn't belong inside the step stream). `McpToolResult` returns are wrapped by `vm/ChatViewModelMessage.appendToolMessage`. |
 | `ui/mcp/McpScreens.kt` | `ui/mcp/McpScreens.kt` (server list / add / edit dialog / detail with per-tool enable & approval / built-in tool screen). Server addition accepts custom headers (RikkaHub's behaviour). Built-in tools are presented as a separate page with a per-tool enable toggle. The UI copy is fully localized via `R.string.*` resources in both English and Chinese. |
+
+#### Audit hardening (2026-10-24)
+
+This fork adds `vm/ChatTaskSession.kt` for generation/tool cancellation ownership,
+`data/mcp/ToolPermissionResolver.kt` for consistent enable/approval resolution,
+and `data/model/ConversationMutations.kt` for conflict-checked compression commits.
+Conversation and configuration read-modify-write operations now run inside storage
+transactions. The built-in shell reuses the bounded concurrent stream collectors
+from `WorkspaceShellRunner`; rootfs patching no longer deletes APT lock files or
+partial downloads during normal shell/terminal startup. Workspace approval controls
+are consolidated in the per-workspace category settings. These changes are local
+fork additions and refinements to the upstream-derived modules, not verbatim ports.
 
 ### 3.7 `ui/markdown/` — GFM markdown rendering library (RikkaHub, ported wholesale)
 

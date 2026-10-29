@@ -15,15 +15,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.isSystemInDarkTheme
+import com.miniichatNext.carter.util.AppThemeOverrides
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -32,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.model.ToastAction
 import com.miniichatNext.carter.data.model.ToastItem
+import com.miniichatNext.carter.data.model.ToastTone
 import kotlinx.coroutines.delay
 
 private const val TOAST_SHOW_MS = 2000L
@@ -121,12 +126,24 @@ private fun ToastCard(
     onAction: () -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val dark = isSystemInDarkTheme()
+    val overrideVersion = AppThemeOverrides.version.intValue
+    val overrides = remember(overrideVersion, dark) {
+        AppThemeOverrides.load(context)[if (dark) "dark" else "light"].orEmpty()
+    }
+    val warningActionColor = AppThemeOverrides.customColor(
+        overrides,
+        "toastWarningAction",
+        Color(0xFFB1A4FF),
+    )
+    val actionColor = if (item.tone == ToastTone.Normal) Color(0xFF4DD0E1) else warningActionColor
     Snackbar(
         // 固定深色配色（不随主题反转）：黑底白字，两种主题下观感一致
         containerColor = Color(0xE6222226),
         contentColor = Color(0xFFF2F1F7),
         // 青色调：与灰底对比更清晰（原浅紫与灰底不够突出）
-        actionContentColor = Color(0xFF4DD0E1),
+        actionContentColor = actionColor,
         dismissActionContentColor = Color(0xFFF2F1F7),
         shape = RoundedCornerShape(12.dp),
         action = {
@@ -134,7 +151,10 @@ private fun ToastCard(
                 is ToastAction.Copy -> TextButton(onClick = onAction) {
                     Text(stringResource(R.string.copy))
                 }
-                is ToastAction.Manage -> TextButton(onClick = onAction) {
+                is ToastAction.Manage -> TextButton(
+                    onClick = onAction,
+                    colors = ButtonDefaults.textButtonColors(contentColor = actionColor),
+                ) {
                     Text(stringResource(R.string.manage))
                 }
                 ToastAction.None -> {}

@@ -41,6 +41,9 @@ class UserProfileStore(private val context: Context) {
     }
 
     suspend fun update(transform: (UserProfile) -> UserProfile) {
-        save(transform(snapshot()))
+        context.userProfileDataStore.edit { prefs ->
+            val current = prefs[key]?.let { json.decodeFromString(UserProfile.serializer(), it) } ?: UserProfile()
+            prefs[key] = json.encodeToString(UserProfile.serializer(), transform(current))
+        }
     }
 }

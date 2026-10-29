@@ -6,6 +6,7 @@ import android.net.Uri
 import android.util.Log
 import com.miniichatNext.carter.data.model.Attachment
 import java.security.MessageDigest
+import java.util.UUID
 
 /**
  * 把picker返回的URI登记为附件：不复制文件，直接指向原始位置（content://）。
@@ -53,6 +54,10 @@ object AttachmentImporter {
                     continue
                 }
 
+                val persisted = runCatching {
+                    resolver.takePersistableUriPermission(uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    true
+                }.getOrDefault(false)
                 val mime = resolver.getType(uri)
                     ?: guessMimeByName(name)
                     ?: "application/octet-stream"
@@ -70,10 +75,20 @@ object AttachmentImporter {
                     continue
                 }
 
-                // 直接指向原始位置，不复制到私有目录
+                // 非persistable picker权限立即落应用私有副本，历史消息重启后仍可读取。
+                val original = uri.toString()
+                val stableUri = if (persisted) original else {
+                    val safeName = name.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "attachment" }
+                    val copy = java.io.File(context.filesDir, "uploads").apply { mkdirs() }
+                        .resolve(UUID.randomUUID().toString() + "_" + safeName)
+                    copy.writeBytes(bytes)
+                    android.net.Uri.fromFile(copy).toString()
+                }
                 added += Attachment(
                     type = if (isImage) "image" else "file",
-                    uri = uri.toString(),
+                    uri = stableUri,
+                    originalUri = original,
+                    persistedPermission = persisted,
                     mimeType = mime,
                     name = name,
                     sizeBytes = declaredSize,

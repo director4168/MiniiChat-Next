@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -73,7 +74,9 @@ internal fun MarkdownBlocks(
         verticalArrangement = Arrangement.spacedBy(spacing),
     ) {
         blocks.fastForEachIndexed { index, block ->
-            MarkdownBlockNode(block = block, first = index == 0)
+            key("block:$index") {
+                MarkdownBlockNode(block = block, first = index == 0)
+            }
         }
     }
 }

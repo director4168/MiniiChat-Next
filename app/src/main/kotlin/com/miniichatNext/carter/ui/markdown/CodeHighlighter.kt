@@ -2,6 +2,7 @@ package com.miniichatNext.carter.ui.markdown
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import android.util.LruCache
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -10,6 +11,9 @@ import com.miniichatNext.carter.ui.markdown.lang.ALL_LANGUAGES
 import com.miniichatNext.carter.ui.markdown.lang.LangRules
 
 private class Span(val start: Int, val end: Int, val style: SpanStyle)
+
+private data class HighlightKey(val code: String, val lang: String, val palette: HighlightPalette)
+private val highlightCache = object : LruCache<HighlightKey, AnnotatedString>(24) {}
 
 /** #RGB/ #RRGGBB/ #RRGGBBAA（matchAt从#处开始匹配） */
 private val HEX_COLOR_REGEX = Regex("#[0-9a-fA-F]{8}|#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}(?![0-9a-fA-F])")
@@ -43,9 +47,11 @@ private fun contrastingBg(argb: Int): androidx.compose.ui.graphics.Color {
 }
 
 internal fun highlightCode(code: String, lang: String, palette: HighlightPalette): AnnotatedString {
+    val key = HighlightKey(code, lang.lowercase(), palette)
+    synchronized(highlightCache) { highlightCache.get(key)?.let { return it } }
     val rules = ALL_LANGUAGES[lang.lowercase()] ?: return AnnotatedString(code)
     val spans = scan(code, rules, palette)
-    if (spans.isEmpty()) return AnnotatedString(code)
+    if (spans.isEmpty()) return AnnotatedString(code).also { synchronized(highlightCache) { highlightCache.put(key, it) } }
     return buildAnnotatedString {
         var cursor = 0
         spans.forEach { span ->
@@ -58,7 +64,7 @@ internal fun highlightCode(code: String, lang: String, palette: HighlightPalette
             cursor = span.end
         }
         if (cursor < code.length) append(code.substring(cursor))
-    }
+    }.also { synchronized(highlightCache) { highlightCache.put(key, it) } }
 }
 
 private fun scan(code: String, rules: LangRules, palette: HighlightPalette): List<Span> {

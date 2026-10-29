@@ -35,49 +35,99 @@ class ProviderStore(private val context: Context) {
             runCatching { decode(raw) }
                 .getOrDefault(emptyList())
                 // API Key在磁盘上是密文，读出来给上层用之前解密
-                .map { it.copy(apiKey = ApiKeyCrypto.decrypt(it.apiKey)) }
+                .map(::decryptProvider)
         }
 
     suspend fun snapshot(): List<ProviderConfig> = providersFlow.first()
 
-    suspend fun save(list: List<ProviderConfig>) {
-        com.miniichatNext.carter.debug.DebugLog.d(
-            "Store", "providers.save count=${list.size} ids=${list.map { it.id }}"
-        )
+    private fun storedProviders(prefs: Preferences): List<ProviderConfig> =
+        prefs[key]?.let { decode(it) }.orEmpty()
 
-        // 解密失败（Keystore密钥丢失或变更）时decrypt会返回空串。若直接回写，
-        // 就会用空值覆盖掉原来的密文——用户只是改个别的设置，API Key就被永久毁掉了。
-        // 所以这里对「新值为空、旧密文非空」的项保留旧密文。
-        val storedById: Map<String, ProviderConfig> = runCatching {
-            val raw = context.providersDataStore.data.first()[key]
-            if (raw.isNullOrBlank()) emptyMap() else decode(raw).associateBy { it.id }
-        }.getOrDefault(emptyMap())
+    private fun protectHeaders(headers: Map<String, String>): Map<String, String> = headers.mapValues { (_, value) ->
+        val encrypted = ApiKeyCrypto.encrypt(value)
+        if (value.isNotEmpty() && encrypted.isEmpty()) error("Header encryption is unavailable")
+        encrypted
+    }
 
-        val encoded = list.map { p ->
-            val previous = storedById[p.id]?.apiKey
-            if (p.apiKey.isEmpty() && !previous.isNullOrEmpty()) {
-                com.miniichatNext.carter.debug.DebugLog.w(
-                    "Store", "providers.save keep stored cipher for id=${p.id} (plaintext empty)"
-                )
-                p.copy(apiKey = previous)
-            } else {
-                p.copy(apiKey = ApiKeyCrypto.encrypt(p.apiKey))
-            }
+    private fun revealHeaders(headers: Map<String, String>): Map<String, String> = headers.mapValues { (_, value) ->
+        ApiKeyCrypto.decrypt(value)
+    }
+
+    private fun protectProvider(provider: ProviderConfig, previous: ProviderConfig?): ProviderConfig {
+        val preserveOldKey = !provider.apiKeyCleared && provider.apiKey.isEmpty() &&
+            !previous?.apiKey.isNullOrEmpty() && ApiKeyCrypto.decrypt(previous!!.apiKey).isEmpty()
+        val key = when {
+            provider.apiKeyCleared -> ""
+            preserveOldKey -> previous!!.apiKey
+            provider.apiKey.isEmpty() -> ""
+            else -> ApiKeyCrypto.encrypt(provider.apiKey).also { if (it.isEmpty()) error("API key encryption is unavailable") }
         }
+        val previousModels = previous?.models.orEmpty().associateBy { it.modelId }
+        val models = provider.models.map { model ->
+            val old = previousModels[model.modelId]
+            val modelKey = when {
+                model.apiKeyCleared -> ""
+                model.apiKey.isNullOrEmpty() && !old?.apiKey.isNullOrEmpty() && ApiKeyCrypto.decrypt(old!!.apiKey!!).isEmpty() -> old!!.apiKey
+                model.apiKey.isNullOrEmpty() -> model.apiKey
+                else -> ApiKeyCrypto.encrypt(model.apiKey).also { if (it.isEmpty()) error("Model API key encryption is unavailable") }
+            }
+            model.copy(apiKey = modelKey, customHeaders = protectHeaders(model.customHeaders))
+        }
+        return provider.copy(apiKey = key, customHeaders = protectHeaders(provider.customHeaders), models = models)
+    }
+
+    private fun decryptProvider(provider: ProviderConfig): ProviderConfig = provider.copy(
+        apiKey = ApiKeyCrypto.decrypt(provider.apiKey),
+        customHeaders = revealHeaders(provider.customHeaders),
+        models = provider.models.map { model -> model.copy(
+            apiKey = model.apiKey?.let(ApiKeyCrypto::decrypt),
+            customHeaders = revealHeaders(model.customHeaders),
+        ) },
+    )
+
+    private fun encodeProviders(list: List<ProviderConfig>, previous: List<ProviderConfig>): String {
+        val storedById = previous.associateBy { it.id }
+        val encoded = list.map { provider ->
+            val old = storedById[provider.id]
+            protectProvider(provider, old)
+        }
+        return json.encodeToString(ListSerializer(ProviderConfig.serializer()), encoded)
+    }
+
+    suspend fun save(list: List<ProviderConfig>) {
+        context.providersDataStore.edit { prefs -> prefs[key] = encodeProviders(list, storedProviders(prefs)) }
+    }
+
+    suspend fun upsert(provider: ProviderConfig) {
         context.providersDataStore.edit { prefs ->
-            prefs[key] = json.encodeToString(ListSerializer(ProviderConfig.serializer()), encoded)
+            val previous = storedProviders(prefs)
+            val list = previous.toMutableList()
+            val index = list.indexOfFirst { it.id == provider.id }
+            if (index >= 0) list[index] = provider else list.add(provider)
+            prefs[key] = encodeProviders(list, previous)
         }
     }
 
-    suspend fun upsert(p: ProviderConfig) {
-        val list = snapshot().toMutableList()
-        val idx = list.indexOfFirst { it.id == p.id }
-        if (idx >= 0) list[idx] = p else list.add(p)
-        save(list)
+    suspend fun update(id: String, transform: (ProviderConfig) -> ProviderConfig): ProviderConfig? {
+        var updated: ProviderConfig? = null
+        context.providersDataStore.edit { prefs ->
+            val previous = storedProviders(prefs)
+            val index = previous.indexOfFirst { it.id == id }
+            if (index < 0) return@edit
+            val current = decryptProvider(previous[index])
+            val next = transform(current)
+            require(next.id == id) { "Provider id changed during update" }
+            prefs[key] = encodeProviders(previous.toMutableList().also { it[index] = next }, previous)
+            updated = next
+        }
+        return updated
     }
 
     suspend fun delete(id: String) {
-        save(snapshot().filterNot { it.id == id })
+        context.providersDataStore.edit { prefs ->
+            val previous = storedProviders(prefs)
+            prefs[key] = json.encodeToString(ListSerializer(ProviderConfig.serializer()), previous.filterNot { it.id == id })
+        }
     }
 
     private fun decode(raw: String): List<ProviderConfig> {

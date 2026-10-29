@@ -1,6 +1,7 @@
 package com.miniichatNext.carter.ui.workspace
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -49,6 +50,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
@@ -68,6 +70,7 @@ import com.miniichatNext.carter.data.workspace.WorkspaceCategoryDefaultApprovals
 import com.miniichatNext.carter.data.workspace.WorkspaceToolCategory
 import com.miniichatNext.carter.data.workspace.storageKey
 import com.miniichatNext.carter.ui.components.SettingsTopBar
+import com.miniichatNext.carter.util.AppThemeOverrides
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -139,7 +142,7 @@ fun WorkspaceListScreen(
                                 Text(
                                     statusLabel(LocalContext.current, ws.shellStatus),
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = statusColor(ws.shellStatus),
                                 )
                             }
                             TextButton(onClick = { renaming = ws }) {
@@ -269,7 +272,7 @@ fun WorkspaceDetailScreen(
         ) {
             Spacer(Modifier.height(8.dp))
 
-            // Linux环境卡片（rootfs安装；不再含"修复APT"按钮，由RootfsPatcher.ensureAptLocks每次shell前自动清lock）
+            // Linux环境与安装进度。
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
@@ -281,7 +284,7 @@ fun WorkspaceDetailScreen(
                     Text(
                         statusLabel(context, workspace?.shellStatus ?: WorkspaceShellStatus.DISABLED.name),
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        color = statusColor(workspace?.shellStatus ?: WorkspaceShellStatus.DISABLED.name),
                     )
                     val isReady = workspace?.shellStatus?.equals(WorkspaceShellStatus.READY.name) == true
                     if (!isReady) {
@@ -524,6 +527,22 @@ fun WorkspaceDetailScreen(
 
             Spacer(Modifier.height(40.dp))
         }
+    }
+}
+
+@Composable
+private fun statusColor(status: String): Color {
+    val context = LocalContext.current
+    val dark = isSystemInDarkTheme()
+    val version = AppThemeOverrides.version.intValue
+    val overrides = remember(version, dark) {
+        AppThemeOverrides.load(context)[if (dark) "dark" else "light"].orEmpty()
+    }
+    return when (status) {
+        WorkspaceShellStatus.BROKEN.name -> AppThemeOverrides.customColor(overrides, "workspaceDanger", MaterialTheme.colorScheme.error)
+        WorkspaceShellStatus.DISABLED.name, WorkspaceShellStatus.INSTALLING.name ->
+            AppThemeOverrides.customColor(overrides, "workspaceWarning", if (dark) Color(0xFFFFCA5C) else Color(0xFF8A5A00))
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 }
 

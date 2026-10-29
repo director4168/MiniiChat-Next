@@ -2,6 +2,10 @@ package com.miniichatNext.carter.data.update
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
+import android.content.ContentValues
 import androidx.core.content.FileProvider
 import com.miniichatNext.carter.debug.DebugLog
 import java.io.File
@@ -21,28 +25,42 @@ object UpdateInstaller {
 
     fun cacheApk(context: Context): File = File(cacheDir(context), APK_FILENAME)
 
-    /**
-     * 最终APK落点：系统下载目录（用户可见、可手动管理）。
-     * 更新成功（安装器拉起）后可清理这里的**旧**安装包。
-     */
-    fun downloadsApk(context: Context, version: String): File {
-        val dir = android.os.Environment
-            .getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-        // 带版本号的文件名：多版本共存时可辨认；同版本重下覆盖
-        return File(dir, "MiniiChat-Next-$version.apk")
-    }
-
-    /** 清理Download目录里的旧版本安装包（保留指定文件） */
-    fun cleanOldDownloads(context: Context, keep: File) {
-        runCatching {
-            val dir = android.os.Environment
-                .getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
-            dir.listFiles()?.forEach { f ->
-                if (f.name.startsWith("MiniiChat-Next-") && f.name.endsWith(".apk") && f.absolutePath != keep.absolutePath) {
-                    f.delete()
-                }
+    /** 复制到系统Download作为用户可管理的副本；返回content URI或API<29文件URI。 */
+    fun publishToDownloads(context: Context, installFile: File, version: String): String {
+        require(installFile.isFile) { "Update APK is missing: ${installFile.absolutePath}" }
+        val name = "MiniiChat-Next-$version.apk"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                put(MediaStore.MediaColumns.MIME_TYPE, "application/vnd.android.package-archive")
+                put(MediaStore.MediaColumns.RELATIVE_PATH, android.os.Environment.DIRECTORY_DOWNLOADS)
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val uri = context.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+                ?: error("Could not create update file in Downloads")
+            try {
+                context.contentResolver.openOutputStream(uri, "w")?.use { output ->
+                    installFile.inputStream().use { it.copyTo(output) }
+                } ?: error("Could not write update file in Downloads")
+                val published = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+                check(context.contentResolver.update(uri, published, null, null) == 1) { "Could not publish update file" }
+                return uri.toString()
+            } catch (failure: Throwable) {
+                runCatching { context.contentResolver.delete(uri, null, null) }
+                throw failure
             }
         }
+        @Suppress("DEPRECATION")
+        val publicDirectory = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+        val canWritePublic = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+            context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val directory = if (canWritePublic) publicDirectory else {
+            File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_DOWNLOADS) ?: context.filesDir, "UpdateDownloads")
+        }
+        check(directory.exists() || directory.mkdirs()) { "Could not create Downloads directory" }
+        val destination = File(directory, name)
+        installFile.inputStream().use { input -> destination.outputStream().use { input.copyTo(it) } }
+        return Uri.fromFile(destination).toString()
     }
 
     /**
@@ -51,6 +69,12 @@ object UpdateInstaller {
      */
     fun install(context: Context, apkFile: File): Boolean {
         return try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !context.packageManager.canRequestPackageInstalls()) {
+                val settings = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${context.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                context.startActivity(settings)
+                return false
+            }
             val authority = "${context.packageName}.fileprovider"
             val uri = FileProvider.getUriForFile(context, authority, apkFile)
             val intent = Intent(Intent.ACTION_VIEW).apply {

@@ -66,12 +66,37 @@ class WorkspaceStore(private val context: Context) {
         }
     }
 
+    private fun read(prefs: Preferences): List<WorkspaceEntity> = prefs[key]?.let {
+        json.decodeFromString(ListSerializer(WorkspaceEntity.serializer()), it)
+    }.orEmpty()
+
     suspend fun upsert(entity: WorkspaceEntity) {
-        val list = snapshot().toMutableList()
-        val idx = list.indexOfFirst { it.id == entity.id }
-        if (idx >= 0) list[idx] = entity else list.add(entity)
-        save(list)
+        context.workspaceDataStore.edit { prefs ->
+            val list = read(prefs).toMutableList()
+            val index = list.indexOfFirst { it.id == entity.id }
+            if (index >= 0) list[index] = entity else list.add(entity)
+            prefs[key] = json.encodeToString(ListSerializer(WorkspaceEntity.serializer()), list)
+        }
     }
 
-    suspend fun delete(id: String) = save(snapshot().filterNot { it.id == id })
+    suspend fun update(id: String, transform: (WorkspaceEntity) -> WorkspaceEntity): WorkspaceEntity? {
+        var updated: WorkspaceEntity? = null
+        context.workspaceDataStore.edit { prefs ->
+            val list = read(prefs).toMutableList()
+            val index = list.indexOfFirst { it.id == id }
+            if (index < 0) return@edit
+            val next = transform(list[index])
+            require(next.id == id) { "Workspace id changed during update" }
+            list[index] = next
+            prefs[key] = json.encodeToString(ListSerializer(WorkspaceEntity.serializer()), list)
+            updated = next
+        }
+        return updated
+    }
+
+    suspend fun delete(id: String) {
+        context.workspaceDataStore.edit { prefs ->
+            prefs[key] = json.encodeToString(ListSerializer(WorkspaceEntity.serializer()), read(prefs).filterNot { it.id == id })
+        }
+    }
 }

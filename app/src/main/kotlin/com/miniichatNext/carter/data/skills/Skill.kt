@@ -9,5 +9,7 @@ data class Skill(
     val description: String = "",
     val body: String = "",
     val enabled: Boolean = true,
+    val compatibility: String? = null,
+    val allowedTools: List<String> = emptyList(),
     val createdAt: Long = System.currentTimeMillis()
 )

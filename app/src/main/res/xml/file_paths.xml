@@ -15,4 +15,6 @@
     <files-path name="workspaces" path="workspaces/" />
     <!-- 更新 APK 缓存（filesDir/cache/Update/）：安装器需要 content:// 才能读取 -->
     <cache-path name="update_apk" path="Update/" />
+    <external-files-path name="update_downloads" path="Download/UpdateDownloads/" />
+    <external-path name="public_downloads" path="Download/" />
 </paths>

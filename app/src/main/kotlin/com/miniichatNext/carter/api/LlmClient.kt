@@ -106,6 +106,7 @@ class LlmClient {
             thinking = thinking
         )
         val isClaude = provider.type() == ProviderType.CLAUDE
+        val useResponses = !isClaude && provider.effectiveResponseApi(modelId, override?.responseApi)
         val effBaseUrl = provider.effectiveBaseUrl(modelId)
         val endpoint = when {
             isClaude -> claudeMessagesEndpoint(effBaseUrl)
@@ -127,12 +128,14 @@ class LlmClient {
                 contentType(ContentType.Application.Json)
                 headers {
                     if (isClaude) {
-                        for ((k, v) in claudeAuthHeaders(provider)) append(k, v)
+                        for ((k, v) in claudeAuthHeaders(provider, modelId)) append(k, v)
                     } else {
-                        if (provider.apiKey.isNotBlank()) {
-                            append(HttpHeaders.Authorization, "Bearer ${provider.apiKey}")
+                        val apiKey = provider.effectiveApiKey(modelId)
+                        if (apiKey.isNotBlank()) {
+                            append(HttpHeaders.Authorization, "Bearer $apiKey")
                         }
-                        for ((k, v) in provider.customHeaders) {
+                        val customHeaders = provider.customHeaders + provider.model(modelId)?.customHeaders.orEmpty()
+                        for ((k, v) in customHeaders) {
                             if (k.isBlank()) continue
                             append(k, v)
                         }
@@ -159,14 +162,16 @@ class LlmClient {
                 DebugLog.d("Llm", "HTTP ${response.status.value} OK from $target (stream=${settings.stream})")
                 if (settings.stream) {
                     val channel: ByteReadChannel = response.bodyAsChannel()
-                    when (provider.type()) {
-                        ProviderType.OPENAI -> readOpenAiStream(channel)
-                        ProviderType.CLAUDE -> readClaudeStream(channel)
+                    when {
+                        isClaude -> readClaudeStream(channel)
+                        useResponses -> readResponsesStream(channel)
+                        else -> readOpenAiStream(channel)
                     }
                 } else {
-                    when (provider.type()) {
-                        ProviderType.OPENAI -> readOpenAiNonStream(response)
-                        ProviderType.CLAUDE -> readClaudeNonStream(response)
+                    when {
+                        isClaude -> readClaudeNonStream(response)
+                        useResponses -> readResponsesNonStream(response)
+                        else -> readOpenAiNonStream(response)
                     }
                 }
             }
@@ -246,7 +251,7 @@ class LlmClient {
             // 开了推理就别带temperature：o系列/DeepSeek等会直接报错
             if (effThinking == ThinkingLevel.OFF) put("temperature", effTemp)
             put("messages", msgsJson)
-            modelCfg?.maxTokens?.let { put("max_tokens", it) }
+            put("max_tokens", modelCfg?.maxTokens ?: provider.maxTokens)
             // 各家的推理参数形状不同，按host特判（见applyReasoning）
             if (reasoningOk) applyReasoning(host, effThinking)
             for ((k, v) in provider.extraBody) {
@@ -274,7 +279,7 @@ class LlmClient {
         }
         return json.encodeToString(JsonObject.serializer(), obj)
     }
-    private fun buildResponseBody(
+    internal fun buildResponseBody(
         provider: ProviderConfig,
         modelId: String,
         messages: List<ChatMessage>,
@@ -282,43 +287,8 @@ class LlmClient {
         temperature: Float,
         tools: List<ToolSpec> = emptyList(),
         thinking: ThinkingLevel = ThinkingLevel.AUTO,
-    ): String {
-        val modelCfg = provider.model(modelId)
-        val effTemp = modelCfg?.temperature ?: temperature
-        val input = kotlinx.serialization.json.buildJsonArray {
-            for (m in messages) {
-                if (m.role == "system") {
-                    add(buildJsonObject {
-                        put("role", "system")
-                        put("content", m.content)
-                    })
-                } else {
-                    add(buildJsonObject {
-                        put("role", m.role)
-                        put("content", m.content)
-                    })
-                }
-            }
-        }
-        // 思考等级：对话级唯一来源
-        val effThinking = thinking
-        val obj = buildJsonObject {
-            put("model", modelId)
-            put("stream", stream)
-            if (effThinking == ThinkingLevel.OFF) put("temperature", effTemp)
-            put("input", input)
-            modelCfg?.maxTokens?.let { put("max_output_tokens", it) }
-            // Response API的推理强度走reasoning.effort
-            if (provider.supportsReasoning(modelId)) effThinking.effort?.let { effort ->
-                putJsonObject("reasoning") { put("effort", effort) }
-            }
-            for ((k, v) in modelCfg?.extraBody ?: emptyMap()) {
-                if (k.isBlank()) continue
-                put(k, coerceToJson(v))
-            }
-        }
-        return json.encodeToString(JsonObject.serializer(), obj)
-    }
+    ): String = buildResponsesApiRequest(provider, modelId, messages, stream, temperature, tools, thinking)
+
     private suspend fun listOpenAiModels(provider: ProviderConfig): List<String> {
         val resp = client.get(modelsEndpoint(provider.baseUrl)) {
             headers {
@@ -418,38 +388,40 @@ class LlmClient {
     private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamDelta>.readOpenAiNonStream(
         response: io.ktor.client.statement.HttpResponse
     ) {
-        val text = response.bodyAsText()
-        val parsed = runCatching {
-            json.decodeFromString(ChatResponse.serializer(), text)
-        }.getOrNull()
-        val msg = parsed?.choices?.firstOrNull()?.message
-        val content = msg?.content
-        if (!content.isNullOrEmpty()) emit(StreamDelta(text = content))
-        msg?.toolCalls?.takeIf { it.isNotEmpty() }?.let { tcs ->
-            emit(StreamDelta(toolCalls = tcs.map { ToolCallDelta(
-                id = it.id ?: "",
-                name = it.function?.name ?: "",
-                argumentsJson = it.function?.arguments ?: ""
-            ) }))
+        val parsed = runCatching { json.decodeFromString(ChatResponse.serializer(), response.bodyAsText()) }
+            .getOrElse { throw IllegalStateException("Invalid Chat Completions response", it) }
+        val message = parsed.choices.firstOrNull()?.message
+            ?: throw IllegalStateException("Chat Completions response has no choice")
+        message.content?.takeIf { it.isNotEmpty() }?.let { emit(StreamDelta(text = it)) }
+        message.reasoningContent?.takeIf { it.isNotEmpty() }?.let { emit(StreamDelta(reasoning = it)) }
+        message.toolCalls.orEmpty().forEachIndexed { index, call ->
+            val id = call.id?.takeIf { it.isNotBlank() } ?: "nonstream-$index"
+            val name = call.function?.name?.takeIf { it.isNotBlank() } ?: return@forEachIndexed
+            emit(StreamDelta(toolCalls = listOf(ToolCallDelta(id, name, call.function?.arguments ?: "{}"))))
         }
-        parsed?.usage?.let {
-            emit(StreamDelta(usage = TokenUsage(
-                promptTokens = it.promptTokens,
-                completionTokens = it.completionTokens,
-                totalTokens = it.totalTokens
-            )))
-        }
+        parsed.usage?.let { emit(StreamDelta(usage = TokenUsage(it.promptTokens, it.completionTokens, it.totalTokens))) }
     }
 
-internal fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, String>> =
-    buildList {
-        if (provider.apiKey.isNotBlank()) add("x-api-key" to provider.apiKey)
-        add("anthropic-version" to "2023-06-01")
-        for ((k, v) in provider.customHeaders) {
-            if (k.isBlank()) continue
-            add(k to v)
+    private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamDelta>.readResponsesStream(channel: ByteReadChannel) {
+        val parser = ResponsesApiStreamParser()
+        while (true) {
+            val line = channel.readUTF8Line() ?: break
+            if (!line.startsWith("data:")) continue
+            val data = line.removePrefix("data:").trim()
+            if (data.isEmpty() || data == "[DONE]") continue
+            parser.accept(data).forEach { emit(it) }
+            val type = runCatching { json.parseToJsonElement(data).jsonObject["type"]?.jsonPrimitive?.contentOrNull }.getOrNull()
+            if (type == "response.completed" || type == "response.incomplete") break
         }
+        parser.finish().forEach { emit(it) }
     }
+
+    private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamDelta>.readResponsesNonStream(
+        response: io.ktor.client.statement.HttpResponse
+    ) {
+        parseResponsesApiBody(response.bodyAsText()).forEach { emit(it) }
+    }
+
     private fun buildClaudeBody(
         provider: ProviderConfig,
         modelId: String,
@@ -885,11 +857,12 @@ internal fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, Stri
     }
 }
 
-internal fun claudeAuthHeaders(provider: ProviderConfig): List<Pair<String, String>> =
+internal fun claudeAuthHeaders(provider: ProviderConfig, modelId: String? = null): List<Pair<String, String>> =
     buildList {
         if (provider.apiKey.isNotBlank()) add("x-api-key" to provider.apiKey)
         add("anthropic-version" to "2023-06-01")
-        for ((k, v) in provider.customHeaders) {
+        val headers = provider.customHeaders + provider.model(modelId.orEmpty())?.customHeaders.orEmpty()
+        for ((k, v) in headers) {
             if (k.isBlank()) continue
             add(k to v)
         }

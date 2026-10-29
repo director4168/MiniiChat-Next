@@ -650,4 +650,21 @@
     <string name="action_off">Off</string>
     <string name="cache_ttl_5m">5 minutes</string>
     <string name="cache_ttl_1h">1 hour</string>
+    <string name="tool_round_limit">Tool round limit reached. Send a message to continue.</string>
+    <string name="compress_source_changed">Conversation changed during compression. The original messages were kept; retry compression.</string>
+    <string name="update_saved_location">Saved to Downloads: %1$s</string>
+    <string name="builtin_path_outside_roots">The path is outside the allowed roots.</string>
+    <string name="update_saved_copy">Saved a copy: %1$s</string>
+    <string name="provider_clear_api_key">Clear saved API key</string>
+    <string name="section_preferences">Preferences</string>
+    <string name="more_preferences_title">More preferences</string>
+    <string name="more_preferences_sub">Code, formula and interface behavior</string>
+    <string name="preference_code_wrap">Code auto-wrap</string>
+    <string name="preference_code_wrap_desc">Wrap long code lines to fit the message card.</string>
+    <string name="preference_code_fold">Code auto-fold</string>
+    <string name="preference_code_fold_desc">Fold code after ten lines by default.</string>
+    <string name="preference_latex">Render LaTeX formulas</string>
+    <string name="preference_latex_desc">Render mathematical formulas in Markdown.</string>
+    <string name="preference_code_fold_more">Show %1$d more lines</string>
+    <string name="preference_code_fold_less">Collapse code</string>
 </resources>

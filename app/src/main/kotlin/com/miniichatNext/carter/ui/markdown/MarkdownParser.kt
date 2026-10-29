@@ -1,5 +1,7 @@
 package com.miniichatNext.carter.ui.markdown
 
+import android.os.SystemClock
+import android.util.Log
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -38,17 +40,25 @@ private val markdownParser = MarkdownParser(flavour)
  * @param softBreakAsLineBreak 段落内的单个换行是否渲染为换行（聊天场景的习惯）；为false时按CommonMark当作空格
  */
 fun parseMarkdown(content: String, softBreakAsLineBreak: Boolean = true): MarkdownDocument {
-    // 解析器只认\n作为换行，CRLF里残留的\r会让围栏行匹配不上（比如结尾的```不被当作闭合）
-    val text = normalizeLatexDelimiters(content.replace(LINE_ENDING_REGEX, "\n"))
-    val tree = markdownParser.buildMarkdownTreeFromString(text)
-    val providers = flavour.createHtmlGeneratingProviders(LinkMap.buildLinkMap(tree, text), null) +
-        (MarkdownTokenTypes.HTML_TAG to InlineHtmlTagProvider)
-    val html = HtmlGenerator(text, tree, providers, false).generateHtml(tagRenderer)
-    val body = Jsoup.parse(html).body()
-    return MarkdownDocument(
-        source = content,
-        blocks = DomConverter(text, softBreakAsLineBreak).flow(body.childNodes(), markdown = false),
-    )
+    val startNs = SystemClock.elapsedRealtimeNanos()
+    return try {
+        // 解析器只认\\n作为换行，CRLF里残留的\\r会让围栏行匹配不上
+        val text = normalizeLatexDelimiters(content.replace(LINE_ENDING_REGEX, "\\n"))
+        val tree = markdownParser.buildMarkdownTreeFromString(text)
+        val providers = flavour.createHtmlGeneratingProviders(LinkMap.buildLinkMap(tree, text), null) +
+            (MarkdownTokenTypes.HTML_TAG to InlineHtmlTagProvider)
+        val html = HtmlGenerator(text, tree, providers, false).generateHtml(tagRenderer)
+        val body = Jsoup.parse(html).body()
+        MarkdownDocument(
+            source = content,
+            blocks = DomConverter(text, softBreakAsLineBreak).flow(body.childNodes(), markdown = false),
+        )
+    } finally {
+        val elapsedMs = (SystemClock.elapsedRealtimeNanos() - startNs) / 1_000_000L
+        if (elapsedMs >= 16L) {
+            Log.w("ChatJank", "markdownParseMs=$elapsedMs chars=${content.length}")
+        }
+    }
 }
 
 

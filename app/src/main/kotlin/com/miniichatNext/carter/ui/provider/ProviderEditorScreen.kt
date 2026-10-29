@@ -68,6 +68,7 @@ fun ProviderEditorScreen(
     var name by remember(initial?.id) { mutableStateOf(initial?.name ?: "") }
     var baseUrl by remember(initial?.id) { mutableStateOf(initial?.baseUrl ?: "") }
     var apiKey by remember(initial?.id) { mutableStateOf(initial?.apiKey ?: "") }
+    var apiKeyCleared by remember(initial?.id) { mutableStateOf(initial?.apiKeyCleared ?: false) }
     var chatCompletionsPath by remember(initial?.id) {
         mutableStateOf(initial?.chatCompletionsPath ?: "/chat/completions")
     }
@@ -143,6 +144,7 @@ fun ProviderEditorScreen(
                         name = name.trim(),
                         baseUrl = normalizedUrl,
                         apiKey = apiKey.trim(),
+                        apiKeyCleared = apiKeyCleared,
                         customHeaders = headers,
                         extraBody = body,
                         providerType = providerType.name,
@@ -285,9 +287,14 @@ fun ProviderEditorScreen(
                     value = apiKey,
                     placeholder = "",
                     monospace = true,
-                    onChange = { apiKey = it },
+                    onChange = { apiKey = it; if (it.isNotBlank()) apiKeyCleared = false },
                     secret = true,
                 )
+                if (initial != null && !initial.apiKeyCleared) {
+                    TextButton(onClick = { apiKey = ""; apiKeyCleared = true }) {
+                        Text(stringResource(R.string.provider_clear_api_key))
+                    }
+                }
             }
 
             if (providerType == com.miniichatNext.carter.data.model.ProviderType.OPENAI) {

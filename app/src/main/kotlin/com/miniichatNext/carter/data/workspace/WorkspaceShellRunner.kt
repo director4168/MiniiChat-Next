@@ -44,9 +44,13 @@ fun Process.readResult(timeoutMillis: Long, stdin: ByteArray? = null): Workspace
     val stdout = StreamCollector(inputStream)
     val stderr = StreamCollector(errorStream)
     val stdinWriter = stdin?.let { bytes -> StreamWriter(outputStream, bytes) }
+    if (stdin == null) runCatching { outputStream.close() }
     try {
         val finished = waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
-        if (!finished) destroyForcibly()
+        if (!finished) {
+            destroyForcibly()
+            waitFor(1_000, TimeUnit.MILLISECONDS)
+        }
         stdinWriter?.join(1_000)
         stdout.join(1_000)
         stderr.join(1_000)
@@ -59,10 +63,15 @@ fun Process.readResult(timeoutMillis: Long, stdin: ByteArray? = null): Workspace
         )
     } catch (e: InterruptedException) {
         destroyForcibly()
+        runCatching { waitFor(1_000, TimeUnit.MILLISECONDS) }
         stdinWriter?.join(1_000)
         stdout.join(1_000)
         stderr.join(1_000)
         throw e
+    } finally {
+        runCatching { outputStream.close() }
+        runCatching { inputStream.close() }
+        runCatching { errorStream.close() }
     }
 }
 

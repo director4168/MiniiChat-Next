@@ -19,30 +19,6 @@ class RootfsPatcher {
         ensureGroupNames(etcDir, options.groupIds.ifEmpty { currentSupplementaryGroupIds() })
         ensureRootUser(etcDir)
         ensureTempDirs(linuxDir)
-        ensureAptLocks(linuxDir)
-    }
-
-    /**
-     * 清理apt/dpkg的残留锁文件. proot下apt中断后常会留下0字节lock,
-     * 下次apt启动直接"Could not get lock"报错.
-     * 每次shell启动前调用一次即可（ProotShellRunner.execute里调patcher.patch时顺带跑）.
-     */
-    fun ensureAptLocks(linuxDir: File) {
-        listOf(
-            "var/lib/apt/lists/lock",
-            "var/lib/dpkg/lock",
-            "var/lib/dpkg/lock-frontend",
-            "var/cache/apt/archives/lock",
-        ).forEach { rel ->
-            runCatching { File(linuxDir, rel).takeIf { it.isFile }?.delete() }
-        }
-        // 清理apt partial半成品
-        runCatching {
-            val partial = File(linuxDir, "var/lib/apt/lists/partial")
-            if (partial.isDirectory) {
-                partial.listFiles()?.forEach { runCatching { it.delete() } }
-            }
-        }
     }
 
     /**

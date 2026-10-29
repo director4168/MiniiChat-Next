@@ -4,6 +4,7 @@ import android.content.Context
 import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.data.workspace.readResult
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -49,23 +50,7 @@ object BuiltInFileTools {
         .distinctBy { it.path }
         .also { cachedRoots = it }
 
-    private fun safeFile(rawPath: String): File {
-        val trimmed = rawPath.trim()
-        val targetPath = when {
-            trimmed.isEmpty() || trimmed == "/" || trimmed == "." || trimmed == "./" -> "/storage/emulated/0"
-            trimmed.startsWith("/tmp") -> "/storage/emulated/0/Download" + trimmed.removePrefix("/tmp")
-            !trimmed.startsWith("/") -> "/storage/emulated/0/$trimmed"
-            else -> trimmed
-        }
-        val f = File(targetPath).canonicalFile
-        val ok = allowedRoots().any { root ->
-            f.path == root.path || f.path.startsWith(root.path + File.separator)
-        }
-        if (!ok) {
-            return File("/storage/emulated/0/Download", f.name.ifBlank { "mcp_workspace" }).canonicalFile
-        }
-        return f
-    }
+    private fun safeFile(rawPath: String): File = resolveToolPath(rawPath, allowedRoots())
 
     /** 工具名列表（给权限页计数、isBuiltIn等无文案场景用） */
     val toolNames: List<String> = listOf(
@@ -192,33 +177,32 @@ object BuiltInFileTools {
             else -> McpToolResult(ok = false, content = "", error = "unknown builtin tool: $name")
         }
     }.getOrElse { e ->
+        if (e is InterruptedException) throw e
         DebugLog.e("BuiltInTools", "execute $name failed: ${e.message}", e)
-        McpToolResult(ok = false, content = "", error = e.message ?: "error")
+        val error = if (e.message?.startsWith("path is outside allowed roots:") == true) {
+            context.getString(R.string.builtin_path_outside_roots)
+        } else e.message ?: "error"
+        McpToolResult(ok = false, content = "", error = error)
     }
 
     private fun executeShell(context: Context, args: JsonObject): McpToolResult {
         val script = requireArg(args, "script")
-        val timeoutSec = arg(args, "timeout_seconds")?.toLongOrNull() ?: 30L
+        val timeoutSec = (arg(args, "timeout_seconds")?.toLongOrNull() ?: 30L).coerceIn(1L, 600L)
         val tmpDir = File(appFilesDir ?: File("/data/local/tmp"), "scripts").apply { mkdirs() }
-        val scriptFile = File(tmpDir, "run_${System.currentTimeMillis()}.sh")
+        val scriptFile = File.createTempFile("run_", ".sh", tmpDir)
         return try {
             scriptFile.writeText(script)
-            scriptFile.setExecutable(true)
-            val pb = ProcessBuilder("sh", scriptFile.absolutePath)
-            pb.directory(appFilesDir ?: File("/"))
-            pb.redirectErrorStream(true)
-            val process = pb.start()
-            val finished = process.waitFor(timeoutSec, TimeUnit.SECONDS)
-            if (!finished) {
-                process.destroyForcibly()
-                return fail(context.getString(R.string.builtin_shell_timeout, timeoutSec))
-            }
-            val raw = BufferedReader(InputStreamReader(process.inputStream)).use { it.readText() }
-            val exitCode = process.exitValue()
-            // 工具输出上限（对齐rikkahub）：避免撑爆模型上下文
-            val output = raw.trimFragment(MAX_TOOL_OUTPUT_CHARS)
-            if (exitCode == 0) ok(output.ifBlank { context.getString(R.string.builtin_shell_no_output) })
-            else fail(context.getString(R.string.builtin_shell_exit, exitCode, output))
+            val process = ProcessBuilder("sh", scriptFile.absolutePath)
+                .directory(appFilesDir ?: File("/"))
+                .redirectErrorStream(true)
+                .start()
+            val result = process.readResult(TimeUnit.SECONDS.toMillis(timeoutSec))
+            if (result.timedOut) return fail(context.getString(R.string.builtin_shell_timeout, timeoutSec))
+            val output = result.stdout.trimFragment(MAX_TOOL_OUTPUT_CHARS)
+            if (result.exitCode == 0) ok(output.ifBlank { context.getString(R.string.builtin_shell_no_output) })
+            else fail(context.getString(R.string.builtin_shell_exit, result.exitCode, output))
+        } catch (e: InterruptedException) {
+            throw e
         } catch (e: Exception) {
             fail(context.getString(R.string.builtin_shell_failed, e.message.orEmpty()))
         } finally {
@@ -325,7 +309,8 @@ object BuiltInFileTools {
         val f = safeFile(requireArg(args, "path"))
         val newName = requireArg(args, "new_name")
         if (!f.exists()) return fail("not found: ${f.path}")
-        val target = File(f.parentFile, newName)
+        val target = runCatching { resolveRenameTarget(f, newName, allowedRoots()) }
+            .getOrElse { return fail(it.message ?: "invalid rename target") }
         val done = f.renameTo(target)
         return if (done) ok("renamed ${f.name} -> $newName") else fail("rename failed")
     }
@@ -388,89 +373,16 @@ object BuiltInFileTools {
         val replaceAll = arg(args, "replace_all")?.toBooleanStrictOrNull() ?: false
         if (!f.isFile) return fail("not a file: ${f.path}")
         val content = runCatching { f.readText() }.getOrElse { return fail("read failed: ${it.message}") }
-        if (oldText.isEmpty()) return fail("old_text must not be empty")
-
-        data class Match(val start: Int, val endExclusive: Int)
-        val matches: List<Match> = run {
-            // 先试完全匹配，命中就直接返回
-            val exact = mutableListOf<Match>()
-            var idx = content.indexOf(oldText)
-            while (idx >= 0) { exact.add(Match(idx, idx + oldText.length)); idx = content.indexOf(oldText, idx + oldText.length) }
-            if (exact.isNotEmpty()) return@run exact
-            // 再试滑动行窗口逐行trim比较，替换文本按首行缩进重排
-            val oldLines = oldText.lines().let { if (it.size > 1 && it.last().isEmpty()) it.dropLast(1) else it }
-            if (oldLines.any { it.isNotBlank() }) {
-                val oldTrim = oldLines.map { it.trim() }
-                data class L(val text: String, val start: Int, val endEx: Int)
-                val lines = buildList {
-                    var pos = 0
-                    content.lineSequence().forEach { l ->
-                        add(L(l, pos, pos + l.length)); pos += l.length + 1
-                    }
-                }
-                val lm = mutableListOf<Match>()
-                var k = 0
-                while (k + oldLines.size <= lines.size) {
-                    val win = lines.subList(k, k + oldLines.size)
-                    if (win.map { it.text.trim() } == oldTrim) {
-                        // new_text按窗口首行缩进重排（保持块结构）
-                        val oldIndent = oldLines.first().takeWhile { it == ' ' || it == '\t' }
-                        val newIndent = win.first().text.takeWhile { it == ' ' || it == '\t' }
-                        var replacement = newText
-                        if (oldIndent.isNotEmpty() && newIndent != oldIndent) {
-                            replacement = newText.lines().joinToString("\n") { line ->
-                                if (line.startsWith(oldIndent)) newIndent + line.removePrefix(oldIndent) else line
-                            }
-                        }
-                        lm.add(Match(win.first().start, win.last().endEx))
-                    }
-                    k++
-                }
-                if (lm.isNotEmpty()) return@run lm
-            }
-            // 最后试首尾行锚定（取非空行），中间任意
-            val firstOld = oldText.lines().firstOrNull { it.isNotBlank() }?.trim()
-            val lastOld = oldText.lines().lastOrNull { it.isNotBlank() }?.trim()
-            if (firstOld != null && lastOld != null) {
-                val cl = content.lines()
-                val bm = mutableListOf<Match>()
-                var a = 0
-                val offsets = buildList {
-                    var pos = 0
-                    cl.forEach { l -> add(pos); pos += l.length + 1 }
-                }
-                while (a < cl.size) {
-                    if (cl[a].trim() == firstOld) {
-                        var b = a
-                        while (b < cl.size) {
-                            if (cl[b].trim() == lastOld) {
-                                bm.add(Match(offsets[a], offsets[b] + cl[b].length)); break
-                            }
-                            b++
-                        }
-                    }
-                    a++
-                }
-                if (bm.isNotEmpty()) return@run bm
-            }
-            emptyList()
-        }
-
-        if (matches.isEmpty()) {
-            return fail("old_text not found even with whitespace-tolerant matching; re-read the file and copy old_text exactly")
-        }
-        if (!replaceAll && matches.size > 1) {
-            return fail("old_text matches ${matches.size} locations; add surrounding context or set replace_all=true")
-        }
-        // 从后往前替换（避免偏移失效）
-        val sb = StringBuilder(content)
-        val use = if (replaceAll) matches else listOf(matches.first())
-        use.sortedByDescending { it.start }.forEach { m ->
-            sb.replace(m.start, m.endExclusive, newText)
+        val plan = planTextEdit(content, oldText, newText, replaceAll)
+        plan.error?.let { return fail(it) }
+        if (plan.matches.isEmpty()) return fail("old_text produced no edit")
+        val edited = StringBuilder(content)
+        plan.matches.asReversed().forEach { match ->
+            edited.replace(match.start, match.endExclusive, match.replacement)
         }
         return runCatching {
-            f.writeText(sb.toString())
-            ok("edited ${use.size} location(s) in ${f.path} (strategy=${if (content != sb.toString()) "matched" else "no-op"})")
+            f.writeText(edited.toString())
+            ok("edited ${plan.matches.size} location(s) in ${f.path}")
         }.getOrElse { fail("write failed: ${it.message}") }
     }
 

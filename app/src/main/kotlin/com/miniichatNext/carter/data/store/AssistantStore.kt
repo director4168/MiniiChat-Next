@@ -39,20 +39,30 @@ class AssistantStore(private val context: Context) {
         }
     }
 
-    suspend fun upsert(a: Assistant) {
-        com.miniichatNext.carter.debug.DebugLog.d(
-            "Store",
-            "assistant.upsert id=${a.id} name=${a.name} bg=${a.backgroundMode} " +
-                "cssLen=${a.backgroundCss.length} bgPath=${a.backgroundPath ?: "null"} " +
-                "avatar=${a.avatar} avatarPath=${a.avatarPath ?: "null"} skills=${a.enabledSkillIds}"
-        )
-        val cur = snapshot().toMutableList()
-        val idx = cur.indexOfFirst { it.id == a.id }
-        if (idx >= 0) cur[idx] = a else cur.add(a)
-        save(cur)
+    private fun read(prefs: Preferences): List<Assistant> {
+        val raw = prefs[key]
+        return if (raw.isNullOrBlank()) AssistantPresets.defaults()
+            else json.decodeFromString(ListSerializer(Assistant.serializer()), raw)
     }
 
-    suspend fun delete(id: String) {
-        save(snapshot().filterNot { it.id == id })
+    suspend fun updateAll(transform: (List<Assistant>) -> List<Assistant>) {
+        context.assistantsDataStore.edit { prefs ->
+            prefs[key] = json.encodeToString(ListSerializer(Assistant.serializer()), transform(read(prefs)))
+        }
     }
+
+    suspend fun upsert(assistant: Assistant) {
+        updateAll { current ->
+            current.toMutableList().also { list ->
+                val index = list.indexOfFirst { it.id == assistant.id }
+                if (index >= 0) list[index] = assistant else list.add(assistant)
+            }
+        }
+    }
+
+    suspend fun update(id: String, transform: (Assistant) -> Assistant) {
+        updateAll { list -> list.map { if (it.id == id) transform(it) else it } }
+    }
+
+    suspend fun delete(id: String) { updateAll { list -> list.filterNot { it.id == id } } }
 }

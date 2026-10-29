@@ -12,7 +12,7 @@ data class McpServerConfig(
     val url: String,
     val transport: String = McpTransport.STREAMABLE_HTTP.name,
     val enabled: Boolean = true,
-    val requireApproval: Boolean = true,
+    val requireApproval: Boolean = false,
     val headers: Map<String, String> = emptyMap(),
     val toolsFetched: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
@@ -52,3 +52,12 @@ data class McpToolResult(
     val content: String,
     val error: String? = null
 )
+
+
+internal fun mcpToolNamespace(serverId: String): String = "mcp_" +
+    java.security.MessageDigest.getInstance("SHA-256")
+        .digest(serverId.toByteArray(Charsets.UTF_8))
+        .joinToString("") { "%02x".format(it) }.take(8)
+
+internal fun exposedMcpToolName(serverId: String, toolName: String): String =
+    mcpToolNamespace(serverId) + "__" + toolName.replace(Regex("[^A-Za-z0-9_-]"), "_")

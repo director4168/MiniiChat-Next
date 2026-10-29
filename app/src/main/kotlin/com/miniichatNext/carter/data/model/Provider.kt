@@ -53,6 +53,8 @@ data class ModelConfig(
     val apiPath: String? = null,
     /** 模型级API Key；null/空=跟随服务商 */
     val apiKey: String? = null,
+    /** true表示显式关闭继承的服务商Key */
+    val apiKeyCleared: Boolean = false,
     /** 模型级Response API偏好：null=跟随服务商（仅对OPENAI类型有意义） */
     val responseApi: Boolean? = null,
     /** 模型级提示缓存偏好：null=跟随服务商（仅对CLAUDE类型有意义） */
@@ -69,7 +71,7 @@ data class ModelConfig(
         thinkingLevel != null || temperature != null || maxTokens != null
             || customHeaders.isNotEmpty() || extraBody.isNotEmpty()
             || !supportsReasoning || !supportsToolCall || !supportsImageInput
-            || !baseUrl.isNullOrBlank() || !apiPath.isNullOrBlank() || !apiKey.isNullOrBlank()
+            || !baseUrl.isNullOrBlank() || !apiPath.isNullOrBlank() || !apiKey.isNullOrBlank() || apiKeyCleared
             || responseApi != null || promptCache != null || promptCacheTtl != null
 
     /** 与全新默认配置等价（无任何覆盖）——用于保存时清理空配置，避免误高亮 */
@@ -82,6 +84,8 @@ data class ProviderConfig(
     val name: String,
     val baseUrl: String,
     val apiKey: String,
+    /** 显式清空加密Key；区别于空输入跟随原值的存储保护语义 */
+    val apiKeyCleared: Boolean = false,
     val models: List<ModelConfig> = emptyList(),
     val customHeaders: Map<String, String> = emptyMap(),
     val extraBody: Map<String, String> = emptyMap(),
@@ -150,8 +154,12 @@ data class ProviderConfig(
     fun effectiveApiPath(modelId: String): String =
         model(modelId)?.apiPath?.takeIf { it.isNotBlank() } ?: chatCompletionsPath
 
-    fun effectiveApiKey(modelId: String): String =
-        model(modelId)?.apiKey?.takeIf { it.isNotBlank() } ?: apiKey
+    fun effectiveApiKey(modelId: String): String {
+        val cfg = model(modelId)
+        if (cfg?.apiKeyCleared == true) return ""
+        cfg?.apiKey?.takeIf { it.isNotBlank() }?.let { return it }
+        return if (apiKeyCleared) "" else apiKey
+    }
 
     /** 有没有显式覆盖过某项设置（用于UI显示「跟随服务商」） */
     fun hasModelOverride(modelId: String, which: String): Boolean {

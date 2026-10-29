@@ -516,6 +516,7 @@ fun BuiltInToolsScreen(
                         tool = tool,
                         perm = perms.firstOrNull { it.toolName == tool.name && it.serverId == sid },
                         defaultApproval = defaultApproval,
+                        showApproval = sid != WORKSPACE_SERVER_ID,
                         onToggleEnabled = { enabled ->
                             val cur = perms.firstOrNull { it.toolName == tool.name && it.serverId == sid }
                             scope.launch {
@@ -692,10 +693,11 @@ fun McpServerDetailScreen(
                     ToolPermissionCard(
                         tool = tool,
                         perm = perms.firstOrNull { it.toolName == tool.name && it.serverId == serverId },
+                        defaultApproval = server?.requireApproval ?: false,
                         onToggleEnabled = { enabled ->
                             val cur = perms.firstOrNull { it.toolName == tool.name && it.serverId == serverId }
                             scope.launch {
-                                mcpStore.setToolPermission(serverId, tool.name, enabled, cur?.requireApproval ?: true)
+                                mcpStore.setToolPermission(serverId, tool.name, enabled, cur?.requireApproval ?: server?.requireApproval ?: false)
                             }
                         },
                         onToggleApproval = { approval ->
@@ -751,7 +753,7 @@ fun McpServerEditorScreen(
         mutableStateOf(initial?.tp() ?: McpTransport.STREAMABLE_HTTP)
     }
     var enabled by remember(initial?.id) { mutableStateOf(initial?.enabled ?: true) }
-    var requireApproval by remember(initial?.id) { mutableStateOf(initial?.requireApproval ?: true) }
+    var requireApproval by remember(initial?.id) { mutableStateOf(initial?.requireApproval ?: false) }
     // 请求头按行编辑：保持顺序，保存时再折成map
     val headerRows = remember(initial?.id) {
         mutableStateListOf<Pair<String, String>>().apply {
@@ -947,10 +949,11 @@ private fun ToolPermissionCard(
     perm: McpToolPermission?,
     onToggleEnabled: (Boolean) -> Unit,
     onToggleApproval: (Boolean) -> Unit,
-    defaultApproval: Boolean = true
+    defaultApproval: Boolean = true,
+    showApproval: Boolean = true,
 ) {
     val enabled = perm?.enabled ?: true
-    // 默认值由调用方按工具类别传入（内置工具=defaultRequireApproval，MCP工具=true），与执行侧同源
+    // 服务器默认值与逐工具覆盖使用执行侧相同的优先级。
     val requireApproval = perm?.requireApproval ?: defaultApproval
 
     Card(
@@ -981,9 +984,11 @@ private fun ToolPermissionCard(
                 Text(stringResource(R.string.mcp_tool_enable), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                 Switch(checked = enabled, onCheckedChange = onToggleEnabled)
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.mcp_tool_approval), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                Switch(checked = requireApproval, onCheckedChange = onToggleApproval, enabled = enabled)
+            if (showApproval) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.mcp_tool_approval), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    Switch(checked = requireApproval, onCheckedChange = onToggleApproval, enabled = enabled)
+                }
             }
         }
     }

@@ -82,15 +82,20 @@ internal fun mdComponents(
 ): MarkdownComponents {
     val currentFullscreen by rememberUpdatedState(onFullscreen)
     val hasFullscreen = onFullscreen != null
-    return remember(palette, hasFullscreen) {
+    val preferences = LocalMarkdownPreferences.current
+    return remember(palette, hasFullscreen, preferences) {
         MarkdownComponents(
             codeBlock = { block ->
-                MdCodeBlockCard(block, palette) { code, dark -> currentFullscreen?.invoke(code, dark) }
+                MdCodeBlockCard(block, palette, preferences) { code, dark -> currentFullscreen?.invoke(code, dark) }
             },
             table = { table -> MdTableCard(table, palette) },
             image = { image, link -> MdImageChip(image, link, palette) },
-            mathBlock = { formula -> MdMathBlock(formula) },
-            inlineMath = { formula -> buildInlineMathWidgets(this, formula) },
+            mathBlock = { formula ->
+                if (preferences.latexEnabled) MdMathBlock(formula) else androidx.compose.material3.Text(formula)
+            },
+            inlineMath = if (preferences.latexEnabled) {
+                { formula -> buildInlineMathWidgets(this, formula) }
+            } else null,
         )
     }
 }

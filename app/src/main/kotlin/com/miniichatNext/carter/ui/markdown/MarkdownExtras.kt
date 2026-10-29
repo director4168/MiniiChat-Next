@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -14,6 +15,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
@@ -21,11 +25,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -39,6 +46,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.TextStyle
@@ -49,14 +57,31 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.takeOrElse
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.ui.theme.LocalDarkMode
+import com.miniichatNext.carter.util.AppThemeOverrides
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+private fun AnnotatedString.lineSlice(start: Int, end: Int): AnnotatedString {
+    val source = this
+    val safeStart = start.coerceIn(0, source.text.length)
+    val safeEnd = end.coerceIn(safeStart, source.text.length)
+    return buildAnnotatedString {
+        append(source.text.substring(safeStart, safeEnd))
+        source.spanStyles.forEach { range ->
+            val from = maxOf(range.start, safeStart)
+            val to = minOf(range.end, safeEnd)
+            if (from < to) addStyle(range.item, from - safeStart, to - safeStart)
+        }
+    }
+}
 
 /** 代码块卡片：类型/复制+行号+单Text代码（横向滚动） */
 @Composable
 internal fun MdCodeBlockCard(
     block: MarkdownBlock.CodeBlock,
     palette: InlinePalette,
+    preferences: MarkdownPreferences = LocalMarkdownPreferences.current,
     onFullscreen: (String, Boolean) -> Unit,
 ) {
     val lang = block.language.orEmpty().trim().substringBefore(' ').lowercase()
@@ -71,19 +96,50 @@ internal fun MdCodeBlockCard(
         fontSize = 13.sp,
         lineHeight = 19.sp,
     )
+    val allLines = remember(block.code) { block.code.split('\n') }
+    // 折叠态只跟随偏好，不跟随流式中的代码内容（否则每个token都重置，代码框反复折叠/展开）
+    var expanded by remember(preferences.codeFold) { mutableStateOf(false) }
+    val folded = preferences.codeFold && allLines.size > 10 && !expanded
+    val displayedCode = if (folded) allLines.take(10).joinToString("\n") else block.code
     val highlighted by produceState(
-        initialValue = AnnotatedString(block.code),
-        block.code,
+        initialValue = AnnotatedString(displayedCode),
+        displayedCode,
         lang,
         palette.codeHighlight,
     ) {
         value = withContext(Dispatchers.Default) {
-            runCatching { highlightCode(block.code, lang, palette.codeHighlight) }
-                .getOrDefault(AnnotatedString(block.code))
+            val startedAt = android.os.SystemClock.elapsedRealtimeNanos()
+            val result = runCatching { highlightCode(displayedCode, lang, palette.codeHighlight) }
+                .getOrDefault(AnnotatedString(displayedCode))
+            val elapsedMs = (android.os.SystemClock.elapsedRealtimeNanos() - startedAt) / 1_000_000L
+            if (elapsedMs >= 16L) {
+                android.util.Log.w("ChatJank", "codeHighlightMs=$elapsedMs chars=${displayedCode.length} lang=$lang")
+            }
+            result
         }
     }
-    val lineCount = remember(block.code) { block.code.count { it == '\n' } + 1 }
-    val lineNumbers = remember(lineCount) { (1..lineCount).joinToString("\n") }
+    val highlightedLines = remember(highlighted, displayedCode) {
+        buildList<AnnotatedString> {
+            var start = 0
+            displayedCode.split('\n').forEach { line ->
+                val end = (start + line.length).coerceAtMost(highlighted.length)
+                add(highlighted.lineSlice(start, end))
+                start = (end + 1).coerceAtMost(highlighted.length)
+            }
+        }
+    }
+    val lineCount = highlightedLines.size
+    val lineNumberWidth = lineCount.toString().length
+    val dark = LocalDarkMode.current
+    val overrideVersion = AppThemeOverrides.version.intValue
+    val foldActionColor = remember(overrideVersion, dark) {
+        val mode = if (dark) "dark" else "light"
+        AppThemeOverrides.customColor(
+            AppThemeOverrides.load(context)[mode].orEmpty(),
+            "toastWarningAction",
+            Color(0xFFB1A4FF),
+        )
+    }
 
     ContentCard(
         label = lang.takeIf { it.isNotBlank() && !it.equals("plaintext", ignoreCase = true) }
@@ -102,37 +158,77 @@ internal fun MdCodeBlockCard(
             }
         },
     ) {
-        // 行号与代码共用横滑容器；完整扫描保留跨行注释/字符串状态。
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState())
-                .padding(vertical = 10.dp)
-        ) {
-            Text(
-                text = lineNumbers,
-                style = codeStyle,
-                color = palette.lineNumberFg,
-                textAlign = TextAlign.End,
-                softWrap = false,
-                modifier = Modifier
-                    .drawBehind {
-                        val x = size.width - 0.5.dp.toPx()
-                        drawLine(
-                            color = palette.outline,
-                            start = Offset(x, 0f),
-                            end = Offset(x, size.height),
-                            strokeWidth = 1.dp.toPx(),
+        if (preferences.codeWrap) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+            ) {
+                highlightedLines.forEachIndexed { index, line ->
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = (index + 1).toString().padStart(lineNumberWidth, ' '),
+                            style = codeStyle,
+                            color = palette.lineNumberFg,
+                            softWrap = false,
+                            modifier = Modifier.padding(start = 10.dp, end = 8.dp),
+                        )
+                        Text(
+                            text = if (line.length == 0) AnnotatedString(" ") else line,
+                            style = codeStyle.copy(color = palette.codeFg),
+                            minLines = 1,
+                            softWrap = true,
+                            modifier = Modifier.weight(1f).padding(start = 2.dp, end = 12.dp),
                         )
                     }
-                    .padding(start = 10.dp, end = 8.dp),
-            )
-            Text(
-                text = highlighted,
-                style = codeStyle.copy(color = palette.codeFg),
-                softWrap = false,
-                modifier = Modifier.padding(start = 2.dp, end = 12.dp),
-            )
+                }
+            }
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(vertical = 10.dp)
+            ) {
+                Text(
+                    text = (1..lineCount).joinToString("\n") { it.toString().padStart(lineNumberWidth, ' ') },
+                    style = codeStyle,
+                    color = palette.lineNumberFg,
+                    softWrap = false,
+                    modifier = Modifier
+                        .drawBehind {
+                            val x = size.width - 0.5.dp.toPx()
+                            drawLine(
+                                color = palette.outline,
+                                start = Offset(x, 0f),
+                                end = Offset(x, size.height),
+                                strokeWidth = 1.dp.toPx(),
+                            )
+                        }
+                        .padding(start = 10.dp, end = 8.dp),
+                )
+                Text(
+                    text = highlighted,
+                    style = codeStyle.copy(color = palette.codeFg),
+                    softWrap = false,
+                    modifier = Modifier.padding(start = 2.dp, end = 12.dp),
+                )
+            }
+        }
+        if (preferences.codeFold && allLines.size > 10) {
+            TextButton(
+                onClick = { expanded = !expanded },
+                colors = ButtonDefaults.textButtonColors(contentColor = foldActionColor),
+            ) {
+                Icon(
+                    if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    null,
+                    Modifier.size(16.dp),
+                    tint = foldActionColor,
+                )
+                Text(
+                    if (expanded) stringResource(R.string.preference_code_fold_less)
+                    else stringResource(R.string.preference_code_fold_more, allLines.size - 10),
+                )
+            }
         }
     }
 }

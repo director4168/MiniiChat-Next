@@ -116,28 +116,15 @@ class RecentBugTests {
         assertEquals(a.content, back.content)
     }
 
-    // AttachmentImporter.calculateInSampleSize是纯函数，大图不能OOM
     @Test
-    fun `AttachmentImporter inSampleSize downsamples 8000x6000 photo to fit 2048`() {
-        // 反射调内部函数避免拉入Android-only的Bitmap/ExifInterface
-        val cls = Class.forName("com.miniichatNext.carter.util.AttachmentImporter")
-        val m = cls.getDeclaredMethod(
-            "calculateInSampleSize",
-            Int::class.javaPrimitiveType, Int::class.javaPrimitiveType,
-            Int::class.javaPrimitiveType, java.lang.Long.TYPE,
-        )
-        m.isAccessible = true
-        // 8000x6000总像素48M>>16M至少/4 (inSampleSize>=2)
-        val sample = m.invoke(cls, /*width*/ 8000, /*height*/ 6000, /*maxDim*/ 2048, /*maxPixels*/ 4_000_000L) as Int
-        assertTrue("inSampleSize 必须 >= 2，结果=$sample", sample >= 2)
-
-        // 800x600本就符合→inSampleSize==1
-        val smallSample = m.invoke(cls, 800, 600, 2048, 4_000_000L) as Int
-        assertEquals(1, smallSample)
-
-        // 4000x3000=12M像素，超过4M但单边≤2048，至少/2
-        val midSample = m.invoke(cls, 4000, 3000, 2048, 4_000_000L) as Int
-        assertTrue("4000x3000必须降采样，结果=$midSample", midSample >= 2)
+    fun `image sampling respects dimension and pixel limits`() {
+        val sample = com.miniichatNext.carter.data.util.AttachmentLoader.calculateImageInSampleSize(
+            8000, 6000, 2048, 4_000_000L)
+        assertTrue(sample >= 2)
+        assertEquals(1, com.miniichatNext.carter.data.util.AttachmentLoader.calculateImageInSampleSize(
+            800, 600, 2048, 4_000_000L))
+        assertTrue(com.miniichatNext.carter.data.util.AttachmentLoader.calculateImageInSampleSize(
+            4000, 3000, 2048, 4_000_000L) >= 2)
     }
 
     // Bug ② buildClaudeBody纯文本分支必须put role

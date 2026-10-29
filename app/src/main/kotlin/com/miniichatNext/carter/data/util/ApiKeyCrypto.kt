@@ -46,7 +46,7 @@ object ApiKeyCrypto {
     fun encrypt(plain: String?): String {
         val value = plain ?: return ""
         if (value.isEmpty() || value.startsWith(PREFIX)) return value
-        val key = secretKey() ?: return value
+        val key = secretKey() ?: return ""
         return runCatching {
             val cipher = Cipher.getInstance(TRANSFORM)
             cipher.init(Cipher.ENCRYPT_MODE, key)
@@ -56,9 +56,9 @@ object ApiKeyCrypto {
                 Base64.encodeToString(cipherText, Base64.NO_WRAP)
         }.getOrElse { e ->
             com.miniichatNext.carter.debug.DebugLog.w(
-                "ApiKeyCrypto", "encrypt failed, storing plaintext: ${e.message}"
+                "ApiKeyCrypto", "encrypt failed; key was not stored: ${e.message}"
             )
-            value
+            ""
         }
     }
 

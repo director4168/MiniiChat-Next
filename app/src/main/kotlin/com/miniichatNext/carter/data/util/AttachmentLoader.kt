@@ -35,6 +35,10 @@ class AttachmentTooLargeException(val limitBytes: Long) :
     RuntimeException("Attachment exceeds ${limitBytes / 1024 / 1024} MB limit")
 
 object AttachmentLoader {
+    private fun openStream(resolver: ContentResolver, uri: Uri): InputStream? =
+        if (uri.scheme == "file") runCatching { File(uri.path.orEmpty()).inputStream() }.getOrNull()
+        else resolver.openInputStream(uri)
+
     /** 硬上限，将Base64+JSON编码的有效负载保持在请求限制范围内并避免OOM */
     const val MAX_ATTACHMENT_BYTES: Long = 10L * 1024 * 1024  // 10 MB
 
@@ -75,7 +79,7 @@ object AttachmentLoader {
         val out = ByteArrayOutputStream()
         var truncated = false
         val opened = runCatching {
-            resolver.openInputStream(uri)?.use { input ->
+            openStream(resolver, uri)?.use { input ->
                 val buf = ByteArray(64 * 1024)
                 var total = 0L
                 while (true) {
@@ -144,7 +148,7 @@ object AttachmentLoader {
 
         val out = ByteArrayOutputStream()
         var total = 0L
-        resolver.openInputStream(uri).use { input ->
+        openStream(resolver, uri).use { input ->
             requireNotNull(input) { "Cannot open input stream for $uri" }
             Base64OutputStream(out, Base64.NO_WRAP).use { b64 ->
                 val buf = ByteArray(64 * 1024)
@@ -182,7 +186,7 @@ object AttachmentLoader {
      * 参考rikkahub的File.compressAndEncode
      */
     private fun compressAndEncodeImage(resolver: ContentResolver, uri: Uri): EncodedImage? {
-        val raw = resolver.openInputStream(uri)?.use { it.readBytes() } ?: return null
+        val raw = openStream(resolver, uri)?.use { it.readBytes() } ?: return null
 
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)

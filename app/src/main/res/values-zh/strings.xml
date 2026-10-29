@@ -671,4 +671,21 @@
     <string name="workspace_file_too_large">文件过大无法编辑（%1$s）</string>
     <string name="workspace_file_image_load_failed">无法解码图片</string>
     <string name="action_ok">确定</string>
+    <string name="tool_round_limit">工具调用已达本轮上限，可发送消息继续。</string>
+    <string name="compress_source_changed">压缩期间对话已变化，已保留原消息，请重试压缩。</string>
+    <string name="update_saved_location">已保存到下载目录：%1$s</string>
+    <string name="builtin_path_outside_roots">路径不在允许的目录中。</string>
+    <string name="update_saved_copy">已保存副本：%1$s</string>
+    <string name="provider_clear_api_key">清除已保存的API Key</string>
+    <string name="section_preferences">偏好</string>
+    <string name="more_preferences_title">更多偏好设置</string>
+    <string name="more_preferences_sub">代码、公式和界面行为</string>
+    <string name="preference_code_wrap">代码框自动换行</string>
+    <string name="preference_code_wrap_desc">长代码行自动换行以适应消息卡片。</string>
+    <string name="preference_code_fold">代码框自动折叠</string>
+    <string name="preference_code_fold_desc">代码超过十行时默认折叠。</string>
+    <string name="preference_latex">渲染LaTeX公式</string>
+    <string name="preference_latex_desc">在Markdown中渲染数学公式。</string>
+    <string name="preference_code_fold_more">展开剩余%1$d行</string>
+    <string name="preference_code_fold_less">收起代码</string>
 </resources>

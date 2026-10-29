@@ -8,6 +8,8 @@ object SkillFrontmatterParser {
         val name: String,
         val description: String,
         val body: String,
+        val id: String? = null,
+        val enabled: Boolean? = null,
         val compatibility: String? = null,
         val allowedTools: List<String> = emptyList()
     )
@@ -18,6 +20,8 @@ object SkillFrontmatterParser {
         val map = parseYaml(frontmatter)
         val name = map["name"]?.trim()?.takeIf { it.isNotBlank() } ?: fallbackName
         val description = map["description"]?.trim().orEmpty()
+        val stableId = map["id"]?.trim()?.takeIf { it.isNotBlank() }
+        val enabled = map["enabled"]?.trim()?.toBooleanStrictOrNull()
         val compatibility = map["compatibility"]?.trim()?.takeIf { it.isNotBlank() }
         val allowedTools = map["allowed-tools"]
             ?.split(' ', ',')
@@ -28,6 +32,8 @@ object SkillFrontmatterParser {
             name = sanitizeName(name),
             description = description,
             body = body.trim(),
+            id = stableId,
+            enabled = enabled,
             compatibility = compatibility,
             allowedTools = allowedTools
         )

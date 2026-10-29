@@ -99,11 +99,12 @@ internal fun ChatViewModel.fetchModels(providerId: String) {
                 // 代理/聚合API常返回重名模型；不去重会让modelIds()出现重复项，
                 // 模型选择器的LazyColumn key冲突直接崩（同类崩溃见挂载重复附件）
                 val incoming = models.distinct()
-                val existingIds = provider.modelIds().toSet()
-                val newConfigs = incoming.filter { it !in existingIds }
-                    .map { ModelConfig(modelId = it, displayName = it) }
-                val updated = provider.copy(models = provider.models + newConfigs)
-                providerStore.upsert(updated)
+                val updated = providerStore.update(providerId) { current ->
+                    val existingIds = current.modelIds().toSet()
+                    val newConfigs = incoming.filter { it !in existingIds }
+                        .map { ModelConfig(modelId = it, displayName = it) }
+                    current.copy(models = current.models + newConfigs)
+                } ?: return@launch
                 // 首次拉取（软件清空重配/新建provider）：activeModel为空时自动选中
                 // 第一个新模型——否则用户拉完模型回聊天页仍是"未选择模型"，无从下手
                 if (settings.value.activeModel.isBlank()
@@ -112,7 +113,7 @@ internal fun ChatViewModel.fetchModels(providerId: String) {
                     settingsRepo.update {
                         it.copy(
                             activeProviderId = if (it.activeProviderId.isBlank()) providerId else it.activeProviderId,
-                            activeModel = newConfigs.first().modelId,
+                            activeModel = updated.modelIds().firstOrNull().orEmpty(),
                         )
                     }
                 }
@@ -140,12 +141,10 @@ internal fun ChatViewModel.addManualModel(providerId: String, model: String) {
         try {
             val trimmed = model.trim()
             if (trimmed.isEmpty()) return@launch
-            val provider = providerStore.snapshot().firstOrNull { it.id == providerId } ?: return@launch
-            if (provider.modelIds().contains(trimmed)) return@launch
-            val updated = provider.copy(
-                models = provider.models + ModelConfig(modelId = trimmed, displayName = trimmed)
-            )
-            providerStore.upsert(updated)
+            providerStore.update(providerId) { provider ->
+                if (trimmed in provider.modelIds()) provider else provider.copy(
+                    models = provider.models + ModelConfig(modelId = trimmed, displayName = trimmed))
+            }
         } catch (t: Throwable) {
             DebugLog.e("ChatVM", "addManualModel failed", t)
             _error.value = getApplication<Application>().getString(R.string.error_generic, t.message ?: "")
@@ -156,11 +155,9 @@ internal fun ChatViewModel.addManualModel(providerId: String, model: String) {
 internal fun ChatViewModel.removeModel(providerId: String, model: String) {
     viewModelScope.launch {
         try {
-            val provider = providerStore.snapshot().firstOrNull { it.id == providerId } ?: return@launch
-            val updated = provider.copy(
-                models = provider.models.filterNot { it.modelId == model || it.displayName == model }
-            )
-            providerStore.upsert(updated)
+            val updated = providerStore.update(providerId) { provider ->
+                provider.copy(models = provider.models.filterNot { it.modelId == model || it.displayName == model })
+            } ?: return@launch
             if (settings.value.activeProviderId == providerId && settings.value.activeModel == model) {
                 settingsRepo.update {
                     it.copy(activeModel = updated.modelIds().firstOrNull() ?: "")
@@ -185,6 +182,8 @@ internal fun ChatViewModel.saveSkillFiles(name: String, files: Map<String, ByteA
     viewModelScope.launch {
         if (!skillStore.saveSkillFiles(name, files)) {
             _error.value = getApplication<Application>().getString(com.miniichatNext.carter.R.string.skill_import_failed_empty)
+        } else {
+            skillStore.refresh()
         }
     }
 }
@@ -198,12 +197,11 @@ internal fun ChatViewModel.deleteSkill(id: String) {
 
         skillStore.delete(canonicalId)
 
-        val snapshot = assistantStore.snapshot()
-        val cleaned = snapshot.map { a ->
-            val pruned = a.enabledSkillIds.filterNot { it == canonicalId || it == canonicalName }
-            if (pruned.size != a.enabledSkillIds.size) a.copy(enabledSkillIds = pruned) else a
+        assistantStore.updateAll { list ->
+            list.map { assistant ->
+                assistant.copy(enabledSkillIds = assistant.enabledSkillIds.filterNot { it == canonicalId || it == canonicalName })
+            }
         }
-        if (cleaned != snapshot) assistantStore.save(cleaned)
     }
 }
 
@@ -213,13 +211,9 @@ internal fun ChatViewModel.setSkillEnabled(id: String, enabled: Boolean) {
 
 internal fun ChatViewModel.toggleAssistantSkill(assistantId: String, skillId: String, enabled: Boolean) {
     viewModelScope.launch {
-        val list = assistantStore.snapshot().toMutableList()
-        val idx = list.indexOfFirst { it.id == assistantId }
-        if (idx >= 0) {
-            val current = list[idx].enabledSkillIds
-            val next = if (enabled) (current + skillId).distinct() else current - skillId
-            list[idx] = list[idx].copy(enabledSkillIds = next)
-            assistantStore.save(list)
+        assistantStore.update(assistantId) { assistant ->
+            val current = assistant.enabledSkillIds
+            assistant.copy(enabledSkillIds = if (enabled) (current + skillId).distinct() else current - skillId)
         }
     }
 }
@@ -263,9 +257,12 @@ internal fun ChatViewModel.effectiveSkillIds(conversationId: String?): Set<Strin
     return result
 }
 
-internal suspend fun ChatViewModel.activeEnabledSkills(assistant: Assistant?): List<Skill> {
+internal suspend fun ChatViewModel.activeEnabledSkills(assistant: Assistant?, conversationId: String): List<Skill> {
     if (assistant == null) return emptyList()
-    val ids = effectiveSkillIds(_activeId.value)
+    var ids = assistant.enabledSkillIds.toSet()
+    _tempSkillOverrides.value[conversationId].orEmpty().forEach { (id, enabled) ->
+        ids = if (enabled) ids + id else ids - id
+    }
     if (ids.isEmpty()) return emptyList()
-    return skillStore.snapshot().filter { it.id in ids && it.enabled }
+    return skillStore.snapshot().filter { (it.id in ids || it.name in ids) && it.enabled }
 }

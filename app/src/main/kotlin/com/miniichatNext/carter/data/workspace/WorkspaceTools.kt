@@ -201,6 +201,12 @@ private fun Map<String, String>.absolutePath(name: String): String {
     return path
 }
 
+private fun workspaceRelativePath(path: String): String = when {
+    path == "/workspace" -> ""
+    path.startsWith("/workspace/") -> path.removePrefix("/workspace/")
+    else -> path.removePrefix("/")
+}
+
 private suspend fun readFile(
     args: Map<String, String>,
     workspaceId: String,
@@ -319,7 +325,13 @@ private suspend fun listFiles(
     val path = args.absolutePath("path")
     val area = args["area"] ?: "files"
     val dir = entryDir(workspaceId, repository, area)
-    val target = java.io.File(dir, path.removePrefix("/"))
+    val relativePath = when {
+        area == "files" && (path == "/workspace" || path.startsWith("/workspace/")) ->
+            path.removePrefix("/workspace").trimStart('/')
+        area == "linux" && path == "/" -> ""
+        else -> path.removePrefix("/")
+    }
+    val target = if (relativePath.isBlank()) dir else java.io.File(dir, relativePath)
     if (!target.isDirectory) return fail("not a directory: $path")
     val entries = target.listFiles()?.sortedBy { it.name } ?: emptyList()
     val sb = StringBuilder()
@@ -342,7 +354,7 @@ private suspend fun deleteFile(
     val area = args["area"] ?: "files"
     val recursive = args["recursive"]?.toBooleanStrictOrNull() ?: false
     val dir = entryDir(workspaceId, repository, area)
-    val target = java.io.File(dir, path.removePrefix("/"))
+    val target = java.io.File(dir, workspaceRelativePath(path))
     if (!target.exists()) return fail("not found: $path")
     if (target.isDirectory && !recursive && target.listFiles()?.isNotEmpty() == true) {
         return fail("directory not empty; pass recursive=true")
@@ -360,8 +372,8 @@ private suspend fun moveFile(
     val dst = args.absolutePath("target")
     val overwrite = args["overwrite"]?.toBooleanStrictOrNull() ?: false
     val dir = entryDir(workspaceId, repository, "files")
-    val from = java.io.File(dir, src.removePrefix("/"))
-    val to = java.io.File(dir, dst.removePrefix("/"))
+    val from = java.io.File(dir, workspaceRelativePath(src))
+    val to = java.io.File(dir, workspaceRelativePath(dst))
     if (!from.exists()) return fail("not found: $src")
     if (to.exists() && !overwrite) return fail("target exists: $dst (pass overwrite=true)")
     if (from.renameTo(to)) return ok("moved $src -> $dst")
@@ -382,8 +394,8 @@ private suspend fun copyFile(
     val dst = args.absolutePath("target")
     val overwrite = args["overwrite"]?.toBooleanStrictOrNull() ?: false
     val dir = entryDir(workspaceId, repository, "files")
-    val from = java.io.File(dir, src.removePrefix("/"))
-    val to = java.io.File(dir, dst.removePrefix("/"))
+    val from = java.io.File(dir, workspaceRelativePath(src))
+    val to = java.io.File(dir, workspaceRelativePath(dst))
     if (!from.isFile) return fail("not a file: $src")
     if (to.exists() && !overwrite) return fail("target exists: $dst (pass overwrite=true)")
     to.parentFile?.mkdirs()
@@ -398,7 +410,7 @@ private suspend fun mkdir(
 ): McpToolResult {
     val path = args.absolutePath("path")
     val dir = entryDir(workspaceId, repository, "files")
-    val target = java.io.File(dir, path.removePrefix("/"))
+    val target = java.io.File(dir, workspaceRelativePath(path))
     if (target.isDirectory) return ok("already exists: $path")
     val made = target.mkdirs()
     return if (made || target.isDirectory) ok("created $path") else fail("mkdir failed: $path")
@@ -410,9 +422,9 @@ private suspend fun glob(
     repository: WorkspaceRepository,
 ): McpToolResult {
     val pattern = args.requireArg("pattern")
-    val base = args["path"]?.removePrefix("/") ?: ""
+    val base = args["path"]?.let(::workspaceRelativePath) ?: ""
     val dir = entryDir(workspaceId, repository, "files")
-    val rootDir = java.io.File(dir, base)
+    val rootDir = if (base.isBlank()) dir else java.io.File(dir, base)
     if (!rootDir.isDirectory) return fail("not a directory: ${base.ifBlank { "/" }}")
     // 简化glob：双星跨任意深度、单星只跨一层；转正则
     val regex = buildString {
@@ -450,7 +462,7 @@ private suspend fun grep(
     repository: WorkspaceRepository,
 ): McpToolResult {
     val pattern = args.requireArg("pattern")
-    val base = args["path"]?.removePrefix("/") ?: ""
+    val base = args["path"]?.let(::workspaceRelativePath) ?: ""
     val useRegex = args["regex"]?.toBooleanStrictOrNull() ?: false
     val max = args["max_results"]?.toIntOrNull() ?: 100
     val dir = entryDir(workspaceId, repository, "files")

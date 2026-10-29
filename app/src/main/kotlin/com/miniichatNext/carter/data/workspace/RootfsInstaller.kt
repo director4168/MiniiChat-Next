@@ -11,15 +11,21 @@ import java.nio.file.Files
 import java.util.Locale
 import java.util.zip.GZIPInputStream
 import org.tukaani.xz.XZInputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.withContext
+
 
 class RootfsInstaller(
     private val manager: WorkspaceManager,
     private val patcher: RootfsPatcher = RootfsPatcher(),
 ) {
-    fun install(
+    suspend fun install(
         root: String,
         url: String,
         onProgress: (RootfsInstallProgress) -> Unit = {},
+        onBeforeCommit: suspend () -> Unit = {},
     ) {
         require(url.isNotBlank()) { "Rootfs download url is required" }
         manager.ensureWorkspace(root)
@@ -27,20 +33,29 @@ class RootfsInstaller(
         val tempDir = manager.tempDir(root)
         val archive = File(tempDir, "rootfs.${format.extension}")
         val stagingDir = File(tempDir, "rootfs-staging")
+        val backupDir = File(tempDir, "rootfs-backup")
         val linuxDir = manager.linuxDir(root)
-
         try {
-            stagingDir.deleteRecursively()
-            stagingDir.mkdirs()
-            download(url, archive, onProgress)
-            extractTar(archive, stagingDir, format, onProgress)
-            linuxDir.deleteRecursively()
-            require(stagingDir.renameTo(linuxDir)) { "Failed to move rootfs into workspace" }
-            patcher.patch(linuxDir)
-            onProgress(RootfsInstallProgress(stage = RootfsInstallStage.INSTALLED))
+            recoverRootfsBackup(linuxDir, backupDir)
+            runInterruptible(Dispatchers.IO) {
+                stagingDir.deleteRecursively()
+                stagingDir.mkdirs()
+                download(url, archive, onProgress)
+                extractTar(archive, stagingDir, format, onProgress)
+            }
+            onBeforeCommit()
+            runInterruptible(Dispatchers.IO) {
+                commitStagedRootfs(stagingDir, linuxDir, backupDir) { installed ->
+                    patcher.patch(installed)
+                    require(manager.hasRootfs(root)) { "Installed rootfs is missing bin/sh" }
+                }
+                onProgress(RootfsInstallProgress(stage = RootfsInstallStage.INSTALLED))
+            }
         } finally {
-            archive.delete()
-            stagingDir.deleteRecursively()
+            withContext(NonCancellable + Dispatchers.IO) {
+                archive.delete()
+                stagingDir.deleteRecursively()
+            }
         }
     }
 

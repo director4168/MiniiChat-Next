@@ -28,6 +28,12 @@ data class AppSettings(
     val language: String = "system",
     val dynamicColor: Boolean = true,
     val themeMode: String = "system",
+    /** Markdown代码块是否自动换行 */
+    val codeWrap: Boolean = true,
+    /** Markdown代码块超过十行是否默认折叠 */
+    val codeFold: Boolean = true,
+    /** 是否渲染LaTeX数学公式 */
+    val latexEnabled: Boolean = true,
     // 格式providerId::modelId
     val ocrModel: String = "",
     /** OCR触发模式：auto=仅纯文本模型/always=所有带图消息（视觉模型也附加文字）/off=禁用 */
@@ -62,6 +68,9 @@ class SettingsRepository(private val context: Context) {
         val LANG = stringPreferencesKey("language")
         val DYNAMIC = booleanPreferencesKey("dynamic_color")
         val THEME = stringPreferencesKey("theme_mode")
+        val CODE_WRAP = booleanPreferencesKey("code_wrap")
+        val CODE_FOLD = booleanPreferencesKey("code_fold")
+        val LATEX_ENABLED = booleanPreferencesKey("latex_enabled")
         val DEBUG_LOG_BALL = booleanPreferencesKey("debug_log_ball")
         val OCR_MODEL = stringPreferencesKey("ocr_model")
     val OCR_MODE = stringPreferencesKey("ocr_mode")
@@ -87,6 +96,9 @@ class SettingsRepository(private val context: Context) {
         language = p[Keys.LANG] ?: "system",
         dynamicColor = p[Keys.DYNAMIC] ?: true,
         themeMode = p[Keys.THEME] ?: "system",
+        codeWrap = p[Keys.CODE_WRAP] ?: true,
+        codeFold = p[Keys.CODE_FOLD] ?: true,
+        latexEnabled = p[Keys.LATEX_ENABLED] ?: true,
         ocrModel = p[Keys.OCR_MODEL] ?: "",
         ocrMode = p[Keys.OCR_MODE] ?: "auto",
         titleModel = p[Keys.TITLE_MODEL] ?: "",
@@ -113,6 +125,9 @@ class SettingsRepository(private val context: Context) {
             p[Keys.LANG] = next.language
             p[Keys.DYNAMIC] = next.dynamicColor
             p[Keys.THEME] = next.themeMode
+            p[Keys.CODE_WRAP] = next.codeWrap
+            p[Keys.CODE_FOLD] = next.codeFold
+            p[Keys.LATEX_ENABLED] = next.latexEnabled
             p[Keys.OCR_MODEL] = next.ocrModel
             p[Keys.OCR_MODE] = next.ocrMode
             p[Keys.TITLE_MODEL] = next.titleModel

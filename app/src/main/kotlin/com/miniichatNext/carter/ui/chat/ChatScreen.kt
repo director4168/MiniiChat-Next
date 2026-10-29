@@ -1,13 +1,11 @@
 package com.miniichatNext.carter.ui.chat
 
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -27,17 +25,24 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
@@ -55,8 +60,57 @@ import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.vm.effectiveSkillIds
 import com.miniichatNext.carter.vm.suggestionCacheKey
 import com.miniichatNext.carter.vm.ChatViewModel
+import com.miniichatNext.carter.vm.StreamOverlay
 import androidx.compose.runtime.collectAsState
 import com.miniichatNext.carter.ui.markdown.MarkdownText
+import com.miniichatNext.carter.ui.markdown.preloadMarkdownDocument
+
+@Composable
+private fun ChatMessageListItem(
+    message: com.miniichatNext.carter.data.model.Message,
+    isLastAssistant: Boolean,
+    isStreaming: Boolean,
+    streamingOverlay: StateFlow<StreamOverlay?>?,
+    userAvatar: com.miniichatNext.carter.data.avatar.Avatar,
+    assistantAvatar: com.miniichatNext.carter.data.avatar.Avatar,
+    senderLabel: String,
+    onStartEdit: () -> Unit,
+    onContinue: () -> Unit,
+    onDelete: (String) -> Unit,
+    onRegenerateFrom: (String) -> Unit,
+    onApproveTool: ((com.miniichatNext.carter.data.model.ToolInvocation, String?) -> Unit)?,
+    onRejectTool: ((com.miniichatNext.carter.data.model.ToolInvocation) -> Unit)?,
+    onFullscreen: ((String, Boolean) -> Unit)?,
+) {
+    val liveOverlay = if (isLastAssistant && isStreaming) {
+        streamingOverlay?.collectAsState(initial = null)?.value
+    } else null
+    val displayMessage = remember(message, liveOverlay) {
+        liveOverlay?.let { overlay ->
+            message.copy(
+                content = overlay.content,
+                reasoningContent = overlay.reasoning
+                    .ifBlank { message.reasoningContent.orEmpty() }
+                    .takeIf { it.isNotBlank() },
+                orderedParts = overlay.parts.ifEmpty { message.orderedParts },
+            )
+        } ?: message
+    }
+    MessageItem(
+        message = displayMessage,
+        avatar = if (displayMessage.role == "user") userAvatar else assistantAvatar,
+        senderLabel = senderLabel,
+        isLastAssistant = isLastAssistant,
+        isStreaming = isStreaming,
+        onStartEdit = onStartEdit,
+        onContinue = onContinue,
+        onDelete = { onDelete(displayMessage.id) },
+        onRegenerateFrom = { onRegenerateFrom(displayMessage.id) },
+        onApproveTool = onApproveTool,
+        onRejectTool = onRejectTool,
+        onFullscreen = onFullscreen,
+    )
+}
 
 @Composable
 fun ChatScreen(
@@ -66,7 +120,7 @@ fun ChatScreen(
     /** 本对话实际生效的模型id（对话覆盖>助手preferred>全局默认），气泡标签与enabled用它 */
     effectiveModelId: String = "",
     isStreaming: Boolean,
-    streamingOverlay: Pair<String, String>? = null,
+    streamingOverlay: StateFlow<StreamOverlay?>? = null,
     assistant: com.miniichatNext.carter.data.model.Assistant? = null,
     userProfile: com.miniichatNext.carter.data.model.UserProfile = com.miniichatNext.carter.data.model.UserProfile(),
     assistants: List<com.miniichatNext.carter.data.model.Assistant> = emptyList(),
@@ -110,13 +164,42 @@ fun ChatScreen(
     var pendingAttachments by remember { mutableStateOf<List<com.miniichatNext.carter.data.model.Attachment>>(emptyList()) }
     val listState = rememberLazyListState()
     val rawMessages = conversation?.messages ?: emptyList()
-    val messages = remember(rawMessages, streamingOverlay) {
-        val ov = streamingOverlay
-        if (ov == null) rawMessages
-        else rawMessages.map { if (it.id == ov.first) it.copy(content = ov.second) else it }
+    var followBottom by remember(conversation?.id) { mutableStateOf(true) }
+    var rememberedSession by rememberSaveable { mutableStateOf("") }
+    var rememberedCount by rememberSaveable { mutableIntStateOf(-1) }
+    // 流式overlay只由最后一条生成中的消息订阅，历史消息保持稳定节点。
+    val visibleMessages = remember(rawMessages) { rawMessages.filterNot { it.hidden } }
+    LaunchedEffect(conversation?.id, visibleMessages.size) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val indexes = info.visibleItemsInfo.map { it.index }.filter { it in visibleMessages.indices }
+            if (indexes.isEmpty()) null else (indexes.minOrNull()!! to indexes.maxOrNull()!!)
+        }
+            .distinctUntilChanged()
+            .collectLatest { range ->
+                if (range == null) return@collectLatest
+                delay(70)
+                val (first, last) = range
+                val indexesToPrewarm = ((first - 2).coerceAtLeast(0) until
+                    (last + 3).coerceAtMost(visibleMessages.size))
+                    .sortedBy { index -> if (index < first) first - index else index - first }
+                indexesToPrewarm.forEach { index ->
+                    val message = visibleMessages[index]
+                    if (message.role == "assistant" && message.content.length > 512) {
+                        preloadMarkdownDocument(message.content)
+                    }
+                }
+            }
     }
-    // UI可见消息（过滤续写指令等隐形消息）
-    val visibleMessages = remember(messages) { messages.filterNot { it.hidden } }
+    val assistantDisplayAvatar = remember(assistant?.avatar, assistant?.avatarPath) {
+        com.miniichatNext.carter.data.avatar.Avatar.fromLegacy(
+            assistant?.avatar ?: "🤖", assistant?.avatarPath
+        )
+    }
+    val userSenderLabel = stringResource(R.string.profile_default_name)
+    val assistantSenderLabel = effectiveModelId.ifBlank {
+        activeProvider?.name ?: stringResource(R.string.assistant)
+    }
     var editingMessageId by rememberSaveable { mutableStateOf<String?>(null) }
     // 重说：先确认，再截断重生成
     var retellTargetId by remember { mutableStateOf<String?>(null) }
@@ -129,44 +212,61 @@ fun ChatScreen(
     var suggestionPage by rememberSaveable { mutableStateOf(0) }
     // 递增即请求一次"聚焦输入框+弹键盘"（候选回复点"编辑"时用）
     var focusInputRequest by remember { mutableStateOf(0) }
-    var immersive by rememberSaveable { mutableStateOf(false) }
-    val immersiveAlpha by animateFloatAsState(
-        targetValue = if (immersive) 0f else 1f,
-        animationSpec = tween(durationMillis = 320),
-        label = "immersive-alpha"
-    )
 
-    // 滚动策略（按会话隔离）：
-    // 流式结束不触发滚动：高度增长后最后一次滚动会把消息顶部对齐视口顶
-    // 首次进入/从全屏等页面返回也不滚（重组会重启本Effect）
-    // 记住上一次的size，真的变了才滚，保住浏览位置
-    // 切会话（该会话首次见到）直接跳到最新消息，无动画
-    // 同会话内新消息出现（count>seen）平滑滚到底
-    // 重组重启和消息截断都不滚
-    // 进编辑态不主动滚：BasicTextField聚焦时LazyColumn的bringIntoView
-    // 会把可见区域调整到输入框位置，强行animateScrollToItem反而把
-    // 消息顶部对齐视口顶（长消息生硬跳变），键盘弹出再跳一次（用户报的bug）
-    // 同rikkahub ChatPage.onEdit：只改inputState.editingMessage，不滚动
-    var rememberedLastMsgId by rememberSaveable { mutableStateOf("") }
-    var rememberedCount by rememberSaveable { mutableIntStateOf(-1) }
-    var rememberedSession by rememberSaveable { mutableStateOf("") }
-    LaunchedEffect(conversation?.id, visibleMessages.size) {
-        val count = visibleMessages.size
-        if (count == 0) return@LaunchedEffect
-        val lastMsgId = visibleMessages.last().id
-        val session = conversation?.id.orEmpty()
-        when {
-            rememberedSession != session -> listState.scrollToItem(count - 1)              // 切会话：滚到底
-            rememberedLastMsgId.isBlank() -> listState.scrollToItem(count - 1)             // 首次
-            // 新消息到达（末尾id变了且数量增加）才滚动；
-            // 删除消息（id变了但数量减少）绝不滚——删除C再删B会把视口拽到A的顶部
-            rememberedLastMsgId != lastMsgId && count > rememberedCount ->
-                listState.animateScrollToItem(count - 1)
-            // 其余（删除/截断/编辑/重组/返回）：不滚，保持视口
+    val followThresholdPx = with(LocalDensity.current) { 56.dp.toPx() }
+    LaunchedEffect(conversation?.id) {
+        snapshotFlow { listState.isScrollInProgress }
+            .distinctUntilChanged()
+            .collectLatest { scrolling ->
+                if (!scrolling) return@collectLatest
+                var previousFrame = 0L
+                var lastReport = 0L
+                while (listState.isScrollInProgress) {
+                    val now = withFrameNanos { it }
+                    if (previousFrame != 0L) {
+                        val gapMs = (now - previousFrame) / 1_000_000L
+                        val wallMs = android.os.SystemClock.elapsedRealtime()
+                        if (gapMs >= 32L && wallMs - lastReport >= 700L) {
+                            lastReport = wallMs
+                            DebugLog.w("ChatJank", "frameGapMs=$gapMs firstVisible=${listState.firstVisibleItemIndex} offset=${listState.firstVisibleItemScrollOffset}")
+                        }
+                    }
+                    previousFrame = now
+                }
+            }
+    }
+    // 只在加载中且用户原本贴底时跟随；用户上滑后保留历史阅读位置。
+    LaunchedEffect(conversation?.id, isStreaming) {
+        snapshotFlow {
+            val info = listState.layoutInfo
+            val spacer = info.visibleItemsInfo.lastOrNull { it.index == info.totalItemsCount - 1 }
+            val bottomGap = spacer?.let {
+                info.viewportEndOffset - info.afterContentPadding - (it.offset + it.size)
+            } ?: Int.MAX_VALUE
+            Triple(listState.isScrollInProgress, listState.canScrollForward, bottomGap)
         }
-        rememberedLastMsgId = lastMsgId
-        rememberedCount = count
+            .distinctUntilChanged()
+            .collect { (scrolling, canScrollForward, bottomGap) ->
+            val atBottom = bottomGap.toFloat() <= followThresholdPx
+            if (scrolling) {
+                followBottom = atBottom
+            } else if (isStreaming && followBottom && atBottom && canScrollForward) {
+                listState.requestScrollToItem(listState.layoutInfo.totalItemsCount - 1)
+            }
+        }
+    }
+    LaunchedEffect(conversation?.id, visibleMessages.size) {
+        val session = conversation?.id.orEmpty()
+        val count = visibleMessages.size
+        val newSession = rememberedSession != session
+        val appended = !newSession && count > rememberedCount
+        if (count > 0 && (newSession || (appended && followBottom && !isStreaming))) {
+            snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it == count + 1 }
+            listState.requestScrollToItem(count)
+        }
+        if (newSession) followBottom = true
         rememberedSession = session
+        rememberedCount = count
     }
     val backgroundMode = assistant?.backgroundMode ?: "default"
     val backgroundPath = assistant?.backgroundPath
@@ -203,16 +303,7 @@ fun ChatScreen(
         )
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(Unit) {
-                detectTapGestures(
-                    onDoubleTap = { immersive = true },
-                    onTap = { immersive = false }
-                )
-            }
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
         // CSS模式：用WebView渲染CSS背景
         if (cssHtml != null) {
             cssFallbackColors?.let { colors ->
@@ -340,9 +431,12 @@ fun ChatScreen(
         modifier = Modifier
             .fillMaxSize()
             // CSS模式下同样要把聊天内容的背景设为透明，让WebView的CSS透出来
-            .background(MaterialTheme.colorScheme.background.copy(alpha = if (hasBackgroundLayer) 0f else 1f))
+            .background(
+                MaterialTheme.colorScheme.background.copy(
+                    alpha = if (hasBackgroundLayer && !addPanelOpen && !candidatesOpen) 0f else 1f
+                )
+            )
             .imePadding()
-            .graphicsLayer { alpha = immersiveAlpha }
     ) {
         ChatTopBar(
             title = conversation?.title?.takeIf { it.isNotBlank() }
@@ -358,7 +452,7 @@ fun ChatScreen(
 
         // 消息区+面板的点空白处关闭层
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-        if (messages.isEmpty()) {
+        if (visibleMessages.isEmpty()) {
             EmptyState(
                 onPick = { onSend(it, emptyList()) },
                 onOpenSettings = onOpenSettings,
@@ -375,32 +469,34 @@ fun ChatScreen(
                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                items(visibleMessages, key = { it.id }) { msg ->
-                    val isUserMsg = msg.role == "user"
-                    MessageItem(
+                items(
+                    items = visibleMessages,
+                    key = { it.id },
+                    contentType = { if (it.role == "assistant") "assistant" else "user" },
+                ) { msg ->
+                    ChatMessageListItem(
                         message = msg,
-                        avatar = if (isUserMsg) userProfile.avatar
-                        else com.miniichatNext.carter.data.avatar.Avatar.fromLegacy(
-                            assistant?.avatar ?: "🤖", assistant?.avatarPath
-                        ),
-                        senderLabel = if (msg.role == "user") stringResource(R.string.profile_default_name)
-                        else effectiveModelId.ifBlank { activeProvider?.name ?: stringResource(R.string.assistant) },
                         isLastAssistant = msg.id == visibleMessages.lastOrNull()?.id && msg.role == "assistant",
-                        isStreaming = isStreaming,
+                        isStreaming = isStreaming && msg.id == visibleMessages.lastOrNull()?.id,
+                        streamingOverlay = streamingOverlay,
+                        userAvatar = userProfile.avatar,
+                        assistantAvatar = assistantDisplayAvatar,
+                        senderLabel = if (msg.role == "user") userSenderLabel else assistantSenderLabel,
                         onStartEdit = {
-                            // 编辑迁移到输入框：内容填进输入框并聚焦（发送键变保存键）
                             editingMessageId = msg.id
                             input = msg.content
                             focusInputRequest++
                         },
                         onContinue = onContinue,
-                        onDelete = { onDeleteMessage(msg.id) },
-                        onRegenerateFrom = { retellTargetId = msg.id },
+                        onDelete = onDeleteMessage,
+                        onRegenerateFrom = { retellTargetId = it },
                         onApproveTool = onApproveTool,
                         onRejectTool = onRejectTool,
                         onFullscreen = onFullscreen,
                     )
                 }
+                item(key = "chat-bottom-spacer") { Spacer(Modifier.height(1.dp)) }
+            }
             }
         }
 
@@ -427,7 +523,6 @@ fun ChatScreen(
                         }
                     }
             )
-        }
         }
 
         // AI调用需要「所有文件访问权限」的工具但用户未授权→弹窗引导去授权
@@ -549,17 +644,6 @@ fun ChatScreen(
         )
     }
 
-    // 双击空白区域以隐藏界面，仅显示背景（沉浸式看壁纸）
-    if (immersive) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(androidx.compose.ui.graphics.Color.Transparent)
-                .pointerInput(Unit) {
-                    detectTapGestures { immersive = false }
-                }
-        )
-    }
     }
 
     // Rename dialog

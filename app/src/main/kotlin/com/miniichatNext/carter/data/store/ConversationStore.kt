@@ -117,48 +117,51 @@ class ConversationStore(private val context: Context) {
         _cache.value = cur
     }
 
+    /** 读改写共用一把锁，避免设置与流式落库互相覆盖。 */
+    suspend fun updateConversation(
+        id: String,
+        create: (() -> Conversation)? = null,
+        transform: (Conversation) -> Conversation,
+    ): Conversation? = mutex.withLock {
+        hydrateLocked()
+        val cur = _cache.value
+        val index = cur.indexOfFirst { it.id == id }
+        val current = cur.getOrNull(index) ?: create?.invoke() ?: return@withLock null
+        val next = transform(current)
+        require(next.id == id) { "Conversation id changed during update" }
+        if (index >= 0 && next == current) return@withLock current
+        val updated = next.copy(updatedAt = System.currentTimeMillis())
+        context.conversationsDataStore.edit { p -> p[keyFor(id)] = encodeOne(updated) }
+        _cache.value = cur.toMutableList().also {
+            if (index >= 0) it[index] = updated else it.add(updated)
+        }
+        updated
+    }
+
     suspend fun delete(id: String) = mutex.withLock {
         hydrateLocked()
         context.conversationsDataStore.edit { p -> p.remove(keyFor(id)) }
         _cache.value = _cache.value.filterNot { it.id == id }
     }
 
-    suspend fun rename(id: String, title: String) = mutex.withLock {
-        hydrateLocked()
-        val cur = _cache.value
-        val idx = cur.indexOfFirst { it.id == id }
-        if (idx < 0) return@withLock
-        val updated = cur[idx].copy(title = title, updatedAt = System.currentTimeMillis())
-        context.conversationsDataStore.edit { p -> p[keyFor(id)] = encodeOne(updated) }
-        _cache.value = cur.toMutableList().also { it[idx] = updated }
+    suspend fun rename(id: String, title: String) {
+        updateConversation(id) { it.copy(title = title) }
     }
 
-    /** 原子追加消息（与[updateMessages]共用同一把key，避免流式flush与用户编辑互相覆盖） */
-    suspend fun appendMessages(convId: String, newMessages: List<Message>) =
+    suspend fun appendMessages(convId: String, newMessages: List<Message>) {
         updateMessages(convId) { it + newMessages }
+    }
 
-    /** 原子改写某个会话的消息列表；只重写该会话自己的key */
-    suspend fun updateMessages(convId: String, transform: (List<Message>) -> List<Message>) =
-        mutex.withLock {
-            hydrateLocked()
-            val cur = _cache.value
-            val idx = cur.indexOfFirst { it.id == convId }
-            if (idx < 0) return@withLock
-            val conv = cur[idx]
-            val updated = conv.copy(
-                messages = transform(conv.messages),
-                updatedAt = System.currentTimeMillis()
-            )
-            context.conversationsDataStore.edit { p -> p[keyFor(convId)] = encodeOne(updated) }
-            _cache.value = cur.toMutableList().also { it[idx] = updated }
-        }
+    suspend fun updateMessages(convId: String, transform: (List<Message>) -> List<Message>) {
+        updateConversation(convId) { it.copy(messages = transform(it.messages)) }
+    }
 
     suspend fun migrateAssistantId(defaultAssistantId: String) {
-        val list = snapshot()
-        val migrated = list.map {
-            if (it.assistantId.isBlank()) it.copy(assistantId = defaultAssistantId) else it
+        snapshot().forEach { conv ->
+            updateConversation(conv.id) { current ->
+                if (current.assistantId.isBlank()) current.copy(assistantId = defaultAssistantId) else current
+            }
         }
-        if (migrated != list) save(migrated)
     }
 
 

@@ -1,10 +1,7 @@
 package com.miniichatNext.carter.ui.markdown
 
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ProvideTextStyle
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -17,22 +14,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
+import java.util.LinkedHashMap
 
-/**
- * 渲染Markdown文本，支持GFM（表格、任务列表、删除线）、LaTeX公式和内嵌HTML。
- *
- * 组件不依赖任何业务逻辑：代码高亮、图片加载、公式排版等通过[components]接入，视觉参数通过[theme]调整。
- * [content]可以高频变化（流式输出），解析在后台线程进行，内容没变的块不会重组。
- *
- * @param softBreakAsLineBreak 段落内的单个换行是否渲染为换行
- * @param onLinkClick 链接点击回调，为null时交给系统的UriHandler打开
- */
 @Composable
 fun Markdown(
     content: String,
@@ -53,7 +49,6 @@ fun Markdown(
     )
 }
 
-/** 渲染已经解析好的[document]，适合自己控制解析时机的场景（例如提前在后台调用[parseMarkdown]） */
 @Composable
 fun Markdown(
     document: MarkdownDocument,
@@ -70,9 +65,7 @@ fun Markdown(
             LinkInteractionListener { link ->
                 if (link is LinkAnnotation.Url) currentOnLinkClick?.invoke(link.url)
             }
-        } else {
-            null
-        }
+        } else null
     }
     val context = remember(theme, components, linkListener) {
         MarkdownContext(theme, components, linkListener)
@@ -84,25 +77,88 @@ fun Markdown(
     }
 }
 
-/**
- * 解析[content]并在它变化时更新。
- *
- * 首次解析是同步的，保证第一帧就有内容；之后的更新在后台线程进行。
- * 更新比解析快时只解析最新的内容，中间的版本直接跳过。
- */
+private const val MARKDOWN_CACHE_MAX = 32
+private const val MARKDOWN_CACHE_MAX_CHARS = 1_000_000
+private data class MarkdownCacheKey(val source: String, val softBreakAsLineBreak: Boolean)
+
+private object MarkdownDocumentCache {
+    private val lock = Any()
+    private val documents = LinkedHashMap<MarkdownCacheKey, MarkdownDocument>(64, 0.75f, true)
+    private val pending = HashMap<MarkdownCacheKey, CompletableDeferred<MarkdownDocument?>>()
+
+    fun get(source: String, softBreakAsLineBreak: Boolean): MarkdownDocument? = synchronized(lock) {
+        documents[MarkdownCacheKey(source, softBreakAsLineBreak)]
+    }
+
+    fun put(source: String, softBreakAsLineBreak: Boolean, document: MarkdownDocument) {
+        if (source.length > MARKDOWN_CACHE_MAX_CHARS) return
+        synchronized(lock) {
+            documents[MarkdownCacheKey(source, softBreakAsLineBreak)] = document
+            while (documents.size > MARKDOWN_CACHE_MAX) {
+                documents.entries.iterator().let { iterator -> iterator.next(); iterator.remove() }
+            }
+        }
+    }
+
+    fun begin(key: MarkdownCacheKey): Pair<CompletableDeferred<MarkdownDocument?>, Boolean> = synchronized(lock) {
+        pending[key]?.let { return@synchronized it to false }
+        CompletableDeferred<MarkdownDocument?>().also { pending[key] = it } to true
+    }
+
+    fun finish(key: MarkdownCacheKey, result: MarkdownDocument?, task: CompletableDeferred<MarkdownDocument?>) {
+        synchronized(lock) {
+            if (result != null) put(key.source, key.softBreakAsLineBreak, result)
+            if (pending[key] === task) pending.remove(key)
+            task.complete(result)
+        }
+    }
+}
+
+private val markdownScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+private val markdownSlots = Semaphore(2)
+
+internal suspend fun preloadMarkdownDocument(source: String, softBreakAsLineBreak: Boolean = true) {
+    parseMarkdownShared(source, softBreakAsLineBreak)
+}
+
+private suspend fun parseMarkdownShared(
+    source: String,
+    softBreakAsLineBreak: Boolean,
+): MarkdownDocument? {
+    MarkdownDocumentCache.get(source, softBreakAsLineBreak)?.let { return it }
+    val key = MarkdownCacheKey(source, softBreakAsLineBreak)
+    val (task, owner) = MarkdownDocumentCache.begin(key)
+    if (owner) {
+        markdownScope.launch {
+            val parsed = runCatching {
+                markdownSlots.withPermit {
+                    withContext(Dispatchers.Default) { parseMarkdown(source, softBreakAsLineBreak) }
+                }
+            }.getOrNull()
+            MarkdownDocumentCache.finish(key, parsed, task)
+        }
+    }
+    return task.await()
+}
+
 @Composable
 fun rememberMarkdownDocument(content: String, softBreakAsLineBreak: Boolean = true): MarkdownDocument {
-    val state = remember(softBreakAsLineBreak) {
-        mutableStateOf(parseMarkdown(content, softBreakAsLineBreak))
+    val state = remember(content, softBreakAsLineBreak) {
+        mutableStateOf(
+            MarkdownDocumentCache.get(content, softBreakAsLineBreak)
+                ?: parseMarkdown(content, softBreakAsLineBreak).also {
+                    MarkdownDocumentCache.put(content, softBreakAsLineBreak, it)
+                }
+        )
     }
     val currentContent by rememberUpdatedState(content)
     LaunchedEffect(state) {
         snapshotFlow { currentContent }
             .conflate()
             .filter { it != state.value.source }
-            .mapNotNull { runCatching { parseMarkdown(it, softBreakAsLineBreak) }.getOrNull() }
+            .mapNotNull { source -> parseMarkdownShared(source, softBreakAsLineBreak) }
             .flowOn(Dispatchers.Default)
-            .collect { state.value = it }
+            .collect { parsed -> state.value = parsed }
     }
     return state.value
 }

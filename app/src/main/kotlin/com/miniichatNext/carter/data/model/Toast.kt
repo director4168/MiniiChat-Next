@@ -10,7 +10,10 @@ data class ToastItem(
     val message: String,
     val action: ToastAction = ToastAction.None,
     val withDismiss: Boolean = false,
+    val tone: ToastTone = ToastTone.Normal,
 )
+
+enum class ToastTone { Normal, Warning, Error }
 
 /** toast操作按钮语义 */
 sealed interface ToastAction {

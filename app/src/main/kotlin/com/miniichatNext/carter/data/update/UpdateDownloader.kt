@@ -3,6 +3,7 @@ package com.miniichatNext.carter.data.update
 import android.content.Context
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.debug.DebugLog
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -76,6 +77,7 @@ class UpdateDownloader(
                     val buf = ByteArray(64 * 1024)
                     while (true) {
                         if (cancelled) {
+                            targetFile.delete()
                             return@withContext Result.Failure(context.getString(R.string.update_cancelled))
                         }
                         val n = input.read(buf)
@@ -116,6 +118,9 @@ class UpdateDownloader(
             // 最后一次进度（100%）
             onProgress(Progress(totalRead, totalBytes, 0))
             Result.Success(targetFile)
+        } catch (e: CancellationException) {
+            targetFile.delete()
+            throw e
         } catch (t: Throwable) {
             DebugLog.e("Update", "download failed", t)
             targetFile.delete()
@@ -139,7 +144,7 @@ class UpdateDownloader(
                 onProgress: (Progress) -> Unit,
                 onResult: (Result) -> Unit,
             ): Job = scope.launch(Dispatchers.IO) {
-                targetFile.parentFile?.listFiles()?.forEach { it.delete() }
+                runCatching { targetFile.delete() }
                 val downloader = UpdateDownloader(targetFile)
                 val result = downloader.download(context, url, expectedSha256, onProgress)
                 withContext(Dispatchers.Main) { onResult(result) }

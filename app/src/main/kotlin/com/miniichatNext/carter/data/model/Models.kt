@@ -1,5 +1,7 @@
 package com.miniichatNext.carter.data.model
 
+import androidx.compose.runtime.Immutable
+
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -16,6 +18,7 @@ object ToolInvocationState {
     const val CANCELLED = "cancelled"
 }
 
+@Immutable
 @Serializable
 data class Attachment(
     /** 唯一id——LazyRow/列的key必须用它，不能用uri。
@@ -30,6 +33,8 @@ data class Attachment(
     val uri: String,
     /** 历史字段：旧版复制的应用内副本原始URI；新版与uri相同 */
     val originalUri: String = "",
+    /** content URI已获得可持久读权限；false时uri通常是应用私有fallback副本 */
+    val persistedPermission: Boolean = false,
     val mimeType: String,
     val name: String,
     val sizeBytes: Long = 0,
@@ -58,6 +63,7 @@ data class TokenUsage(
 }
 
 /** 消息内记录的一次工具调用与执行结果 */
+@Immutable
 @Serializable
 data class ToolInvocation(
     val callId: String,
@@ -82,6 +88,7 @@ data class ToolInvocation(
  *
  * 历史数据无orderedParts（默认emptyList），UI检测到空列表就走老的"COT在上"布局。
  */
+@Immutable
 @Serializable
 sealed class MessageSegment {
     @Serializable
@@ -97,6 +104,7 @@ sealed class MessageSegment {
     data class Tool(val callId: String) : MessageSegment()
 }
 
+@Immutable
 @Serializable
 data class Message(
     val id: String,

@@ -36,7 +36,10 @@ class SkillStore(private val context: Context) {
 
     suspend fun refresh(): List<Skill> = withContext(Dispatchers.IO) {
         mutex.withLock {
-            val list = readFromDisk()
+            val legacy = readLegacy()
+            val list = readFromDisk(legacy)
+            // 首次迁移时把旧ID和enabled状态写回SKILL.md，后续只从目录元数据恢复。
+            list.forEach { writeToDisk(it) }
             com.miniichatNext.carter.debug.DebugLog.d(
                 "Store", "skills.refresh count=${list.size} names=${list.map { it.name }}"
             )
@@ -55,12 +58,13 @@ class SkillStore(private val context: Context) {
         mutex.withLock {
             val cur = _skills.value.toMutableList()
             val idx = cur.indexOfFirst { it.id == skill.id || it.name == skill.name }
-            if (idx >= 0) {
-                cur[idx] = skill.copy(id = skill.id.ifBlank { cur[idx].id })
-            } else {
-                cur.add(skill)
-            }
-            writeToDisk(cur.first { it.id == skill.id || it.name == skill.name })
+            val stored = if (idx >= 0) {
+                val old = cur[idx]
+                if (old.name != skill.name) removeFromDisk(old)
+                skill.copy(id = old.id)
+            } else skill
+            if (idx >= 0) cur[idx] = stored else cur.add(stored)
+            writeToDisk(stored)
             _skills.value = cur
         }
     }
@@ -127,16 +131,22 @@ class SkillStore(private val context: Context) {
         }
 
 
-    private fun readFromDisk(): List<Skill> {
+    private suspend fun readLegacy(): List<Skill> = runCatching {
+        val raw = context.skillsDataStore.data.first()[LEGACY_KEY]
+        if (raw.isNullOrBlank()) emptyList()
+        else legacyJson.decodeFromString(ListSerializer(Skill.serializer()), raw)
+    }.getOrDefault(emptyList())
+
+    private fun readFromDisk(legacy: List<Skill>): List<Skill> {
         val dir = skillsRoot()
         return dir.listFiles()
             ?.filter { it.isDirectory }
-            ?.mapNotNull { parseDir(it) }
+            ?.mapNotNull { dir -> parseDir(dir, legacy.firstOrNull { it.name == dir.name }) }
             ?.sortedBy { it.name }
             ?: emptyList()
     }
 
-    private fun parseDir(d: File): Skill? {
+    private fun parseDir(d: File, legacy: Skill?): Skill? {
         val skillFile = File(d, "SKILL.md")
         if (!skillFile.exists()) return null
         val raw = runCatching { skillFile.readText() }.getOrNull() ?: return null
@@ -144,11 +154,13 @@ class SkillStore(private val context: Context) {
             ?: return null
         // 稳定的id=已清理的名称，目录名就是id
         return Skill(
-            id = parsed.name,
+            id = parsed.id ?: legacy?.id ?: parsed.name,
             name = parsed.name,
             description = parsed.description,
             body = parsed.body,
-            enabled = true,
+            enabled = parsed.enabled ?: legacy?.enabled ?: true,
+            compatibility = parsed.compatibility,
+            allowedTools = parsed.allowedTools,
             createdAt = d.lastModified()
         )
     }
@@ -159,10 +171,13 @@ class SkillStore(private val context: Context) {
         val skillFile = File(skillDir, "SKILL.md")
         val sb = StringBuilder()
         sb.append("---\n")
+        sb.append("id: ").append(skill.id).append('\n')
         sb.append("name: ").append(skill.name).append('\n')
-        if (skill.description.isNotBlank()) {
-            sb.append("description: ").append(skill.description).append('\n')
-        }
+        sb.append("enabled: ").append(skill.enabled).append('\n')
+        if (skill.description.isNotBlank()) sb.append("description: ").append(skill.description).append('\n')
+        skill.compatibility?.takeIf { it.isNotBlank() }?.let { sb.append("compatibility: ").append(it).append('\n') }
+        if (skill.allowedTools.isNotEmpty()) sb.append("allowed-tools: ").append(skill.allowedTools.joinToString(" ")).append('\n')
+        sb.append("enabled: ").append(skill.enabled).append('\n')
         sb.append("---\n\n")
         sb.append(skill.body)
         skillFile.writeText(sb.toString())
