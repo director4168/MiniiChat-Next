@@ -36,7 +36,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
@@ -292,6 +294,18 @@ fun ChatScreen(
     val hasBackgroundLayer = cssHtml != null ||
         backgroundBitmap != null ||
         (backgroundMode == "image" && !backgroundPath.isNullOrBlank())
+    val showCustomBackground = !addPanelOpen && !candidatesOpen
+    val cssWebView = remember { mutableStateOf<android.webkit.WebView?>(null) }
+
+    LaunchedEffect(showCustomBackground, cssWebView.value) {
+        cssWebView.value?.let { webView ->
+            webView.visibility = if (showCustomBackground) {
+                android.view.View.VISIBLE
+            } else {
+                android.view.View.INVISIBLE
+            }
+        }
+    }
 
     LaunchedEffect(assistant?.id, assistant?.avatarPath, backgroundMode, backgroundPath, backgroundCss, cssHtml) {
         com.miniichatNext.carter.debug.DebugLog.i(
@@ -306,7 +320,7 @@ fun ChatScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         // CSS模式：用WebView渲染CSS背景
         if (cssHtml != null) {
-            cssFallbackColors?.let { colors ->
+            if (showCustomBackground) cssFallbackColors?.let { colors ->
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -322,6 +336,7 @@ fun ChatScreen(
             AndroidView(
                 factory = { ctx ->
                     android.webkit.WebView(ctx).apply {
+                        cssWebView.value = this
                         runCatching {
                             settings.javaClass
                                 .getMethod("setJavaScriptEnabled", Boolean::class.javaPrimitiveType!!)
@@ -358,6 +373,11 @@ fun ChatScreen(
                         // 不消费触摸：让事件继续冒泡到上层Compose Box的detectTapGestures，否则CSS背景层会吞掉双击空白进沉浸/单击退出沉浸的手势
                         // 本HTML是静态背景（overflow:hidden、无链接），不消费也不会有副作用
                         setOnTouchListener { _, _ -> false }
+                        visibility = if (showCustomBackground) {
+                            android.view.View.VISIBLE
+                        } else {
+                            android.view.View.INVISIBLE
+                        }
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
                         overScrollMode = android.view.View.OVER_SCROLL_NEVER
                         postDelayed({
@@ -401,7 +421,11 @@ fun ChatScreen(
                     }
                 },
                 update = { wv ->
-
+                    wv.visibility = if (showCustomBackground) {
+                        android.view.View.VISIBLE
+                    } else {
+                        android.view.View.INVISIBLE
+                    }
                     if (wv.tag != cssHtml) {
                         wv.tag = cssHtml
                         wv.loadDataWithBaseURL(null, cssHtml, "text/html", "utf-8", null)
@@ -412,13 +436,16 @@ fun ChatScreen(
                     wv.stopLoading()
                     wv.destroy()
                 },
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .zIndex(0f)
+                    .graphicsLayer { alpha = if (showCustomBackground) 1f else 0f }
             )
-        } else if (backgroundBitmap != null) {
+        } else if (backgroundBitmap != null && !addPanelOpen && !candidatesOpen) {
             androidx.compose.foundation.Image(
                 bitmap = backgroundBitmap,
                 contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().zIndex(0f),
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop
             )
             Box(
@@ -430,6 +457,7 @@ fun ChatScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .zIndex(1f)
             // CSS模式下同样要把聊天内容的背景设为透明，让WebView的CSS透出来
             .background(
                 MaterialTheme.colorScheme.background.copy(
@@ -437,6 +465,7 @@ fun ChatScreen(
                 )
             )
             .imePadding()
+            .graphicsLayer { alpha = 1f }
     ) {
         ChatTopBar(
             title = conversation?.title?.takeIf { it.isNotBlank() }
@@ -498,7 +527,6 @@ fun ChatScreen(
                 item(key = "chat-bottom-spacer") { Spacer(Modifier.height(1.dp)) }
             }
             }
-        }
 
         // 面板打开时：点一下/滑一下消息区即收起（面板内、输入框内的点击不受影响；不消费事件，所以消息列表照常能滚动）
         if (addPanelOpen || candidatesOpen) {
@@ -523,6 +551,7 @@ fun ChatScreen(
                         }
                     }
             )
+        }
         }
 
         // AI调用需要「所有文件访问权限」的工具但用户未授权→弹窗引导去授权
