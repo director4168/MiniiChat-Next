@@ -97,8 +97,10 @@ fun UserProfileScreen(
                     // 同步复制进filesDir/avatars，避免之后头像失效
                     val stableAvatar = when (val a = avatar) {
                         is Avatar.Image -> Avatar.Image(
-                            com.miniichatNext.carter.data.avatar.AvatarStorage
-                                .copyIntoAppStorage(context, a.path) ?: a.path
+                            AvatarStorage.copyToCanonicalPath(
+                                a.path,
+                                AvatarStorage.userAvatarFile(context).absolutePath,
+                            ) ?: a.path
                         )
                         else -> a
                     }
@@ -185,6 +187,7 @@ fun UserProfileScreen(
     if (showPicker) {
         AvatarPicker(
             current = avatar,
+            canonicalPath = AvatarStorage.userAvatarFile(context).absolutePath,
             onChange = {
                 avatar = it
                 showPicker = false

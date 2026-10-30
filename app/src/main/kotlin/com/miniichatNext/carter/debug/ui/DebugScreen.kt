@@ -2,6 +2,7 @@ package com.miniichatNext.carter.debug.ui
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
@@ -53,24 +55,54 @@ import com.miniichatNext.carter.debug.DebugLog
 
 private const val FEEDBACK_EMAIL = "director4168@163.com"
 
+/** 反馈邮件（带日志zip附件）：chooser也要带读权限标志，否则邮件应用拿不到附件 */
 internal fun sendFeedbackMail(context: Context, zip: File, subject: String, body: String) {
-    runCatching {
-        val uri = FileProvider.getUriForFile(
-            context, "${context.packageName}.fileprovider", zip
-        )
-        val intent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/zip"
-            putExtra(Intent.EXTRA_EMAIL, arrayOf(FEEDBACK_EMAIL))
-            putExtra(Intent.EXTRA_SUBJECT, subject)
-            putExtra(Intent.EXTRA_TEXT, body)
+    val uri = runCatching {
+        FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", zip)
+    }.getOrNull()
+    val send = Intent(Intent.ACTION_SEND).apply {
+        type = "application/zip"
+        putExtra(Intent.EXTRA_EMAIL, arrayOf(FEEDBACK_EMAIL))
+        putExtra(Intent.EXTRA_SUBJECT, subject)
+        putExtra(Intent.EXTRA_TEXT, body)
+        if (uri != null) {
             putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
+    }
+    runCatching {
         context.startActivity(
-            Intent.createChooser(intent, context.getString(R.string.chooser_send_mail))
+            Intent.createChooser(send, context.getString(R.string.chooser_send_mail)).apply {
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
         )
     }
 }
+
+/**
+ * 崩溃反馈：只走mailto（与设置-关于页的“联系开发者”一致），
+ * 选择器里只出现邮箱应用；崩溃日志直接内联在正文里，不依赖附件。
+ */
+internal fun sendCrashFeedbackMail(
+    context: Context,
+    subject: String,
+    body: String,
+    crashLog: String,
+) {
+    val text = if (crashLog.isBlank()) body else body + "\n\n" + crashLog.take(MAX_INLINE_CRASH_LOG)
+    runCatching {
+        val intent = Intent(Intent.ACTION_SENDTO, Uri.parse("mailto:$FEEDBACK_EMAIL")).apply {
+            putExtra(Intent.EXTRA_SUBJECT, subject)
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        context.startActivity(
+            Intent.createChooser(intent, context.getString(R.string.about_mail_chooser))
+        )
+    }
+}
+
+/** 正文内联的崩溃日志长度上限 */
+private const val MAX_INLINE_CRASH_LOG = 8000
 
 internal fun shareZip(context: Context, zip: File, title: String) {
     runCatching {
@@ -92,6 +124,7 @@ fun DebugScreen(
     vm: com.miniichatNext.carter.vm.ChatViewModel? = null,
     onOpenDialogTest: () -> Unit = {},
     onOpenThemeColors: () -> Unit = {},
+    onOpenCropTest: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var level by remember { mutableStateOf(DebugLog.level) }
@@ -307,6 +340,27 @@ fun DebugScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+            }
+
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+            com.miniichatNext.carter.ui.components.SectionCard {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable(onClick = onOpenCropTest)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.debug_crop_test_title), style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            stringResource(R.string.debug_crop_test_sub),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
                 }
             }
         }

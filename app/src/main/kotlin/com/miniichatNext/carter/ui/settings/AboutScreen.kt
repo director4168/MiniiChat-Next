@@ -1,8 +1,20 @@
 package com.miniichatNext.carter.ui.settings
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,9 +24,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -40,11 +55,25 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableFloatStateOf
+import kotlin.math.sin
+import kotlin.math.cos
+import kotlin.random.Random
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -87,6 +116,9 @@ fun AboutScreen(
     var showDonateDialog by remember { mutableStateOf(false) }
     var showLogLevelDialog by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var showEasterEgg by remember { mutableStateOf(false) }
+    var easterEggElapsed by remember { mutableStateOf(-1L) }
+    var easterEggClosingElapsed by remember { mutableStateOf(-1L) }
     val versionName = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).versionName
     }.getOrDefault("?")
@@ -171,22 +203,54 @@ fun AboutScreen(
                 .padding(horizontal = 16.dp)
         ) {
             Spacer(Modifier.height(8.dp))
+            AboutIconCard(
+                onPressProgress = { elapsed ->
+                    if (elapsed >= 200L && easterEggClosingElapsed < 0L) {
+                        showEasterEgg = true
+                        easterEggElapsed = elapsed - 200L
+                    }
+                },
+                onPressReleased = {
+                    if (easterEggElapsed < 1_000L) {
+                        showEasterEgg = false
+                        easterEggElapsed = -1L
+                        easterEggClosingElapsed = -1L
+                    }
+                },
+            )
+            Spacer(Modifier.height(16.dp))
 
-            SectionHeader(stringResource(R.string.section_about))
-            SectionCard {
-                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
-                    Text(
-                        buildAnnotatedString {
-                            append(stringResource(R.string.about_text_intro))
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+            Box(
+                modifier = Modifier.graphicsLayer {
+                    val elapsed = easterEggElapsed.coerceAtLeast(0L).toFloat()
+                    val amplitude = when {
+                        easterEggElapsed < 0L -> 0f
+                        elapsed < 500f -> 2.5f
+                        elapsed < 1_000f -> 7f
+                        else -> 0f
+                    }
+                    translationX = kotlin.math.sin(elapsed / 37f) * amplitude
+                    translationY = kotlin.math.cos(elapsed / 43f) * amplitude
+                    rotationZ = kotlin.math.sin(elapsed / 53f) * amplitude * 0.18f
+                    alpha = if (easterEggElapsed >= 1_000L) 0f else 1f
                 }
-            }
+            ) {
+                Column {
+                    SectionHeader(stringResource(R.string.section_about))
+                    SectionCard {
+                        Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
+                            Text(
+                                buildAnnotatedString {
+                                    append(stringResource(R.string.about_text_intro))
+                                },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
 
-            Spacer(Modifier.height(8.dp))
-            SectionCard {
+                    Spacer(Modifier.height(8.dp))
+                    SectionCard {
                 Column(
                     modifier = Modifier
                         .padding(horizontal = 16.dp, vertical = 14.dp)
@@ -353,6 +417,9 @@ fun AboutScreen(
                 }
             }
 
+                }
+            }
+
             if (showDonateDialog) {
                     DonateDialog(onDismiss = { showDonateDialog = false })
                 }
@@ -410,6 +477,64 @@ fun AboutScreen(
 
             Spacer(Modifier.height(24.dp))
         }
+    }
+
+    LaunchedEffect(showEasterEgg, easterEggClosingElapsed >= 0L) {
+        if (showEasterEgg && easterEggClosingElapsed < 0L) {
+            val start = System.currentTimeMillis() - easterEggElapsed.coerceAtLeast(0L)
+            while (easterEggElapsed < 3_500L && easterEggClosingElapsed < 0L) {
+                kotlinx.coroutines.delay(16L)
+                easterEggElapsed = (System.currentTimeMillis() - start).coerceAtMost(3_500L)
+            }
+        }
+    }
+
+    LaunchedEffect(easterEggClosingElapsed >= 0L) {
+        if (easterEggClosingElapsed >= 0L) {
+            val start = System.currentTimeMillis() - easterEggClosingElapsed
+            while (easterEggClosingElapsed < 250L) {
+                kotlinx.coroutines.delay(16L)
+                easterEggClosingElapsed =
+                    (System.currentTimeMillis() - start).coerceAtMost(250L)
+            }
+            showEasterEgg = false
+            easterEggElapsed = -1L
+            easterEggClosingElapsed = -1L
+        }
+    }
+
+    LaunchedEffect(showEasterEgg, easterEggElapsed >= 500L, easterEggElapsed >= 1_000L) {
+        when {
+            !showEasterEgg -> Unit
+            easterEggElapsed in 500L..999L -> {
+                while (easterEggElapsed in 500L..999L) {
+                    shortVibrate(context, 25L)
+                    kotlinx.coroutines.delay(110L)
+                }
+            }
+            easterEggElapsed >= 1_000L -> {
+                repeat(5) { index ->
+                    shortVibrate(context, 60L - index * 10L)
+                    kotlinx.coroutines.delay(50L)
+                }
+                kotlinx.coroutines.delay(100L)
+                shortVibrate(context, 45L)
+                kotlinx.coroutines.delay(130L)
+                shortVibrate(context, 26L)
+            }
+        }
+    }
+
+    if (showEasterEgg && easterEggElapsed >= 1_000L) {
+        EasterEggOverlay(
+            elapsedMs = easterEggElapsed,
+            closingElapsedMs = easterEggClosingElapsed,
+            onDismiss = {
+                if (easterEggClosingElapsed < 0L) {
+                    easterEggClosingElapsed = 0L
+                }
+            },
+        )
     }
 }
 

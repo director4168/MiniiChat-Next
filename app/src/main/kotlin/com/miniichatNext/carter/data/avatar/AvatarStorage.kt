@@ -9,10 +9,27 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
+import java.util.Base64
 import com.miniichatNext.carter.util.newId
 
 object AvatarStorage {
     private const val DIR = "avatars"
+    private const val ASSISTANT_DIR = "Avatars_Assistant"
+
+    fun userAvatarFile(context: Context): File =
+        File(dir(context), "Avatars_User.jpg")
+
+    fun assistantAvatarFile(context: Context, assistantId: String): File {
+        val encoded = if (assistantId.matches(Regex("[A-Za-z0-9]+"))) {
+            assistantId
+        } else {
+            Base64.getUrlEncoder().withoutPadding()
+                .encodeToString(assistantId.toByteArray(Charsets.UTF_8))
+        }
+        val folder = File(dir(context), ASSISTANT_DIR)
+        if (!folder.exists()) folder.mkdirs()
+        return File(folder, "Avatars_${encoded}_Assistant.jpg")
+    }
 
     fun dir(context: Context): File {
         val d = File(context.filesDir, DIR)
@@ -22,6 +39,15 @@ object AvatarStorage {
 
     fun file(context: Context, id: String, ext: String = "jpg"): File =
         File(dir(context), "${id}.${ext.lowercase()}")
+
+    suspend fun saveFromUriToPath(
+        context: Context,
+        uri: Uri,
+        targetPath: String,
+        maxSide: Int = 1024,
+    ): String? = withContext(Dispatchers.IO) {
+        saveDecodedToPath(context, uri, targetPath, maxSide)
+    }
 
     suspend fun saveFromUri(context: Context, id: String, uri: Uri, maxSide: Int = 1024): String? =
         withContext(Dispatchers.IO) {
@@ -58,6 +84,33 @@ object AvatarStorage {
             bitmap.recycle()
             target.absolutePath
         }
+
+    suspend fun saveFileToPath(context: Context, sourcePath: String, targetPath: String): String? =
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val bitmap = BitmapFactory.decodeFile(sourcePath) ?: return@runCatching null
+                val target = File(targetPath)
+                target.parentFile?.mkdirs()
+                FileOutputStream(target).use { out ->
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+                }
+                bitmap.recycle()
+                target.absolutePath
+            }.getOrNull()
+        }
+
+    fun copyToCanonicalPath(sourcePath: String?, targetPath: String): String? {
+        if (sourcePath.isNullOrBlank()) return sourcePath
+        val source = File(sourcePath)
+        val target = File(targetPath)
+        if (!source.isFile) return sourcePath
+        if (source.absolutePath == target.absolutePath) return target.absolutePath
+        return runCatching {
+            target.parentFile?.mkdirs()
+            source.copyTo(target, overwrite = true)
+            target.absolutePath
+        }.getOrNull() ?: sourcePath
+    }
 
     fun delete(context: Context, path: String) {
         runCatching { File(path).takeIf { it.exists() }?.delete() }
@@ -100,6 +153,34 @@ object AvatarStorage {
         }.getOrDefault(0)
 
     fun uri(path: String): Uri = File(path).toUri()
+
+    private fun saveDecodedToPath(
+        context: Context,
+        uri: Uri,
+        targetPath: String,
+        maxSide: Int,
+    ): String? = runCatching {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, bounds)
+        }
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = computeSample(bounds.outWidth, bounds.outHeight, maxSide)
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        val decoded = context.contentResolver.openInputStream(uri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, opts)
+        } ?: return@runCatching null
+        val scaled = scaleToMax(decoded, maxSide)
+        val target = File(targetPath)
+        target.parentFile?.mkdirs()
+        FileOutputStream(target).use { out ->
+            scaled.compress(Bitmap.CompressFormat.JPEG, 92, out)
+        }
+        if (scaled !== decoded) decoded.recycle()
+        scaled.recycle()
+        target.absolutePath
+    }.getOrNull()
 
     private fun computeSample(w: Int, h: Int, maxSide: Int): Int {
         if (w <= 0 || h <= 0) return 1

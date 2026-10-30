@@ -1,9 +1,12 @@
 {
-    "name": "MiniiChat-Next",
-    "time": "",
-    "version": "",
-    "compulsory": false,
-    "update_content": "",
-    "DownloadUrl": "",
-    "SHA256": ""
+  "name": "MiniiChat-Next",
+  "time": "",
+  "versionCode": "",
+  "versionName": "",
+  "compulsory": false,
+  "update_content": "",
+  "DownloadUrl": "",
+  "DownloadUrl_armabi_v7a": "",
+  "SHA256": "",
+  "SHA256_armabi_v7a": ""
 }

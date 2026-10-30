@@ -26,9 +26,9 @@ object UpdateInstaller {
     fun cacheApk(context: Context): File = File(cacheDir(context), APK_FILENAME)
 
     /** 复制到系统Download作为用户可管理的副本；返回content URI或API<29文件URI。 */
-    fun publishToDownloads(context: Context, installFile: File, version: String): String {
+    fun publishToDownloads(context: Context, installFile: File, version: String, abi: String = "arm64-v8a"): String {
         require(installFile.isFile) { "Update APK is missing: ${installFile.absolutePath}" }
-        val name = "MiniiChat-Next-$version.apk"
+        val name = "MiniiChat-Next-$version-$abi.apk"
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val values = ContentValues().apply {
                 put(MediaStore.MediaColumns.DISPLAY_NAME, name)

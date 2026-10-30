@@ -39,6 +39,8 @@ fun AuxModelPickerSheet(
     onPick: (ref: String) -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit,
+    showConversationModel: Boolean = false,
+
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     // 解析当前ref->(providerId, model)
@@ -68,14 +70,29 @@ fun AuxModelPickerSheet(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.align(Alignment.CenterStart)
                 )
-                TextButton(
-                    onClick = onClear,
-                    modifier = Modifier.align(Alignment.CenterEnd)
-                ) {
-                    Text(stringResource(R.string.aux_model_not_set))
+                if (!showConversationModel) {
+                    TextButton(
+                        onClick = onClear,
+                        modifier = Modifier.align(Alignment.CenterEnd)
+                    ) {
+                        Text(stringResource(R.string.aux_model_not_set))
+                    }
                 }
             }
             Spacer(Modifier.height(10.dp))
+
+            if (showConversationModel) {
+                TextButton(
+                    onClick = { onPick(com.miniichatNext.carter.data.store.COMPRESS_MODEL_CONVERSATION) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(
+                        stringResource(R.string.aux_use_conversation_model),
+                        color = if (selected == com.miniichatNext.carter.data.store.COMPRESS_MODEL_CONVERSATION)
+                            MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+            }
 
             if (selected.isBlank()) {
                 Text(

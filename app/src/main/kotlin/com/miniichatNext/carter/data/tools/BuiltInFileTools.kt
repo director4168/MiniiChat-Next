@@ -1,5 +1,7 @@
-package com.miniichatNext.carter.data.mcp
+package com.miniichatNext.carter.data.tools
 
+import com.miniichatNext.carter.data.mcp.McpToolResult
+import com.miniichatNext.carter.data.mcp.McpTool
 import android.content.Context
 import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.R
@@ -8,7 +10,6 @@ import com.miniichatNext.carter.data.workspace.readResult
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.BufferedReader
@@ -58,10 +59,15 @@ object BuiltInFileTools {
         "file_list", "file_read", "file_write", "file_append", "file_delete",
         "file_move", "file_copy", "file_rename", "file_mkdir",
         "file_exists", "file_search", "file_info", "file_edit"
-    )
+    ) + SpecialTools.names
 
     /** 工具描述与JSON Schema走资源（内置工具页要跟随界面语言） */
     fun schema(context: Context): List<McpTool> = listOf(
+        tool("time_now", context.getString(R.string.builtin_tool_time_desc), context.getString(R.string.builtin_tool_time_schema)),
+        tool("clipboard_read", context.getString(R.string.builtin_tool_clipboard_read_desc), context.getString(R.string.builtin_tool_clipboard_read_schema)),
+        tool("clipboard_write", context.getString(R.string.builtin_tool_clipboard_write_desc), context.getString(R.string.builtin_tool_clipboard_write_schema)),
+        tool("calendar_list", context.getString(R.string.builtin_tool_calendar_list_desc), context.getString(R.string.builtin_tool_calendar_list_schema)),
+        tool("calendar_create", context.getString(R.string.builtin_tool_calendar_create_desc), context.getString(R.string.builtin_tool_calendar_create_schema)),
         tool(
             "interactive_clarification",
             context.getString(R.string.builtin_tool_clarification_desc),
@@ -150,14 +156,17 @@ object BuiltInFileTools {
 
     /** 默认免审批的工具（询问类工具不阻塞，用户在选项卡片上交互） */
     /** 默认免审批：询问类工具+只读网络工具（browser_fetch）不阻塞 */
-    fun defaultRequireApproval(name: String): Boolean =
-        name != "interactive_clarification" && name != "browser_fetch"
+    fun defaultRequireApproval(name: String): Boolean {
+        if (name in SpecialTools.names) return SpecialTools.defaultRequireApproval(name)
+        return name != "interactive_clarification" && name != "browser_fetch"
+    }
     fun hasTool(name: String): Boolean = isBuiltIn(name)
 
     fun execute(context: Context, name: String, argumentsJson: String): McpToolResult = runCatching {
         val args = if (argumentsJson.isBlank()) JsonObject(emptyMap())
         else json.parseToJsonElement(argumentsJson).jsonObject
         when (name) {
+            in SpecialTools.names -> SpecialTools.execute(context, name, args)
             "interactive_clarification" -> interactiveClarification(context, args)
             "browser_fetch" -> BrowserTools.execute(context, args)
             "execute_shell" -> executeShell(context, args)
@@ -211,22 +220,8 @@ object BuiltInFileTools {
     }
 
     private fun interactiveClarification(context: Context, args: JsonObject): McpToolResult {
-        val question = arg(args, "question") ?: context.getString(R.string.builtin_clarify_default_question)
-        val rawOptions = args["options"]?.jsonArray?.mapNotNull { el ->
-            when (el) {
-                is kotlinx.serialization.json.JsonPrimitive -> el.contentOrNull
-                is JsonObject -> {
-                    (listOf("content", "item", "value", "text", "label", "choice")
-                        .firstNotNullOfOrNull { key -> (el[key] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull })
-                        ?: el.values
-                            .filterIsInstance<kotlinx.serialization.json.JsonPrimitive>()
-                            .firstOrNull { it.contentOrNull?.isNotBlank() == true }?.contentOrNull
-                }
-                else -> null
-            }
-        } ?: emptyList()
-        val options = rawOptions.take(4)
-        val allowMultiple = args["allow_multiple"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
+        val questions = ClarificationParser.parse(args)
+        if (questions.isEmpty()) return fail(context.getString(R.string.builtin_clarify_default_question))
 
         // 结果只做简短确认——不含选项枚举：选项全文会以"工具结果"展示在COT卡片上，
         // 用户提交选择后卡片result会覆盖为所选；枚举文本只会让用户误以为选项被重复提交

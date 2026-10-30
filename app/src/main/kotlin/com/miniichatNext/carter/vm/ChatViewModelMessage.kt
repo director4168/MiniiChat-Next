@@ -8,7 +8,8 @@ import com.miniichatNext.carter.R
 import com.miniichatNext.carter.api.ChatMessage
 import com.miniichatNext.carter.api.ToolCall
 import com.miniichatNext.carter.api.ToolSpec
-import com.miniichatNext.carter.data.mcp.BuiltInFileTools
+import com.miniichatNext.carter.data.tools.BuiltInFileTools
+import com.miniichatNext.carter.data.tools.SpecialTools
 import com.miniichatNext.carter.data.mcp.EffectiveToolPermission
 import com.miniichatNext.carter.data.mcp.McpServerConfig
 import com.miniichatNext.carter.data.mcp.exposedMcpToolName
@@ -545,6 +546,7 @@ private suspend fun ChatViewModel.updateToolInvocationState(
 
 private fun toolTargetsPublicStorage(toolName: String, argsJson: String): Boolean {
     if (toolName == "execute_shell") return true
+    if (toolName in SpecialTools.names) return false
     if (!BuiltInFileTools.isBuiltIn(toolName)) return false
     val args = runCatching { AppJson.parseObject(argsJson) }.getOrDefault(JsonObject(emptyMap()))
     val paths = listOf("path", "from", "to").mapNotNull { key ->

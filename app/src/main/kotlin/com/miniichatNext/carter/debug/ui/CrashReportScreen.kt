@@ -85,12 +85,21 @@ fun CrashReportScreen(onDismiss: () -> Unit) {
             }) { Text(stringResource(R.string.debug_export_share)) }
             TextButton(onClick = {
                 runCatching {
-                    sendFeedbackMail(
+                    sendCrashFeedbackMail(
                         context,
-                        CrashLogger.crashZipFile(context),
                         context.getString(R.string.crash_mail_subject),
-                        context.getString(R.string.crash_mail_body)
+                        context.getString(R.string.crash_mail_body),
+                        crashText,
                     )
+                }.onFailure {
+                    // 没有可用邮件应用：把日志复制到剪贴板，至少能手动粘贴反馈
+                    DebugLog.w("CrashPage", "cannot send feedback mail: ${it.message}")
+                    clipboard.setText(AnnotatedString(crashText))
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.crash_mail_failed),
+                        Toast.LENGTH_LONG,
+                    ).show()
                 }
             }) { Text(stringResource(R.string.debug_mail_feedback)) }
             Spacer(Modifier.width(8.dp))

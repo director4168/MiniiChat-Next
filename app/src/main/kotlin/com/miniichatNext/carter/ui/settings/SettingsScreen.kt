@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -108,6 +109,8 @@ fun SettingsScreen(
     var system by rememberSaveable { mutableStateOf(settings.systemPrompt) }
     var temperature by rememberSaveable { mutableStateOf(settings.temperature) }
     val stream = settings.stream
+    // 关闭流式回复前先弹确认：非流式要等整段生成完才出结果
+    var confirmDisableStream by remember { mutableStateOf(false) }
 
     androidx.compose.runtime.LaunchedEffect(settings.systemPrompt) {
         if (settings.systemPrompt != system) system = settings.systemPrompt
@@ -313,8 +316,9 @@ fun SettingsScreen(
                         }
                         Switch(
                             checked = stream,
-                            onCheckedChange = {
-                                onChange { s -> s.copy(stream = it) }
+                            onCheckedChange = { enabled ->
+                                if (enabled) onChange { s -> s.copy(stream = true) }
+                                else confirmDisableStream = true
                             }
                         )
                     }
@@ -335,7 +339,8 @@ fun SettingsScreen(
                         label = stringResource(R.string.aux_model_compress),
                         ref = settings.compressModel,
                         providers = providers,
-                        onPick = { ref -> onChange { it.copy(compressModel = ref) } }
+                        onPick = { ref -> onChange { it.copy(compressModel = ref) } },
+                        showConversationModel = true,
                     )
                     Spacer(Modifier.height(8.dp))
                     AuxModelRow(
@@ -429,11 +434,11 @@ fun SettingsScreen(
                         onClick = onOpenMcp,
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
-                    // 内置文件管理工具（从MCP服务页移出来，单独在MCP服务下方）
+                    // 内置工具管理（从MCP服务页移出来，单独在MCP服务下方）
                     SettingsNavRow(
                         icon = Icons.Default.Folder,
                         title = stringResource(R.string.mcp_builtin_title),
-                        subtitle = stringResource(R.string.mcp_builtin_subtitle, com.miniichatNext.carter.data.mcp.BuiltInFileTools.toolNames.size),
+                        subtitle = stringResource(R.string.mcp_builtin_subtitle),
                         onClick = onOpenBuiltInTools,
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
@@ -587,6 +592,25 @@ fun SettingsScreen(
             Spacer(Modifier.height(40.dp))
         }
     }
+
+    if (confirmDisableStream) {
+        AlertDialog(
+            onDismissRequest = { confirmDisableStream = false },
+            title = { Text(stringResource(R.string.stream_off_confirm_title)) },
+            text = { Text(stringResource(R.string.stream_off_confirm_message)) },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmDisableStream = false
+                    onChange { s -> s.copy(stream = false) }
+                }) { Text(stringResource(R.string.stream_off_confirm_confirm)) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmDisableStream = false }) {
+                    Text(stringResource(R.string.cancel))
+                }
+            },
+        )
+    }
 }
 
 @Composable
@@ -681,9 +705,11 @@ private fun AuxModelRow(
     label: String,
     ref: String,
     providers: List<ProviderConfig>,
-    onPick: (String) -> Unit
+    onPick: (String) -> Unit,
+    showConversationModel: Boolean = false,
 ) {
     var showPicker by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     val activeProviderId = remember(ref) {
         if (ref.contains("::")) ref.substringBefore("::") else ""
     }
@@ -693,7 +719,9 @@ private fun AuxModelRow(
     val displayName = remember(ref, providers) {
         val provider = providers.firstOrNull { it.id == activeProviderId }
         val model = activeModelId.ifBlank { "" }
-        if (provider != null && model.isNotBlank()) {
+        if (showConversationModel && ref == com.miniichatNext.carter.data.store.COMPRESS_MODEL_CONVERSATION) {
+            context.getString(R.string.aux_use_conversation_model)
+        } else if (provider != null && model.isNotBlank()) {
             "${provider.name} / $model"
         } else if (model.isNotBlank()) {
             model
@@ -732,7 +760,8 @@ private fun AuxModelRow(
                 showPicker = false
                 onPick("")
             },
-            onDismiss = { showPicker = false }
+            onDismiss = { showPicker = false },
+            showConversationModel = showConversationModel,
         )
     }
 }

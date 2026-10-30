@@ -35,6 +35,7 @@ import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -42,6 +43,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -72,17 +74,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.data.tools.ClarificationParser
+import com.miniichatNext.carter.data.tools.ClarificationQuestion
 import com.miniichatNext.carter.data.model.ToolInvocation
 import com.miniichatNext.carter.data.model.ToolInvocationState
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 /** 一条思考步骤：模型推理或一次工具调用 */
 sealed interface ThoughtStep {
@@ -479,8 +475,9 @@ private fun CodeBlock(label: String, text: String) {
 }
 
 /**
- * 需求澄清：问题+最多4个选项（可多选）+自定义输入+提交按钮。
- * 需要用户填表，因此不放进ChainOfThought的步骤流里。
+ * 需求澄清：一次最多16道问题（每题最多4个选项，可多选）+自定义输入+统一提交。
+ * 未回答时展示完整表单；全部回答后自动折叠（与其他工具调用一致），
+ * 收起时只显示问题与回答内容，展开可看每道题的选项详情。
  */
 @Composable
 fun InteractiveClarificationCard(
@@ -488,40 +485,46 @@ fun InteractiveClarificationCard(
     onApprove: ((ToolInvocation, String?) -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
-    val json = AppJson.json
     val context = LocalContext.current
-    val parsed = remember(invocation.arguments, context) {
-        runCatching {
-            val obj = AppJson.parseObject(invocation.arguments)
-            val q = obj["question"]?.jsonPrimitive?.contentOrNull
-                ?: context.getString(R.string.clarify_default_question)
-            // options元素可能是：JsonObject/JSON-encoded字符串/纯字符串——都规范成纯文本
-            val rawOpts = obj["options"]?.jsonArray?.mapNotNull { el: JsonElement ->
-                    normalizeOption(el, json)
-                } ?: emptyList()
-            val allowMulti = obj["allow_multiple"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
-            Triple(q, rawOpts.take(4), allowMulti)
-        }.getOrDefault(
-            Triple(
-                context.getString(R.string.clarify_fallback_title),
-                listOf(context.getString(R.string.clarify_fallback_option)),
-                false
+    val questions = remember(invocation.arguments) {
+        val parsed = ClarificationParser.parse(invocation.arguments)
+        parsed.ifEmpty {
+            listOf(
+                ClarificationQuestion(
+                    question = context.getString(R.string.clarify_fallback_title),
+                    options = listOf(context.getString(R.string.clarify_fallback_option)),
+                    allowMultiple = false,
+                )
             )
-        )
+        }
     }
+    val answered = invocation.state == ToolInvocationState.SUCCESS && invocation.result.isNotBlank()
+    var expanded by remember { mutableStateOf(false) }
+    var submittedSummary by remember { mutableStateOf<String?>(null) }
+    val answers = remember(questions.size) { ClarifyAnswerState(questions.size) }
 
-    val question = parsed.first
-    val options = parsed.second
-    val allowMultiple = parsed.third
     val summaryPrefix = stringResource(R.string.clarify_summary_prefix)
     val summaryNone = stringResource(R.string.clarify_summary_none)
     val summaryCustom = stringResource(R.string.clarify_summary_custom)
+    val questionTemplate = stringResource(R.string.clarify_summary_question)
     val listSeparator = stringResource(R.string.common_enum_separator)
+    val multiHint = stringResource(R.string.clarify_multi_hint)
+    val singleHint = stringResource(R.string.clarify_single_hint)
+    val customLabel = stringResource(R.string.clarify_custom_label)
+    val optionLine = stringResource(R.string.clarify_option_line)
+    val summaryText = submittedSummary ?: invocation.result
 
-    val selectedOptions = remember { mutableStateListOf<String>() }
-    var singleSelected by remember { mutableStateOf<String?>(options.firstOrNull()) }
-    var customInput by remember { mutableStateOf("") }
-    var isSubmitted by remember { mutableStateOf(invocation.result.isNotBlank()) }
+    // 本地状态优先；进程重启后本地选择丢失，就从已提交的结果文本里按题回推
+    val summaryLines = remember(summaryText) { summaryText.split('\n') }
+    fun pickedFor(index: Int, question: ClarificationQuestion): List<String> {
+        val local = if (question.allowMultiple) answers.multi[index]
+        else listOfNotNull(answers.single[index])
+        if (local.isNotEmpty()) return local
+        // 提交文本每题占两行：题目行+回答行
+        val answerLine = summaryLines.getOrNull(index * 2 + 1).orEmpty()
+        if (answerLine.isBlank()) return emptyList()
+        return question.options.filter { answerLine.contains(it) }
+    }
 
     Surface(
         modifier = modifier
@@ -532,7 +535,12 @@ fun InteractiveClarificationCard(
         border = BorderStroke(1.2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = answered) { expanded = !expanded },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Icon(
                     Icons.AutoMirrored.Filled.HelpOutline,
                     contentDescription = null,
@@ -540,141 +548,205 @@ fun InteractiveClarificationCard(
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    text = question,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = if (allowMultiple) stringResource(R.string.clarify_multi_hint)
-                else stringResource(R.string.clarify_single_hint),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(Modifier.height(12.dp))
-
-            options.forEachIndexed { index, optionText ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .clickable(enabled = !isSubmitted) {
-                            if (allowMultiple) {
-                                if (optionText in selectedOptions) selectedOptions.remove(optionText)
-                                else selectedOptions.add(optionText)
-                            } else {
-                                singleSelected = optionText
-                            }
-                        }
-                        .padding(vertical = 4.dp, horizontal = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (allowMultiple) {
-                        Checkbox(
-                            checked = optionText in selectedOptions,
-                            onCheckedChange = { checked ->
-                                if (!isSubmitted) {
-                                    if (checked) selectedOptions.add(optionText) else selectedOptions.remove(optionText)
-                                }
-                            }
-                        )
-                    } else {
-                        RadioButton(
-                            selected = singleSelected == optionText,
-                            onClick = { if (!isSubmitted) singleSelected = optionText }
-                        )
-                    }
-                    Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
                     Text(
-                        text = stringResource(R.string.clarify_option_line, index + 1, optionText),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface
+                        text = stringResource(R.string.clarify_card_title),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        text = if (answered) {
+                            stringResource(R.string.clarify_answered_count, questions.size)
+                        } else {
+                            stringResource(R.string.clarify_questions_count, questions.size)
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (answered) {
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = stringResource(
+                            if (expanded) R.string.clarify_collapse else R.string.clarify_expand
+                        ),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }
 
-            Spacer(Modifier.height(6.dp))
-            OutlinedTextField(
-                value = customInput,
-                onValueChange = { if (!isSubmitted) customInput = it },
-                label = { Text(stringResource(R.string.clarify_custom_label)) },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                enabled = !isSubmitted
-            )
+            Spacer(Modifier.height(12.dp))
 
-            Spacer(Modifier.height(14.dp))
+            if (!answered) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                ) {
+                    questions.forEachIndexed { index, question ->
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = questionTemplate.format(index + 1, question.question),
+                                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                text = if (question.allowMultiple) multiHint else singleHint,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            question.options.forEachIndexed { optionIndex, optionText ->
+                                val checked = if (question.allowMultiple) {
+                                    optionText in answers.multi[index]
+                                } else {
+                                    answers.single[index] == optionText
+                                }
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            if (question.allowMultiple) {
+                                                answers.multi[index] = if (checked) {
+                                                    answers.multi[index] - optionText
+                                                } else {
+                                                    answers.multi[index] + optionText
+                                                }
+                                            } else {
+                                                answers.single[index] = optionText
+                                            }
+                                        }
+                                        .padding(vertical = 4.dp, horizontal = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    if (question.allowMultiple) {
+                                        Checkbox(
+                                            checked = checked,
+                                            onCheckedChange = { newChecked ->
+                                                answers.multi[index] = if (newChecked) {
+                                                    answers.multi[index] + optionText
+                                                } else {
+                                                    answers.multi[index] - optionText
+                                                }
+                                            },
+                                        )
+                                    } else {
+                                        RadioButton(
+                                            selected = checked,
+                                            onClick = { answers.single[index] = optionText },
+                                        )
+                                    }
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(
+                                        text = optionLine.format(optionIndex + 1, optionText),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = answers.custom[index],
+                                onValueChange = { answers.custom[index] = it },
+                                label = { Text(customLabel) },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true,
+                            )
+                        }
+                    }
+                }
 
-            if (!isSubmitted) {
+                Spacer(Modifier.height(14.dp))
+
                 Button(
                     onClick = {
-                        isSubmitted = true
-                        val selectedList = if (allowMultiple) selectedOptions.toList() else listOfNotNull(singleSelected)
-                        val extra = customInput.trim()
                         val summary = buildString {
-                            append(summaryPrefix)
-                            append(if (selectedList.isNotEmpty()) selectedList.joinToString(listSeparator) else summaryNone)
-                            if (extra.isNotBlank()) append(summaryCustom).append(extra)
+                            questions.forEachIndexed { index, question ->
+                                val picked = pickedFor(index, question)
+                                val custom = answers.custom[index].trim()
+                                append(questionTemplate.format(index + 1, question.question))
+                                append('\n')
+                                append(summaryPrefix)
+                                append(if (picked.isNotEmpty()) picked.joinToString(listSeparator) else summaryNone)
+                                if (custom.isNotBlank()) append(summaryCustom).append(custom)
+                                if (index != questions.lastIndex) append('\n')
+                            }
                         }
+                        submittedSummary = summary
                         onApprove?.invoke(invocation, summary)
                     },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp)
                 ) { Text(stringResource(R.string.clarify_submit), fontWeight = FontWeight.Bold) }
             } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Check, null, tint = Color(0xFF2E7D32), modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        if (invocation.result.isNotBlank()) invocation.result else stringResource(R.string.clarify_confirmed),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color(0xFF2E7D32)
-                    )
+                Text(
+                    text = summaryText,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                if (expanded) {
+                    Spacer(Modifier.height(10.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    Spacer(Modifier.height(8.dp))
+                    questions.forEachIndexed { index, question ->
+                        Text(
+                            text = questionTemplate.format(index + 1, question.question),
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        val picked = pickedFor(index, question)
+                        question.options.forEach { optionText ->
+                            val checked = optionText in picked
+                            Row(
+                                modifier = Modifier.padding(vertical = 2.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    imageVector = if (checked) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                    contentDescription = null,
+                                    tint = if (checked) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = optionText,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        val custom = answers.custom[index].trim()
+                        if (custom.isNotBlank()) {
+                            Text(
+                                text = custom,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-/** 是否为需要用户填表的交互式工具 */
-fun isClarificationTool(name: String): Boolean = name == CLARIFICATION_TOOL
+/** 每道问题的作答状态：多选集合/单选项/自定义输入 */
+private class ClarifyAnswerState(count: Int) {
+    val multi = mutableStateListOf<List<String>>()
+    val single = mutableStateListOf<String?>()
+    val custom = mutableStateListOf<String>()
 
-/**
- * 把options数组里形形色色的元素规范成纯文本：
- * - JsonObject→优先取`content`，其次`item`，最后toString
- * - JsonPrimitive（string）→试parse成对象，重复上面的逻辑；不是JSON就当纯字符串
- */
-private fun normalizeOption(el: JsonElement, json: Json): String? {
-    when (el) {
-        is JsonObject -> {
-            // 常见键优先：content/item/value/text/label/choice
-            for (key in listOf("content", "item", "value", "text", "label", "choice")) {
-                (el[key] as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.let { return it }
-            }
-            // 任意字符串值字段兜底（AI可能用key_a等自定义键）
-            for ((_, v) in el) {
-                (v as? kotlinx.serialization.json.JsonPrimitive)?.contentOrNull?.let { if (it.isNotBlank()) return it }
-            }
-            // 嵌套结构：递归取第一个可解析项
-            for ((_, v) in el) {
-                if (v is JsonObject) { normalizeOption(v, json)?.let { return it } }
-            }
-            return null
+    init {
+        repeat(count) {
+            multi.add(emptyList())
+            single.add(null)
+            custom.add("")
         }
-        is kotlinx.serialization.json.JsonPrimitive -> {
-            val raw = el.contentOrNull ?: return null
-            return runCatching {
-                val parsed = AppJson.parse(raw)
-                if (parsed is JsonObject) normalizeOption(parsed, json) else raw
-            }.getOrDefault(raw)
-        }
-        else -> return null
     }
 }
+
+/** 是否为需要用户填表的交互式工具 */
+fun isClarificationTool(name: String): Boolean = name == CLARIFICATION_TOOL

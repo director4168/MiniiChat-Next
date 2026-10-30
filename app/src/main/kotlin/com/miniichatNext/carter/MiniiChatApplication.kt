@@ -13,6 +13,10 @@ class MiniiChatApplication : Application() {
         DebugLog.restore(this)
         DebugLog.i("App", "MiniiChatApplication.onCreate")
         CrashLogger.install(this)
+        val removedCacheEntries = com.miniichatNext.carter.util.TemporaryCacheCleaner.clearOnStartup(this)
+        if (removedCacheEntries > 0) {
+            DebugLog.i("Cache", "cleared $removedCacheEntries temporary cache entrie(s)")
+        }
         // 前后台追踪（更新下载完成后决定是否可拉起安装器）
         registerActivityLifecycleCallbacks(com.miniichatNext.carter.util.AppForeground.callbacks)
         // 不在每次启动清缓存——用户已下载但未安装的APK要保留。

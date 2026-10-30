@@ -1,12 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Core interface resources -->
+
+    <!-- Common actions -->
     <string name="app_name">MiniiChat Next</string>
-    <string name="new_chat">New chat</string>
+    <string name="new_chat">New conversation</string>
     <string name="send">Send</string>
     <string name="stop">Stop</string>
     <string name="settings">Settings</string>
-    <string name="hint_input">Message MiniiChat…</string>
-    <string name="empty_title">Hi, I\'m MiniiChat</string>
+    <string name="hint_input">Message MiniiChat Next…</string>
+    <string name="empty_title">Hi, I\'m MiniiChat Next</string>
     <string name="empty_subtitle">An open-source LLM client. You bring your own API key.</string>
     <string name="copy">Copy</string>
     <string name="generic_delete_confirm">Delete \"%1$s\"? This action cannot be undone.</string>
@@ -17,6 +20,8 @@
     <string name="ok">OK</string>
     <string name="drawer_delete_confirm">Delete \"%1$s\"?</string>
     <string name="save">Save</string>
+
+    <!-- Assistant and provider basics -->
     <string name="providers">Providers</string>
     <string name="assistants">Assistants</string>
     <string name="assistant">Assistant</string>
@@ -30,13 +35,15 @@
     <string name="assistant_system_prompt">System prompt</string>
     <string name="prompt_vars_hint">Available variables: {model} {provider} {assistant} {date} {time} {datetime} {weekday} {locale}</string>
     <string name="override_temperature">Override temperature</string>
+
+    <!-- Provider and appearance settings -->
     <string name="provider_name">Name</string>
     <string name="setting_base_url">Base URL</string>
     <string name="setting_api_key">API Key</string>
     <string name="setting_model">Model</string>
     <string name="setting_system">System prompt</string>
     <string name="setting_temperature">Temperature</string>
-    <string name="setting_stream">Streaming</string>
+    <string name="setting_stream">Streaming response</string>
     <string name="setting_appearance">Appearance</string>
     <string name="setting_dynamic_color">Material You dynamic color</string>
     <string name="setting_dynamic_color_hint">Follow system colors (Android 12+)</string>
@@ -48,13 +55,21 @@
     <string name="setting_language_system">System</string>
     <string name="setting_language_en">English</string>
     <string name="setting_language_zh">中文</string>
+
+    <!-- Request customization -->
     <string name="custom_headers">Custom headers</string>
     <string name="custom_headers_hint">Sent with every request</string>
     <string name="extra_body">Extra body</string>
-    <string name="extra_body_hint">Merged into the JSON body of chat requests</string>
+    <string name="extra_body_hint">Merged into the JSON body of conversation requests</string>
     <string name="key">Name</string>
     <string name="value">Value</string>
     <string name="add_row">Add row</string>
+
+
+
+    <!-- About, errors and model selection resources -->
+
+    <!-- About page -->
     <string name="about_text_intro">This project (MiniiChat Next) is a derivative work developed by director_Carter based on MiniiChat (MIT open source)&#10;MiniiChat Next is an AGPL-3.0 open source Android LLM client, which adds more functions (MCP service support, tool calling, file operations, etc.) on the original basis.</string>
     <string name="about_subtitle">Version, licenses and third-party notices</string>
     <string name="about_version_label">Version</string>
@@ -66,9 +81,11 @@
     <string name="about_contact_title">Contact the MiniiChat Next developer</string>
     <string name="about_contact_sub">director4168@163.com</string>
     <string name="about_export_logs_title">Export logs</string>
-    <string name="about_export_logs_sub">Bundle all logs into the system Downloads folder</string>
+    <string name="about_export_logs_sub">Bundle all logs into the system Download folder</string>
     <string name="about_export_logs_failed">Failed to export logs</string>
     <string name="about_mail_chooser">Choose an email app</string>
+
+    <!-- Errors and avatar transfer -->
     <string name="error_no_model">No model selected.</string>
     <string name="error_api_key_empty">The API key for %1$s is empty.</string>
     <string name="models_none_returned">/models returned no models</string>
@@ -80,11 +97,13 @@
     <string name="avatar_decode_failed">Couldn\'t decode the cropped image</string>
     <string name="avatar_transfer_failed">Failed to save avatar: %1$s</string>
     <string name="error_no_provider">No provider configured yet. Add one in Settings.</string>
+
+    <!-- Model discovery and selection -->
     <string name="example_prompt_1">Explain what a large language model is in one paragraph.</string>
     <string name="example_prompt_2">Write a haiku about Android development.</string>
     <string name="example_prompt_3">Give me 5 tips for staying productive while working remotely.</string>
     <string name="example_prompt_4">Translate \"good morning\" into Japanese.</string>
-    <string name="search_chats">Search chats</string>
+    <string name="search_chats">Search conversations</string>
     <string name="search_models">Search models</string>
     <string name="fetch_models">Fetch models</string>
     <string name="fetching">Fetching…</string>
@@ -97,6 +116,8 @@
     <string name="choose_preset">Choose a preset…</string>
     <string name="expand_models">Show %1$d more</string>
     <string name="collapse_models">Collapse</string>
+
+    <!-- Attachments, dates and sections -->
     <string name="attach_image">Image</string>
     <string name="attach_file">File</string>
     <string name="date_today">Today</string>
@@ -112,19 +133,27 @@
     <string name="retell_confirm_title">Retell</string>
     <string name="retell_confirm_message">Retell from here? Everything after this message will be regenerated.</string>
     <string name="advanced_options">Advanced options</string>
+
+
+
+    <!-- Profile, skills and avatar resources -->
+
+    <!-- User profile -->
     <string name="profile">Profile</string>
-    <string name="display_name">Display name</string>
+    <string name="display_name">Nickname</string>
     <string name="display_name_default">Me</string>
     <string name="tap_avatar_to_change">Tap the avatar to change</string>
     <string name="back">Back</string>
+
+    <!-- Skills -->
     <string name="skills">Skills</string>
     <string name="skills_subtitle">Manage skill books available to AI</string>
     <string name="skills_empty_title">No skills yet</string>
     <string name="skills_empty_hint">Skills inject extra instructions into the system prompt.</string>
     <string name="skills_import">Import file</string>
     <string name="skills_new">New skill</string>
-    <string name="skills_import_url">From URL</string>
-    <string name="skills_import_file">From local file</string>
+    <string name="skills_import_url">Import from URL</string>
+    <string name="skills_import_file">Import from local file</string>
     <string name="skills_create_manual">Create manually</string>
     <string name="skills_url_hint">Paste a direct link to a .md skill file (e.g. raw.githubusercontent.com).</string>
     <string name="skills_url_loading">Downloading…</string>
@@ -139,19 +168,31 @@
     <string name="skill_import_failed_meta">SKILL.md is missing the name / description field</string>
     <string name="skill_no_skills_for_assistant">No skills available. Import some in Settings → Skills.</string>
     <string name="skill_auto_name">Parsed name: %1$s</string>
-    <string name="skill_name_required">Please use a proper SKILL file rather than a plain .md document</string>
+    <string name="skill_name_required">Please use a proper SKILL file</string>
     <string name="skill_delete_confirm">Delete skill \"%1$s\"? Assistants linked to it will be unlinked.</string>
+
+    <!-- Avatar picker -->
     <string name="avatar_picker_title">Avatar</string>
     <string name="avatar_picker_emoji_hint">Or type an emoji</string>
     <string name="avatar_picker_pick_image">Choose image</string>
     <string name="avatar_picker_reset_emoji">Reset to emoji</string>
+
+    <!-- Action buttons -->
     <string name="action_cancel">Cancel</string>
     <string name="action_save">Save</string>
+
+
+
+    <!-- Chat, assistant and auxiliary model resources -->
+
+    <!-- Token usage -->
     <string name="token_usage">Token usage</string>
-    <string name="token_usage_input">Input (prompt)</string>
-    <string name="token_usage_output">Output (completion)</string>
+    <string name="token_usage_input">Input</string>
+    <string name="token_usage_output">Output</string>
     <string name="token_usage_total">Total</string>
     <string name="token_usage_hint">Cumulative usage</string>
+
+    <!-- Assistant editor -->
     <string name="assistant_skills">Assistant skills</string>
     <string name="assistant_skills_hint">Skills enabled for this assistant are added to its system prompt.</string>
     <string name="assistant_background">Assistant background</string>
@@ -167,6 +208,8 @@
     <string name="assistant_delete_confirm">Delete assistant \"%1$s\"? Its conversations and skills are kept, but the assistant will no longer be selectable.</string>
     <string name="background_short">Background</string>
     <string name="language_restart_toast">Language changed, restarting…</string>
+
+    <!-- Chat actions and rendering -->
     <string name="continue_generating">Continue</string>
     <string name="attach">Add</string>
     <string name="context_compress">Compress context</string>
@@ -187,6 +230,8 @@
     <string name="compress_not_enough">Not enough messages to compress while keeping the most recent ones.</string>
     <string name="suggestion_generate_hint">Suggestions are generated when you open this page</string>
     <string name="suggestion_generating">Generating suggestions…</string>
+
+    <!-- Auxiliary models and compression -->
     <string name="section_aux_features">Auxiliary models</string>
     <string name="aux_model_ocr">OCR model</string>
     <string name="aux_ocr_mode">OCR trigger mode</string>
@@ -206,13 +251,15 @@
     <string name="compress_keep_recent">Recent messages to keep</string>
     <string name="compress_additional_prompt">Additional instructions</string>
     <string name="confirm">OK</string>
+
+    <!-- API and provider model settings -->
     <string name="chat_completions_path">Chat Completions path</string>
     <string name="response_api">Response API</string>
     <string name="response_api_hint">OpenAI\'s next-generation API</string>
     <string name="response_api_warning">Response API is OpenAI\'s next-generation interface and most providers don\'t support it. If you\'re not sure what this is, or your provider\'s models don\'t support it, leave it off.</string>
     <string name="provider_type">Provider type</string>
     <string name="provider_type_openai">OpenAI-compatible</string>
-    <string name="provider_type_claude">Anthropic</string>
+    <string name="provider_type_claude">Anthropic-compatible</string>
     <string name="thinking_level">Thinking level</string>
     <string name="thinking_off">Off</string>
     <string name="thinking_low">Low</string>
@@ -220,11 +267,20 @@
     <string name="thinking_high">High</string>
     <string name="provider_delete_confirm">Delete provider \"%1$s\"?</string>
     <string name="untitled">Untitled</string>
-    <string name="no_chats_yet">No chats yet</string>
+    <string name="no_chats_yet">No conversations yet</string>
     <string name="no_matches">No matches</string>
     <string name="profile_default_name">Me</string>
     <string name="models_count_configured">%1$d configured</string>
     <string name="server_sent_events">Server-Sent Events</string>
+    <string name="stream_off_confirm_title">Turn off streaming replies?</string>
+    <string name="stream_off_confirm_message">Streaming replies show the answer while the model is still writing it. With it off, the app waits for the whole reply before showing anything, so long answers can look like a hang and may time out. Keeping it on is usually better.</string>
+    <string name="stream_off_confirm_confirm">Turn off</string>
+
+
+
+    <!-- Debug and crash report resources -->
+
+    <!-- Theme debugging -->
     <string name="debug_title">Debug</string>
     <string name="debug_theme_title">Theme colors</string>
     <string name="debug_theme_tools">Theme tools</string>
@@ -244,6 +300,8 @@
     <string name="debug_theme_import_apply">Apply import</string>
     <string name="debug_theme_imported">Imported and applied</string>
     <string name="debug_theme_import_failed">Invalid JSON</string>
+
+    <!-- Debug tools and dialogs -->
     <string name="debug_level_label">Log level (DEBUG_[%1$s].log)</string>
     <string name="debug_clear">Clear</string>
     <string name="debug_cleared">Logs cleared</string>
@@ -272,7 +330,6 @@
     <string name="debug_test_input_label">Name</string>
     <string name="debug_test_input_min2">At least 2 characters</string>
     <string name="debug_test_input_typed">→ typed: \"%1$s\"</string>
-
     <string name="debug_dialog_test_input">Input dialog</string>
     <string name="debug_test_reuse">Reuse test</string>
     <string name="debug_test_asset_json">Load assets json</string>
@@ -298,20 +355,31 @@
     <string name="debug_mail_subject">MiniiChat Next debug logs</string>
     <string name="debug_mail_body">Describe the problem:\n\n(logs attached)</string>
     <string name="chooser_send_mail">Send feedback email</string>
+
+    <!-- Crash reports -->
     <string name="crash_title">The app crashed on the previous run!</string>
     <string name="crash_desc">The app crashed during its previous run and the crash log has been saved to &lt;app private dir&gt;/files/logs/crash. This app provides a DocumentsProvider so you can inspect the logs yourself, or send them to the developer.</string>
     <string name="crash_export_title">Export crash log</string>
     <string name="crash_copy">Copy crash log</string>
     <string name="crash_mail_subject">MiniiChat Next crash log</string>
     <string name="crash_mail_body">Describe what you were doing:\n\n(crash log attached)</string>
+    <string name="crash_mail_failed">Couldn\'t open an email app. The crash log was copied to the clipboard.</string>
     <string name="crash_ignore">Ignore and continue</string>
     <string name="crash_empty">(crash log is empty)</string>
+
+
+
+    <!-- Markdown and attachment resources -->
+
+    <!-- Markdown rendering -->
     <string name="open">Open</string>
     <string name="markdown_table">Table</string>
     <string name="markdown_code">Code</string>
     <string name="markdown_open_link_title">Open external link?</string>
     <string name="markdown_open_link_hint">You are about to leave this app. Check the URL before opening.</string>
     <string name="markdown_open_link_failed">No app available to open this link</string>
+
+    <!-- Attachment and workspace hints -->
     <string name="attachment_duplicate">This file has already been added</string>
     <string name="attachment_inline_note">Attachment note: %1$s</string>
     <string name="attachment_large_inline_hint">Large image (%1$s). It will be sent in full after compression.</string>
@@ -319,10 +387,16 @@
     <string name="assistant_workspace_hint">When enabled, the model can read and write workspace files, run shell commands and use MCP tools. When disabled, no tools are offered to the model.</string>
     <string name="manage">Manage</string>
     <string name="mcp_delete_confirm_message">Delete \"%1$s\"? Its discovered tools and per-tool settings will be removed as well.</string>
+
+
+
+    <!-- Workspace and MCP resources -->
+
+    <!-- Workspace management and terminal -->
     <string name="workspace_title">Workspaces</string>
     <string name="workspace_env_section">Linux environment (rootfs)</string>
     <string name="workspace_env_installed">Installed</string>
-    <string name="workspace_rootfs_url">rootfs .tar.xz URL</string>
+    <string name="workspace_rootfs_url">rootfs download URL</string>
     <string name="workspace_reinstall">Reinstall rootfs</string>
     <string name="workspace_install">Install</string>
     <string name="workspace_terminal_section">Terminal</string>
@@ -348,6 +422,8 @@
     <string name="workspace_shell_compat_mode">Compatibility mode (only if issues occur)</string>
     <string name="workspace_run">Run</string>
     <string name="workspace_hint">Install and manage workspaces</string>
+
+    <!-- MCP server management -->
     <string name="section_advanced">Advanced</string>
     <string name="mcp_title">MCP service</string>
     <string name="mcp_hint">Manage MCP services</string>
@@ -357,28 +433,34 @@
     <string name="mcp_name">Name</string>
     <string name="mcp_url">URL (HTTP endpoint)</string>
     <string name="mcp_none_configured">(nothing configured yet — add one in Settings → Advanced → MCP servers)</string>
-    <string name="mcp_transport">Transport</string>
+    <string name="mcp_transport">Transport protocol</string>
     <string name="mcp_headers">Custom headers</string>
     <string name="mcp_header_name">Header name</string>
     <string name="mcp_header_value">Header value</string>
     <string name="mcp_header_add">+ Add header</string>
     <string name="mcp_tool_enable">Allow</string>
     <string name="mcp_tool_approval">Require approval</string>
+
+    <!-- MCP permissions and status -->
     <string name="setting_open_private_dir">Open app data folder</string>
     <string name="setting_open_private_dir_hint">Browse the app\'s private directory with a file manager</string>
     <string name="setting_open_private_dir_failed">No file manager available to open the folder</string>
     <string name="model_picker_no_providers">No providers yet — add one in Settings.</string>
     <string name="model_picker_no_models">(no models — fetch them in provider settings)</string>
     <string name="mcp_open_settings_failed">Couldn\'t open system settings — please grant “All files access” manually</string>
-    <string name="mcp_all_files_title">“All files access” not granted</string>
+    <string name="mcp_all_files_title">"All files access" permission not granted</string>
     <string name="mcp_all_files_message">Built-in file tools need this permission to read and write internal storage. Tap to open system settings and grant it.</string>
+    <string name="mcp_calendar_permission_title">Calendar permission not granted</string>
+    <string name="mcp_calendar_permission_message">Calendar tools need this permission to list and create events. Tap to request it now.</string>
     <string name="mcp_external_servers">External MCP servers</string>
     <string name="mcp_count">%1$d total</string>
     <string name="mcp_deleted">MCP server deleted</string>
-    <string name="mcp_builtin_title">Built-in file tools</string>
-    <string name="mcp_builtin_subtitle">Includes %1$d local tools for moving, copying, deleting, renaming and reading/writing files</string>
+    <string name="mcp_builtin_title">Built-in tool management</string>
+    <string name="mcp_builtin_subtitle">Manage built-in tools for files, web, workspace and device features</string>
     <string name="mcp_empty_title">No MCP servers yet</string>
     <string name="mcp_empty_hint">Supports the Streamable HTTP and legacy SSE standards. Add an MCP server to give the AI access to databases, web search or external APIs.</string>
+
+    <!-- Built-in tool groups -->
     <string name="mcp_tools_count">%1$d tools</string>
     <string name="builtin_group_ask_desc">Ask the user a question and wait for their choice</string>
     <string name="builtin_group_shell_desc">Run shell commands in the app sandbox</string>
@@ -388,19 +470,23 @@
     <string name="input_fullscreen_edit">Edit in fullscreen</string>
     <string name="input_editing_hint">Editing message</string>
     <string name="builtin_group_web">Browser</string>
-    <string name="builtin_group_web_desc">Fetch web pages and convert content to Markdown for the AI</string>
+    <string name="builtin_group_web_desc">Fetch web pages and return raw content to the AI</string>
     <string name="builtin_group_workspace">Workspace</string>
     <string name="builtin_group_workspace_desc">Tools operating in the assistant-bound workspace Rootfs (shell, files, search)</string>
     <string name="builtin_group_ask">Ask user</string>
-    <string name="builtin_group_shell">Shell</string>
+    <string name="builtin_group_shell">Shell terminal</string>
     <string name="builtin_group_file_io">File read / write</string>
     <string name="builtin_group_file_manage">File &amp; directory management</string>
     <string name="builtin_group_search">Search &amp; info</string>
+    <string name="builtin_group_special">Device tools</string>
+    <string name="builtin_group_special_desc">Time, clipboard and calendar tools</string>
     <string name="mcp_builtin_group_count">Built-in tools</string>
     <string name="mcp_builtin_search_hint">Search tools (name or description)</string>
     <string name="mcp_builtin_search_empty">No matching tools</string>
-    <string name="mcp_builtin_config_title">Built-in file tool settings</string>
-    <string name="mcp_builtin_config_hint">Built-in tools are all enabled and require approval by default. Turning one off prevents the AI from calling it.</string>
+
+    <!-- MCP editor and tool settings -->
+    <string name="mcp_builtin_config_title">Built-in tool management</string>
+    <string name="mcp_builtin_config_hint">Manage built-in tools here. Disable a tool to prevent the AI from calling it; approval defaults are shown per group.</string>
     <string name="mcp_server_name">MCP server</string>
     <string name="mcp_synced">Synced %1$d tools</string>
     <string name="mcp_sync_failed">Sync failed: %1$s</string>
@@ -422,6 +508,8 @@
     <string name="mcp_require_approval_hint">Default value; can be overridden per tool</string>
     <string name="mcp_headers_hint">Sent with every request, e.g. Authorization / X-Api-Key. Values are hidden by default.</string>
     <string name="mcp_header_delete">Delete this header</string>
+
+    <!-- Workspace status and provider defaults -->
     <string name="workspace_name_invalid">Invalid or blank name</string>
     <string name="workspace_name_exists">A workspace with this name already exists</string>
     <string name="workspace_new">New workspace</string>
@@ -445,9 +533,15 @@
     <string name="prompt_cache_5m">5 minutes</string>
     <string name="prompt_cache_1h">1 hour</string>
     <string name="follow_provider_setting">Using the provider\'s setting</string>
-    <string name="override_in_this_chat">Set in this chat</string>
+    <string name="override_in_this_chat">Set separately in this conversation</string>
     <string name="thinking_auto">Auto</string>
-    <string name="about_donate_title">Donate to the developer</string>
+    <string name="about_donate_title">Donate to the author</string>
+
+
+
+    <!-- Donation, update and tool message resources -->
+
+    <!-- Donation and attachment import -->
     <string name="about_donate_subtitle">Keep this project going</string>
     <string name="about_donate_message">Buy the developer a milk tea~ it keeps me motivated to keep developing and maintaining this project.</string>
     <string name="about_donate_save">Save the QR code</string>
@@ -456,8 +550,8 @@
     <string name="attachment_added">Added %1$d file(s)</string>
     <string name="attachment_import_failed">Failed to import %1$d file(s)</string>
 
-    <!-- 更新检测 -->
-        <string name="update_check">Check for updates</string>
+    <!-- Update checking -->
+    <string name="update_check">Check for updates</string>
     <string name="update_check_sub">Manually fetch latest version info</string>
     <string name="update_check_failed">Check failed: %1$s</string>
     <string name="update_check_timeout">Check timed out, please try again later</string>
@@ -466,15 +560,15 @@
     <string name="update_new_version">New version available: v%1$s</string>
     <string name="update_force_title">Must update to v%1$s</string>
     <string name="update_ignore_this">Ignore this version</string>
-        <string name="update_force_install">Install anyway</string>
+    <string name="update_force_install">Install anyway</string>
     <string name="update_install_failed">Installer could not be opened</string>
-<string name="update_close">Close</string>
-    <string name="update_auto_check_label">Auto-check on startup</string>
-    <string name="update_auto_check_sub">Automatically check for updates on app launch</string>
+    <string name="update_close">Close</string>
+    <string name="update_auto_check_label">Auto-check for updates on startup</string>
+    <string name="update_auto_check_sub">After enabling, the app checks for new versions on startup</string>
     <string name="update_settings_title">Update settings</string>
-    <string name="update_settings_sub">Auto-check toggle / Manual check</string>
-        
+    <string name="update_settings_sub">Update related features</string>
 
+    <!-- Tool execution messages -->
     <string name="tool_thinking">Thinking</string>
     <string name="tool_status_pending">Awaiting approval</string>
     <string name="tool_status_running">Running</string>
@@ -482,7 +576,7 @@
     <string name="tool_status_error">Failed</string>
     <string name="tool_status_rejected">Rejected</string>
     <string name="tool_status_cancelled">Cancelled</string>
-    <string name="tool_call_prefix">Calling %1$s</string>
+    <string name="tool_call_prefix">Calling tool %1$s</string>
     <string name="tool_args_label">Arguments</string>
     <string name="tool_no_args">(no arguments)</string>
     <string name="tool_result_label">Result</string>
@@ -494,24 +588,30 @@
     <string name="tool_approve">Approve</string>
     <string name="tool_collapse">Collapse</string>
     <string name="tool_expand_more">Show %1$d more steps</string>
-    <string name="clarify_default_question">Please confirm your request</string>
     <string name="clarify_fallback_title">Choose a plan</string>
     <string name="clarify_fallback_option">Default plan</string>
-    <string name="clarify_multi_hint">Multiple answers allowed; you can add your own at the end</string>
-    <string name="clarify_single_hint">Pick one; you can add your own at the end</string>
+    <string name="clarify_multi_hint">Multiple answers allowed; you can add your own custom request at the end</string>
+    <string name="clarify_single_hint">Pick one; you can add your own custom request at the end</string>
     <string name="clarify_option_line">Option %1$d: %2$s</string>
     <string name="clarify_custom_label">Extra option: type a custom request (optional)</string>
     <string name="clarify_summary_prefix">"Confirmed options: "</string>
     <string name="clarify_summary_none">(none ticked)</string>
     <string name="clarify_summary_custom">"; custom input: "</string>
     <string name="clarify_submit">Submit and continue</string>
-    <string name="clarify_confirmed">Options confirmed</string>
+    <string name="clarify_card_title">Requirements clarified</string>
+    <string name="clarify_questions_count">%1$d questions</string>
+    <string name="clarify_answered_count">%1$d questions · Confirmed</string>
+    <string name="clarify_summary_question">Question %1$d: %2$s</string>
+    <string name="clarify_expand">Expand details</string>
+    <string name="clarify_collapse">Collapse</string>
     <string name="chat_no_content">(model returned no content)</string>
     <string name="chat_reasoning_only">(reasoning finished, but no text was returned)</string>
     <string name="common_execution_failed">Execution failed</string>
     <string name="chat_stopped_tool_note">Conversation stopped</string>
+
+    <!-- Attachment output messages -->
     <string name="attachment_block_head">===== Attachment: %1$s (%2$s) =====</string>
-    <string name="attachment_truncated_note">\n…(truncated: %1$s in total, only the first %2$d KB inlined)</string>
+    <string name="attachment_truncated_note">\n…(truncated: the file is %1$s in total, only the first %2$d KB inlined)</string>
     <string name="attachment_block_end">\n===== End of attachment: %1$s =====</string>
     <string name="attachment_not_inlined">%1$s %2$s\n(%3$s, content not inlined)</string>
     <string name="attachment_read_failed">%1$s\n(read failed, file info only)</string>
@@ -526,6 +626,12 @@
     <string name="mcp_dialog_empty">No MCP servers yet — tap “Manage” to add one</string>
     <string name="tool_override_reset">Reset to assistant settings</string>
     <string name="attachment_too_large_counted">Attachment too large (limit %1$d MB): %2$d file(s)</string>
+
+
+
+    <!-- Download, preset and built-in tool resources -->
+
+    <!-- Update download flow -->
     <string name="update_time_prefix">Time: %1$s</string>
     <string name="update_retry_download">Retry download</string>
     <string name="update_downloading_title">Downloading %1$s</string>
@@ -535,7 +641,10 @@
     <string name="update_download">Download</string>
     <string name="update_cancelled">Cancelled</string>
     <string name="update_sha_mismatch">Checksum mismatch: expected %1$s, got %2$s</string>
+    <string name="update_package_missing">No update package is configured for device ABI %1$s.</string>
     <string name="update_empty_response">Empty response</string>
+
+    <!-- Assistant and provider presets -->
     <string name="assistant_workspace_none">No workspace</string>
     <string name="assistant_workspace_empty">No workspaces yet — create one in Settings → Workspace</string>
     <string name="provider_preset_openai_hint">OpenAI official API with GPT models</string>
@@ -548,9 +657,11 @@
     <string name="provider_preset_gemini_hint">Google Gemini official API with Gemini models</string>
     <string name="provider_preset_siliconflow_hint">China-based aggregator, fast</string>
     <string name="workspace_preview_too_large">File too large to preview (%1$d bytes)</string>
+
+    <!-- Built-in tool descriptions and schemas -->
     <string name="debug_log_truncated_head">> (log is too long; showing the tail)\n</string>
     <string name="attachment_binary_file">Binary file</string>
-    <string name="builtin_tool_clarification_desc">Ask the user to confirm or clarify a request, preference or plan. Shows a question with up to 4 preset options; the user can pick one, pick several, or type a custom answer at the end.</string>
+    <string name="builtin_tool_clarification_desc">Ask the user to confirm or clarify a request, preference or plan. Shows one question with up to 4 preset options, or up to 16 questions at once; the user can pick one, pick several, or type a custom answer at the end.</string>
     <string name="builtin_tool_shell_desc">Run a shell (sh/bash) script or terminal command on this Android device; returns stdout and stderr.</string>
     <string name="builtin_tool_file_list_desc">List files and subdirectories under a directory. Returns name, type and size.</string>
     <string name="builtin_tool_file_read_desc">Read a text file. You can pass a max byte count; default 256KB.</string>
@@ -564,8 +675,8 @@
     <string name="builtin_tool_file_exists_desc">Check whether a path exists and report whether it is a file or a directory.</string>
     <string name="builtin_tool_file_search_desc">Recursively search a directory for file names containing a keyword; returns matching paths.</string>
     <string name="builtin_tool_file_info_desc">Get details for a file/directory: size, last modified time, whether it is a directory.</string>
-    <string name="builtin_tool_clarification_schema">{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"description\":\"the question or topic to confirm with the user\"},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"list of options, at most 4 concrete choices\"},\"allow_multiple\":{\"type\":\"boolean\",\"description\":\"whether multiple choices are allowed\"}},\"required\":[\"question\",\"options\"]}</string>
-    <string name="builtin_tool_browser_desc">Fetch a web page and return its content as Markdown. Args: url (required), ua (optional: mobile/desktop/custom:&lt;ua&gt;), mode (optional: auto/http/render — render uses a real WebView to bypass bot-blocks), timeout_seconds (optional, default 15). Current default UA mode: %1$s</string>
+    <string name="builtin_tool_clarification_schema">{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"description\":\"the question or topic to confirm with the user\"},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"list of options, at most 4 concrete choices\"},\"allow_multiple\":{\"type\":\"boolean\",\"description\":\"whether multiple choices are allowed\"},\"questions\":{\"type\":\"array\",\"maxItems\":16,\"items\":{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"description\":\"a question to confirm with the user\"},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"list of options, at most 4 concrete choices\"},\"allow_multiple\":{\"type\":\"boolean\",\"description\":\"whether multiple choices are allowed\"}},\"required\":[\"question\",\"options\"]},\"description\":\"ask several questions in one call, at most 16 questions\"}},\"anyOf\":[{\"required\":[\"question\",\"options\"]},{\"required\":[\"questions\"]}]}</string>
+    <string name="builtin_tool_browser_desc">Fetch a web page and return its raw content. Args: url (required), ua (optional: mobile/desktop/custom:&lt;ua&gt;), mode (optional: auto/http/render — render uses a real WebView to bypass bot-blocks), timeout_seconds (optional, default 15). Current default UA mode: %1$s</string>
     <string name="builtin_tool_browser_schema">{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"URL to fetch\"},\"ua\":{\"type\":\"string\",\"description\":\"UA mode: mobile / desktop / custom:&lt;user-agent&gt;\"},\"timeout_seconds\":{\"type\":\"integer\",\"description\":\"Request timeout, default 15\"}},\"required\":[\"url\"]}</string>
     <string name="builtin_tool_shell_schema">{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"shell script code or command line to run\"},\"timeout_seconds\":{\"type\":\"integer\",\"description\":\"execution timeout in seconds, default 30\"}},\"required\":[\"script\"]}</string>
     <string name="builtin_tool_file_list_schema">{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"absolute path of the directory, e.g. /storage/emulated/0\"}},\"required\":[\"path\"]}</string>
@@ -589,43 +700,48 @@
     <string name="builtin_shell_exit">Exit code: %1$d\nOutput:\n%2$s</string>
     <string name="builtin_shell_failed">Shell execution failed: %1$s</string>
 
-<string name="skill_assistant_show_more">View more (%1$d)</string>
+    <!-- Skill list actions -->
+    <string name="skill_assistant_show_more">View more (%1$d)</string>
     <string name="skill_assistant_show_less">Show less</string>
 
 
-    <string name="permission_manage_storage_title">All files access required</string>
 
-    <string name="permission_manage_storage_message">AI wants to call %1$s, which needs the "All files access" permission.</string>
+    <!-- Permission, acknowledgement and model setting resources -->
 
+    <!-- Permission prompts -->
+    <string name="permission_manage_storage_title">All files access permission required</string>
+    <string name="permission_manage_storage_message">AI wants to call the tool %1$s, which needs the "All files access" permission.</string>
     <string name="permission_grant">Grant</string>
+    <string name="permission_manage_storage_required">AI called a tool that needs the "All files access" permission.</string>
 
-    <string name="permission_manage_storage_required">AI tried to call a tool that needs "All files access".</string>
-
+    <!-- Acknowledgements and clipboard -->
     <string name="acknowledgements_title">Acknowledgements</string>
     <string name="acknowledgements_sub">Users who provided help and feedback for the development of MiniiChat Next and the open source projects used.</string>
     <string name="acknowledgements_footer">This app is open-sourced under AGPL-3.0. Full third-party notices are in AGPL_NOTICE.md in the MiniiChat Next repository.</string>
-
     <string name="copied">Copied</string>
 
+    <!-- Model editor and capabilities -->
     <string name="model_edit_title">Model settings</string>
     <string name="model_edit_override_hint">Override this model\'s settings (leave empty to follow the provider)</string>
-    <string name="max_tokens">Max tokens</string>
+    <string name="max_tokens">Max output tokens</string>
     <string name="model_edit_clear">Reset to provider defaults</string>
-
     <string name="model_supports_reasoning">Supports reasoning</string>
     <string name="model_supports_tool_call">Supports tool calling</string>
     <string name="model_supports_image_input">Supports image input</string>
 
+
+
+    <!-- File viewer and preference resources -->
+
+    <!-- Auxiliary model and common errors -->
     <string name="aux_model_not_set_hint">Currently unset — pick one below</string>
-
-    <string name="acknowledgements_sponsors">special thanks</string>
-
+    <string name="acknowledgements_sponsors">Special thanks</string>
     <string name="about_export_logs_done_with_size">Logs saved to %1$s (%2$s)</string>
     <string name="about_log_level_title">Log level</string>
     <string name="about_log_level_sub">Current: %1$s</string>
-
     <string name="error_generic">Operation failed: %1$s</string>
 
+    <!-- Workspace file viewer -->
     <string name="workspace_file_open_failed">Cannot open file: %1$s</string>
     <string name="workspace_file_save_done">Saved</string>
     <string name="workspace_file_save_failed">Save failed: %1$s</string>
@@ -633,14 +749,16 @@
     <string name="workspace_file_read_only">Read-only (Linux area is not editable)</string>
     <string name="workspace_file_too_large">File is too large to edit (%1$s)</string>
     <string name="workspace_file_image_load_failed">Cannot decode image</string>
+
+    <!-- Common actions and model inheritance -->
     <string name="action_ok">OK</string>
     <string name="delete_confirm_title">Delete %1$s</string>
-    <string name="item">item</string>
-    <string name="item_conversation">conversation</string>
-    <string name="item_assistant">assistant</string>
-    <string name="item_provider">provider</string>
-    <string name="item_skill">skill</string>
-    <string name="item_workspace">workspace</string>
+    <string name="item">Item</string>
+    <string name="item_conversation">Conversation</string>
+    <string name="item_assistant">Assistant</string>
+    <string name="item_provider">Provider</string>
+    <string name="item_skill">Skill</string>
+    <string name="item_workspace">Workspace</string>
     <string name="item_mcp_server">MCP server</string>
     <string name="model_base_url">Base URL override</string>
     <string name="model_api_path">API path override</string>
@@ -650,12 +768,16 @@
     <string name="action_off">Off</string>
     <string name="cache_ttl_5m">5 minutes</string>
     <string name="cache_ttl_1h">1 hour</string>
+
+    <!-- Runtime limits and update results -->
     <string name="tool_round_limit">Tool round limit reached. Send a message to continue.</string>
     <string name="compress_source_changed">Conversation changed during compression. The original messages were kept; retry compression.</string>
     <string name="update_saved_location">Saved to Downloads: %1$s</string>
     <string name="builtin_path_outside_roots">The path is outside the allowed roots.</string>
     <string name="update_saved_copy">Saved a copy: %1$s</string>
     <string name="provider_clear_api_key">Clear saved API key</string>
+
+    <!-- More preferences -->
     <string name="section_preferences">Preferences</string>
     <string name="more_preferences_title">More preferences</string>
     <string name="more_preferences_sub">Code, formula and interface behavior</string>
@@ -664,7 +786,83 @@
     <string name="preference_code_fold">Code auto-fold</string>
     <string name="preference_code_fold_desc">Fold code after ten lines by default.</string>
     <string name="preference_latex">Render LaTeX formulas</string>
-    <string name="preference_latex_desc">Render mathematical formulas in Markdown.</string>
+    <string name="preference_latex_desc">Render mathematical formulas</string>
     <string name="preference_code_fold_more">Show %1$d more lines</string>
     <string name="preference_code_fold_less">Collapse code</string>
+
+
+
+    <!-- Special tool and onboarding resources -->
+
+    <!-- Compression and debug crop -->
+    <string name="aux_use_conversation_model">Use conversation model</string>
+    <string name="compressing_context">Compressing conversation context…</string>
+    <string name="debug_crop_test_title">Image crop test</string>
+    <string name="debug_crop_test_sub">Test image cropper</string>
+    <string name="debug_crop_test_pick">Pick and crop image</string>
+    <string name="debug_crop_test_empty">No cropped image yet</string>
+    <string name="debug_crop_failed">Image crop failed</string>
+
+    <!-- Special tools -->
+    <string name="builtin_tool_time_desc">Get the current date, time and timezone. Optionally pass timeZone (an IANA id such as Asia/Shanghai or UTC) to query another timezone.</string>
+    <string name="builtin_tool_time_schema">{\"type\":\"object\",\"properties\":{\"timeZone\":{\"type\":\"string\",\"description\":\"IANA timezone id to query, such as Asia/Shanghai, America/New_York, UTC (optional; defaults to the device timezone)\"}}}</string>
+    <string name="builtin_tool_clipboard_read_desc">Read the current system clipboard text.</string>
+    <string name="builtin_tool_clipboard_read_schema">{}</string>
+    <string name="builtin_tool_clipboard_write_desc">Write text to the system clipboard.</string>
+    <string name="builtin_tool_clipboard_write_schema">{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;text&quot;:{&quot;type&quot;:&quot;string&quot;}},&quot;required&quot;:[&quot;text&quot;]}</string>
+    <string name="builtin_tool_calendar_list_desc">List calendar events in the next number of days.</string>
+    <string name="builtin_tool_calendar_list_schema">{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;days&quot;:{&quot;type&quot;:&quot;integer&quot;} }}</string>
+    <string name="builtin_tool_calendar_create_desc">Create a calendar event. This action requires approval.</string>
+    <string name="builtin_tool_calendar_create_schema">{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;title&quot;:{&quot;type&quot;:&quot;string&quot;},&quot;begin_ms&quot;:{&quot;type&quot;:&quot;integer&quot;},&quot;end_ms&quot;:{&quot;type&quot;:&quot;integer&quot;},&quot;description&quot;:{&quot;type&quot;:&quot;string&quot;},&quot;location&quot;:{&quot;type&quot;:&quot;string&quot;}},&quot;required&quot;:[&quot;title&quot;,&quot;begin_ms&quot;]}</string>
+
+    <!-- Easter menu -->
+
+    <!-- First-run introduction -->
+    <string name="onboarding_welcome">Welcome to MiniiChat Next</string>
+    <string name="onboarding_step">Step %1$d of %2$d</string>
+    <string name="onboarding_intro_title">A private, flexible AI chat workspace</string>
+    <string name="onboarding_intro_body">Before you begin, take a moment to configure the basics. You can skip optional steps and change everything later in Settings.</string>
+    <string name="onboarding_intro_provider">Connect OpenAI-compatible or Anthropic providers</string>
+    <string name="onboarding_intro_workspace">Use conversations, assistants and Linux workspaces</string>
+    <string name="onboarding_intro_tools">Use local tools, MCP and attachments when needed</string>
+
+    <!-- First-run profile setup -->
+    <string name="onboarding_profile_title">Your profile</string>
+    <string name="onboarding_profile_hint">Customize your avatar and nickname</string>
+    <string name="onboarding_avatar_hint">Tap to choose an avatar</string>
+    <string name="onboarding_name_label">Nickname</string>
+    <string name="onboarding_name_hint">How should we call you?</string>
+    <string name="onboarding_name_error">Enter a nickname, or skip this step in the top right</string>
+
+    <!-- First-run provider setup -->
+    <string name="onboarding_provider_title">Add a provider</string>
+    <string name="onboarding_provider_hint">Add a provider now, or skip and configure one later.</string>
+    <string name="onboarding_provider_name">Provider name</string>
+    <string name="onboarding_provider_name_hint">My provider</string>
+    <string name="onboarding_provider_base_url">BaseUrl</string>
+    <string name="onboarding_provider_api_key">API Key</string>
+    <string name="onboarding_provider_api_key_hint">Optional for local services</string>
+    <string name="onboarding_provider_error">Enter a provider name and Base URL</string>
+
+    <!-- First-run permission setup -->
+    <string name="onboarding_permission_title">Permissions</string>
+    <string name="onboarding_permission_hint">We may need these permissions for some tools to work; grant them now or skip</string>
+    <string name="onboarding_permission_grant">Grant</string>
+    <string name="onboarding_permission_storage">All files access permission</string>
+    <string name="onboarding_permission_storage_desc">Required for built-in file tools and Shell (local) to work</string>
+    <string name="onboarding_permission_calendar">Calendar permission</string>
+    <string name="onboarding_permission_calendar_desc">Allows calendar tools to read and create events (creating requires approval by default)</string>
+    <string name="onboarding_permission_overlay">Overlay permission</string>
+    <string name="onboarding_permission_overlay_desc">Only used for the optional floating debug ball or keep-alive control</string>
+    <string name="onboarding_permission_media">Photos and media permission</string>
+    <string name="onboarding_permission_media_desc">Allows direct access to selected image, video and audio attachments.</string>
+    <string name="onboarding_permission_install">Install updates</string>
+    <string name="onboarding_permission_install_desc">Allows the app to open the system installer for downloaded updates.</string>
+
+    <!-- First-run navigation -->
+    <string name="onboarding_previous">Previous</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_enter">Enter app</string>
+
 </resources>

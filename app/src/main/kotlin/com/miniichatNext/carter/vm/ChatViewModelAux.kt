@@ -9,6 +9,7 @@ import com.miniichatNext.carter.data.model.Message
 import com.miniichatNext.carter.data.model.mergeCompressedMessages
 import kotlinx.coroutines.CancellationException
 import com.miniichatNext.carter.data.model.ProviderConfig
+import com.miniichatNext.carter.data.store.COMPRESS_MODEL_CONVERSATION
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
@@ -457,23 +458,33 @@ internal fun ChatViewModel.generateSuggestions(anchorMessageId: String, page: In
 }
 
 /** 对话压缩 */
-internal fun ChatViewModel.compressContext(targetTokens: Int, keepRecentMessages: Int, additionalPrompt: String) {
-    val convId = _activeId.value ?: return
-    val conv = conversations.value.firstOrNull { it.id == convId } ?: return
+internal fun ChatViewModel.compressContext(targetTokens: Int, keepRecentMessages: Int, additionalPrompt: String): kotlinx.coroutines.Job? {
+    val convId = _activeId.value ?: return null
+    val conv = conversations.value.firstOrNull { it.id == convId } ?: return null
     val ref = settings.value.compressModel
     if (ref.isBlank()) {
-        _auxError.trySend("compress:" + getApplication<Application>()
-                .getString(com.miniichatNext.carter.R.string.aux_model_not_configured_compress))
-        return
+        pushToast(com.miniichatNext.carter.data.model.ToastItem(
+            message = getApplication<Application>().getString(R.string.aux_model_not_configured_compress),
+            action = com.miniichatNext.carter.data.model.ToastAction.Manage("aux"),
+            tone = com.miniichatNext.carter.data.model.ToastTone.Warning,
+            withDismiss = true,
+        ))
+        return null
     }
-    viewModelScope.launch {
+    _compressing.value = true
+    return viewModelScope.launch {
+        try {
         val all = conv.messages
         val messagesToCompress: List<Message>
         if (keepRecentMessages > 0 && all.size > keepRecentMessages) {
             messagesToCompress = all.dropLast(keepRecentMessages)
         } else if (keepRecentMessages > 0) {
-            _toast.trySend(getApplication<Application>()
-                    .getString(com.miniichatNext.carter.R.string.compress_not_enough))
+            pushToast(com.miniichatNext.carter.data.model.ToastItem(
+                message = getApplication<Application>().getString(R.string.compress_not_enough),
+                action = com.miniichatNext.carter.data.model.ToastAction.Copy,
+                tone = com.miniichatNext.carter.data.model.ToastTone.Warning,
+                withDismiss = true,
+            ))
             return@launch
         } else {
             messagesToCompress = all
@@ -495,7 +506,13 @@ internal fun ChatViewModel.compressContext(targetTokens: Int, keepRecentMessages
             }
             append("\n<conversation>\n").append(content).append("\n</conversation>")
         }
-        val summary = runAuxCompletion(ref, prompt, convId) ?: run {
+        val summary = if (ref == COMPRESS_MODEL_CONVERSATION) {
+            val assistant = assistants.value.firstOrNull { it.id == conv.assistantId } ?: activeAssistant()
+            val target = effectiveConversationModel(conv, assistant, settings.value, providers.value)
+            target?.let { runAuxCompletionOnce(it.first, it.second, prompt, convId) }
+        } else {
+            runAuxCompletion(ref, prompt, convId)
+        } ?: run {
             _auxError.trySend("compress:" + getApplication<Application>()
                     .getString(com.miniichatNext.carter.R.string.aux_compress_failed))
             return@launch
@@ -514,7 +531,15 @@ internal fun ChatViewModel.compressContext(targetTokens: Int, keepRecentMessages
         }
         if (!committed) {
             DebugLog.w("ChatVM", "compression source changed; discarded stale summary")
-            _toast.trySend(getApplication<Application>().getString(R.string.compress_source_changed))
+            pushToast(com.miniichatNext.carter.data.model.ToastItem(
+                message = getApplication<Application>().getString(R.string.compress_source_changed),
+                action = com.miniichatNext.carter.data.model.ToastAction.Copy,
+                tone = com.miniichatNext.carter.data.model.ToastTone.Warning,
+                withDismiss = true,
+            ))
+        }
+        } finally {
+            _compressing.value = false
         }
     }
 }

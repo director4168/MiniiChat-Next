@@ -58,7 +58,8 @@ import com.miniichatNext.carter.debug.DebugLog
 fun AvatarPicker(
     current: Avatar,
     onChange: (Avatar) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    canonicalPath: String? = null,
 ) {
     val context = LocalContext.current
     val scope = remember { CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate) }
@@ -81,7 +82,11 @@ fun AvatarPicker(
             ).show()
         } else {
             scope.launch {
-                val path = AvatarStorage.saveFromUri(context, newId(), uri, maxSide = 1024)
+                val path = if (canonicalPath != null) {
+                    AvatarStorage.saveFromUriToPath(context, uri, canonicalPath, maxSide = 1024)
+                } else {
+                    AvatarStorage.saveFromUri(context, newId(), uri, maxSide = 1024)
+                }
                 if (path != null) {
                     com.miniichatNext.carter.debug.DebugLog.i(
                         "AvatarPicker", "crop unavailable, imported original image: $path"
@@ -108,60 +113,34 @@ fun AvatarPicker(
 
     val cropLauncher = rememberImageCropLauncher(
         onResult = { path ->
-            val stable = AvatarStorage.isInAppStorage(context, path)
             val previousPath: String? = (current as? Avatar.Image)?.path
-            onChange(Avatar.Image(path))
-            if (stable) {
-                com.miniichatNext.carter.debug.DebugLog.i(
-                    "AvatarPicker", "avatar cropped straight into app storage: $path"
-                )
-                // 旧头像加入待删除队列（30秒延迟避开正在显示的引用）
-                if (previousPath != null && previousPath != path) {
-                    val prevFile = java.io.File(previousPath)
-                    if (prevFile.exists() && prevFile.parentFile == AvatarStorage.dir(context)) {
-                        scope.launch {
-                            kotlinx.coroutines.delay(30_000L)
-                            runCatching { prevFile.delete() }
-                        }
-                    }
-                }
-            } else {
-                scope.launch {
-                    val result = runCatching {
-                        val bm = BitmapFactory.decodeFile(path)
-                            ?: error(context.getString(R.string.avatar_decode_failed))
-                        AvatarStorage.saveBitmap(context, newId, bm) to path
-                    }
-                    result.fold(
-                        onSuccess = { (savedPath, tempPath) ->
-                            com.miniichatNext.carter.debug.DebugLog.i(
-                                "AvatarPicker", "avatar transferred: temp=$tempPath -> stable=$savedPath"
-                            )
-                            onChange(Avatar.Image(savedPath))
-                            // 裁剪临时文件+旧头像一并删除
-                            runCatching { java.io.File(tempPath).delete() }
-                            if (previousPath != null && previousPath != savedPath) {
-                                scope.launch {
-                                    kotlinx.coroutines.delay(30_000L)
-                                    runCatching { java.io.File(previousPath).delete() }
-                                }
-                            }
-                        },
-                        onFailure = { e ->
-                            com.miniichatNext.carter.debug.DebugLog.e(
-                                "AvatarPicker", "avatar transfer failed (path=$path)", e
-                            )
-                            Log.e("AvatarPicker", "image save failed (path=$path)", e)
-                            Toast.makeText(
-                                context,
-                                context.getString(
-                                    R.string.avatar_transfer_failed,
-                                    e.message ?: e.javaClass.simpleName
-                                ),
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
+            scope.launch {
+                val savedPath = if (canonicalPath != null) {
+                    AvatarStorage.saveFileToPath(context, path, canonicalPath)
+                } else if (AvatarStorage.isInAppStorage(context, path)) {
+                    path
+                } else {
+                    AvatarStorage.saveFileToPath(
+                        context,
+                        path,
+                        AvatarStorage.file(context, newId).absolutePath,
                     )
+                }
+                if (savedPath != null) {
+                    DebugLog.i("AvatarPicker", "avatar saved: source=$path -> target=$savedPath")
+                    onChange(Avatar.Image(savedPath))
+                    if (path != savedPath) runCatching { java.io.File(path).delete() }
+                    if (previousPath != null && previousPath != savedPath) {
+                        kotlinx.coroutines.delay(30_000L)
+                        runCatching { java.io.File(previousPath).delete() }
+                    }
+                } else {
+                    DebugLog.e("AvatarPicker", "avatar save failed: source=$path")
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.avatar_transfer_failed, "decode or save failed"),
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         },

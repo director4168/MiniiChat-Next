@@ -4,6 +4,7 @@ import com.miniichatNext.carter.data.model.TokenUsage
 import com.miniichatNext.carter.util.AppJson
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -155,7 +156,7 @@ internal class ResponsesApiStreamParser {
 internal fun parseResponsesApiBody(text: String): List<StreamDelta> {
     val response = runCatching { AppJson.json.parseToJsonElement(text).jsonObject }
         .getOrElse { throw IllegalStateException("Invalid Responses API body", it) }
-    response["error"]?.let { error ->
+    response["error"]?.takeUnless { it is JsonNull }?.let { error ->
         val message = (error as? JsonObject)?.string("message") ?: error.toString()
         throw IllegalStateException(message.take(500))
     }

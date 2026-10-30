@@ -22,8 +22,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.foundation.isSystemInDarkTheme
 import com.miniichatNext.carter.util.AppThemeOverrides
+import com.miniichatNext.carter.ui.theme.LocalDarkMode
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -127,7 +127,7 @@ private fun ToastCard(
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
-    val dark = isSystemInDarkTheme()
+    val dark = LocalDarkMode.current
     val overrideVersion = AppThemeOverrides.version.intValue
     val overrides = remember(overrideVersion, dark) {
         AppThemeOverrides.load(context)[if (dark) "dark" else "light"].orEmpty()
@@ -148,7 +148,10 @@ private fun ToastCard(
         shape = RoundedCornerShape(12.dp),
         action = {
             when (item.action) {
-                is ToastAction.Copy -> TextButton(onClick = onAction) {
+                is ToastAction.Copy -> TextButton(
+                    onClick = onAction,
+                    colors = ButtonDefaults.textButtonColors(contentColor = actionColor),
+                ) {
                     Text(stringResource(R.string.copy))
                 }
                 is ToastAction.Manage -> TextButton(

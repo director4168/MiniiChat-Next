@@ -16,6 +16,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import com.miniichatNext.carter.data.model.TokenUsage
 
+const val COMPRESS_MODEL_CONVERSATION = "@conversation"
+
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
 data class AppSettings(
@@ -39,7 +41,7 @@ data class AppSettings(
     /** OCR触发模式：auto=仅纯文本模型/always=所有带图消息（视觉模型也附加文字）/off=禁用 */
     val ocrMode: String = "auto",
     val titleModel: String = "",
-    val compressModel: String = "",
+    val compressModel: String = COMPRESS_MODEL_CONVERSATION,
     val suggestionModel: String = "",
     /** 辅助模型无法使用时回退到当前正在使用的模型 */
     val auxFallbackToActive: Boolean = false,
@@ -102,7 +104,8 @@ class SettingsRepository(private val context: Context) {
         ocrModel = p[Keys.OCR_MODEL] ?: "",
         ocrMode = p[Keys.OCR_MODE] ?: "auto",
         titleModel = p[Keys.TITLE_MODEL] ?: "",
-        compressModel = p[Keys.COMPRESS_MODEL] ?: "",
+        compressModel = p[Keys.COMPRESS_MODEL]?.takeIf(String::isNotBlank)
+            ?: COMPRESS_MODEL_CONVERSATION,
         suggestionModel = p[Keys.SUGGESTION_MODEL] ?: "",
         auxFallbackToActive = p[Keys.AUX_FALLBACK] ?: false,
         debugLogBall = p[Keys.DEBUG_LOG_BALL] ?: false,

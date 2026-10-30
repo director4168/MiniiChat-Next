@@ -98,7 +98,8 @@ import com.miniichatNext.carter.data.skills.Skill
 import com.miniichatNext.carter.data.workspace.WorkspaceEntity
 import com.miniichatNext.carter.data.workspace.WorkspaceShellStatus
 import com.miniichatNext.carter.data.util.AttachmentLoader
-
+import com.miniichatNext.carter.util.AppThemeOverrides
+import com.miniichatNext.carter.ui.theme.LocalDarkMode
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun InputBar(
@@ -688,7 +689,7 @@ fun InputBar(
                                     Text(
                                         workspaceStatusLabel(ws.shellStatus),
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = workspaceStatusColor(ws.shellStatus)
                                     )
                                 }
                                 Switch(
@@ -794,4 +795,25 @@ private fun workspaceStatusLabel(status: String): String = when (status) {
     WorkspaceShellStatus.INSTALLING.name -> stringResource(R.string.workspace_status_installing)
     WorkspaceShellStatus.BROKEN.name -> stringResource(R.string.workspace_status_broken)
     else -> stringResource(R.string.workspace_status_missing)
+}
+
+@Composable
+private fun workspaceStatusColor(status: String): Color {
+    val context = LocalContext.current
+    val dark = LocalDarkMode.current
+    val overrides = remember(AppThemeOverrides.version.intValue, dark) {
+        AppThemeOverrides.load(context)[if (dark) "dark" else "light"].orEmpty()
+    }
+    return when (status) {
+        WorkspaceShellStatus.BROKEN.name -> AppThemeOverrides.customColor(
+            overrides, "workspaceDanger", MaterialTheme.colorScheme.error
+        )
+        WorkspaceShellStatus.DISABLED.name, WorkspaceShellStatus.INSTALLING.name ->
+            AppThemeOverrides.customColor(
+                overrides,
+                "workspaceWarning",
+                if (dark) Color(0xFFFFCA5C) else Color(0xFF8A5A00),
+            )
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
 }

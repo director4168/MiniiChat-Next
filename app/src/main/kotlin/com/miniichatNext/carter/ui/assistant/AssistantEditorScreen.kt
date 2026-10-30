@@ -83,6 +83,7 @@ fun AssistantEditorScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val assistantId = remember(initial?.id) { initial?.id ?: newId() }
 
     var name by remember(initial?.id) { mutableStateOf(initial?.name ?: "") }
     var avatar by remember(initial?.id) { mutableStateOf(initial?.avatar ?: "🤖") }
@@ -158,8 +159,15 @@ fun AssistantEditorScreen(
             TextButton(
                 enabled = name.isNotBlank(),
                 onClick = {
-                    val stableAvatarPath =
-                        com.miniichatNext.carter.data.avatar.AvatarStorage.copyIntoAppStorage(context, avatarPath)
+                    val stableAvatarPath = avatarPath?.let {
+                        AvatarStorage.copyToCanonicalPath(
+                            it,
+                            AvatarStorage.assistantAvatarFile(
+                                context,
+                                assistantId,
+                            ).absolutePath,
+                        )
+                    }
                     if (stableAvatarPath != avatarPath) {
                         com.miniichatNext.carter.debug.DebugLog.i(
                             "AssistantEditor",
@@ -178,6 +186,7 @@ fun AssistantEditorScreen(
                     )
                     val a = (initial ?: Assistant(id = newId(), name = name.trim()))
                         .copy(
+                            id = assistantId,
                             name = name.trim(),
                             avatar = avatar.trim().ifBlank { "🤖" },
                             avatarPath = stableAvatarPath,
@@ -652,6 +661,7 @@ fun AssistantEditorScreen(
     if (showAvatarPicker) {
         AvatarPicker(
             current = Avatar.fromLegacy(avatar, avatarPath),
+            canonicalPath = AvatarStorage.assistantAvatarFile(context, assistantId).absolutePath,
             onChange = { picked ->
                 when (picked) {
                     is Avatar.Image -> { avatar = ""; avatarPath = picked.path }

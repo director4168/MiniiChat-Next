@@ -33,6 +33,7 @@ fun rememberImageCropLauncher(
     val context = LocalContext.current
     var lastOutputPath by rememberSaveable { mutableStateOf("") }
     var pendingFile by remember { mutableStateOf<File?>(null) }
+    var pendingSourceFile by remember { mutableStateOf<File?>(null) }
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -41,17 +42,21 @@ fun rememberImageCropLauncher(
         // 不做decodeFile主线程校验（大图解码慢/OOM会把正确结果误判"不可用"）；
         // 不用newestCropOutput/lastOutputPath兜底（旧图正是"显示原图"的元凶）。
         val outFile = pendingFile
+        val sourceFile = pendingSourceFile
         pendingFile = null
+        pendingSourceFile = null
 
         when {
             result.resultCode == Activity.RESULT_OK && outFile != null &&
                 outFile.isFile && outFile.length() > 0L -> {
                 DebugLog.i("ImageCropper", "crop ok: ${outFile.absolutePath} (${outFile.length()} bytes)")
+                runCatching { sourceFile?.delete() }
                 onResult(outFile.absolutePath)
             }
             result.resultCode == Activity.RESULT_CANCELED -> {
                 DebugLog.w("ImageCropper", "crop cancelled by user")
                 runCatching { outFile?.delete() }
+                runCatching { sourceFile?.delete() }
                 onCancel()
             }
             else -> {
@@ -62,6 +67,7 @@ fun rememberImageCropLauncher(
                     error
                 )
                 runCatching { outFile?.delete() }
+                runCatching { sourceFile?.delete() }
                 onFailure()
             }
         }
@@ -80,6 +86,7 @@ fun rememberImageCropLauncher(
             // 先把content://复制到cache临时文件，再交给UCrop。
             val launchSource: Uri = if (sourceUri.scheme == "content") {
                 val tmp = File(context.cacheDir, "crop_src_${System.currentTimeMillis()}.jpg")
+                pendingSourceFile = tmp
                 runCatching {
                     context.contentResolver.openInputStream(sourceUri)?.use { input ->
                         tmp.outputStream().use { output -> input.copyTo(output) }
@@ -89,7 +96,10 @@ fun rememberImageCropLauncher(
                     DebugLog.w("ImageCropper", "copy source to temp failed: ${it.message}; use original uri")
                     sourceUri
                 }
-            } else sourceUri
+            } else {
+                pendingSourceFile = null
+                sourceUri
+            }
             DebugLog.d("ImageCropper", "crop src=$launchSource out=$outUri")
 
             var crop = UCrop.of(launchSource, outUri)
@@ -113,6 +123,10 @@ fun rememberImageCropLauncher(
             }
             runCatching { launcher.launch(crop.getIntent(context)) }.onFailure { e ->
                 DebugLog.e("ImageCropper", "cannot start crop activity: ${e.message}", e)
+                runCatching { outFile.delete() }
+                runCatching { pendingSourceFile?.delete() }
+                pendingFile = null
+                pendingSourceFile = null
                 onFailure()
             }
         }

@@ -24,8 +24,12 @@ data class UpdateInfo(
     val update_content: String = "",
     /** APK下载地址 */
     val DownloadUrl: String = "",
-    /** APK SHA256哈希（小写hex） */
+    /** APK SHA256哈希（小写hex，ARM64兼容旧配置） */
     val SHA256: String = "",
+    /** ARM32下载地址；为空时回退旧DownloadUrl */
+    val DownloadUrl_armabi_v7a: String = "",
+    /** ARM32 APK SHA256；为空时回退旧SHA256 */
+    val SHA256_armabi_v7a: String = "",
 )
 
 /** 远端版本码（数字）；优先versionCode，legacy version兜底 */
@@ -52,3 +56,16 @@ fun localVersionCode(context: android.content.Context): Long = runCatching {
 /** 远端是否比本地新（按版本码数字比较） */
 fun UpdateInfo.isRemoteNewer(context: android.content.Context): Boolean =
     remoteVersionCode() > localVersionCode(context)
+
+data class UpdatePackage(val abi: String, val downloadUrl: String, val sha256: String)
+
+fun UpdateInfo.packageForDevice(): UpdatePackage {
+    val abi = android.os.Build.SUPPORTED_ABIS
+        .firstOrNull { it == "arm64-v8a" || it == "armeabi-v7a" }
+        ?: "arm64-v8a"
+    return if (abi == "armeabi-v7a") {
+        UpdatePackage(abi, DownloadUrl_armabi_v7a, SHA256_armabi_v7a)
+    } else {
+        UpdatePackage(abi, DownloadUrl, SHA256)
+    }
+}

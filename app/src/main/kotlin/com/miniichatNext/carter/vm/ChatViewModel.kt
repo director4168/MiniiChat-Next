@@ -21,7 +21,7 @@ import com.miniichatNext.carter.data.skills.Skill
 import com.miniichatNext.carter.data.skills.SkillStore
 import com.miniichatNext.carter.data.model.UserProfile
 import com.miniichatNext.carter.data.model.UserProfileStore
-import com.miniichatNext.carter.data.mcp.BuiltInFileTools
+import com.miniichatNext.carter.data.tools.BuiltInFileTools
 import com.miniichatNext.carter.data.mcp.McpServerConfig
 import com.miniichatNext.carter.data.mcp.McpStore
 import com.miniichatNext.carter.data.mcp.McpTool
@@ -162,6 +162,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     internal val _compressDialog = MutableStateFlow<Boolean>(false)
     val compressDialog: StateFlow<Boolean> = _compressDialog.asStateFlow()
+    internal val _compressing = MutableStateFlow(false)
+    val compressing: StateFlow<Boolean> = _compressing.asStateFlow()
 
     internal val _tempSkillOverrides = MutableStateFlow<Map<String, Map<String, Boolean>>>(emptyMap())
     val tempSkillOverrides: StateFlow<Map<String, Map<String, Boolean>>> = _tempSkillOverrides.asStateFlow()

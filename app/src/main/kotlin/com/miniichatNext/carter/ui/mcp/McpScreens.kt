@@ -70,10 +70,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.miniichatNext.carter.data.mcp.BuiltInFileTools
-import com.miniichatNext.carter.data.workspace.WORKSPACE_SERVER_ID
-import com.miniichatNext.carter.data.workspace.WorkspaceToolDefaultApprovals
-import com.miniichatNext.carter.data.workspace.workspaceToolSpecs
 import com.miniichatNext.carter.data.mcp.McpClient
 import com.miniichatNext.carter.data.mcp.McpServerConfig
 import com.miniichatNext.carter.data.mcp.McpStore
@@ -81,6 +77,7 @@ import com.miniichatNext.carter.data.mcp.McpTool
 import com.miniichatNext.carter.data.mcp.McpToolPermission
 import com.miniichatNext.carter.data.mcp.McpTransport
 import com.miniichatNext.carter.ui.components.SettingsTopBar
+import com.miniichatNext.carter.ui.components.ToolPermissionCard
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.launch
 import com.miniichatNext.carter.ui.markdown.MarkdownText
@@ -114,41 +111,6 @@ fun McpServersScreen(
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                item {
-                    if (!hasAllFilesAccess()) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable {
-                                    runCatching {
-                                        val intent = android.content.Intent(
-                                            android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                                            android.net.Uri.parse("package:${context.packageName}")
-                                        )
-                                        context.startActivity(intent)
-                                    }.onFailure {
-                                        Toast.makeText(context, context.getString(R.string.mcp_open_settings_failed), Toast.LENGTH_LONG).show()
-                                    }
-                                },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                        ) {
-                            Column(modifier = Modifier.padding(14.dp)) {
-                                Text(
-                                    stringResource(R.string.mcp_all_files_title),
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                                Text(
-                                    stringResource(R.string.mcp_all_files_message),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
-                                )
-                            }
-                        }
-                    }
-                }
-
                 item {
                     Row(
                         modifier = Modifier
@@ -214,50 +176,6 @@ fun McpServersScreen(
             },
             onDismiss = { pendingDelete = null },
         )
-    }
-}
-
-/** Android 11+需要“所有文件访问”才能用File API读写/storage/emulated/0 */
-@Suppress("NewApi")
-private fun hasAllFilesAccess(): Boolean =
-    if (android.os.Build.VERSION.SDK_INT < 30) true
-    else runCatching { android.os.Environment.isExternalStorageManager() }.getOrDefault(false)
-
-@Composable
-private fun BuiltInToolsEntryCard(builtInToolsCount: Int, onClick: () -> Unit) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primaryContainer),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(Icons.Default.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-            }
-            Spacer(modifier = Modifier.width(14.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(stringResource(R.string.mcp_builtin_title), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text(
-                    stringResource(R.string.mcp_builtin_subtitle, builtInToolsCount),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.manage), tint = MaterialTheme.colorScheme.outline)
-        }
     }
 }
 
@@ -352,201 +270,6 @@ private fun McpServerItemCard(
             IconButton(onClick = onDelete) {
                 Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete), tint = MaterialTheme.colorScheme.error)
             }
-        }
-    }
-}
-
-/** 内置工具权限配置 */
-@Composable
-fun BuiltInToolsScreen(
-    mcpStore: McpStore,
-    onBack: () -> Unit,
-    backDispatcher: com.miniichatNext.carter.ui.navigation.AppBackDispatcher? = null,
-) {
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-    val perms by mcpStore.permsFlow.collectAsState(initial = emptyList())
-    // 内置工具+工作区工具合并展示（工作区工具由WorkspaceTools提供spec/schema）
-    val allTools = remember {
-        BuiltInFileTools.schema(context) + workspaceToolSpecs()
-    }
-
-    // 分组：组名资源ID→(介绍资源ID,工具名集合)
-    val groups = remember(allTools) {
-        listOf(
-            Triple(
-                R.string.builtin_group_ask, R.string.builtin_group_ask_desc,
-                listOf("interactive_clarification")
-            ),
-            Triple(
-                R.string.builtin_group_shell, R.string.builtin_group_shell_desc,
-                listOf("execute_shell")
-            ),
-            Triple(
-                R.string.builtin_group_file_io, R.string.builtin_group_file_io_desc,
-                listOf("file_read", "file_write", "file_edit", "file_append")
-            ),
-            Triple(
-                R.string.builtin_group_file_manage, R.string.builtin_group_file_manage_desc,
-                listOf("file_list", "file_delete", "file_move", "file_copy", "file_rename", "file_mkdir")
-            ),
-            Triple(
-                R.string.builtin_group_search, R.string.builtin_group_search_desc,
-                listOf("file_search", "file_exists", "file_info")
-            ),
-            Triple(
-                R.string.builtin_group_workspace, R.string.builtin_group_workspace_desc,
-                listOf("workspace_shell", "workspace_read_file", "workspace_write_file", "workspace_edit_file",
-                       "workspace_list_files", "workspace_delete_file", "workspace_move_file",
-                       "workspace_copy_file", "workspace_mkdir", "workspace_glob", "workspace_grep")
-            ),
-            Triple(
-                R.string.builtin_group_web, R.string.builtin_group_web_desc,
-                listOf("browser_fetch")
-            ),
-        )
-    }
-    var openGroupRes by remember { mutableStateOf<Int?>(null) }
-    var query by remember { mutableStateOf("") }
-    // 子页面打开时拦截系统返回手势：先关子页面回组列表，而不是直接退出内置工具页
-    if (backDispatcher != null) {
-        com.miniichatNext.carter.ui.navigation.NavBackInterceptor(
-            dispatcher = backDispatcher,
-            route = "McpBuiltIn",
-            enabled = openGroupRes != null,
-            onBack = { openGroupRes = null; query = ""; true },
-        )
-    }
-
-    val groupTools = openGroupRes?.let { res ->
-        groups.firstOrNull { it.first == res }?.third
-            ?.mapNotNull { name -> allTools.firstOrNull { it.name == name } }
-            .orEmpty()
-    }
-    val filteredTools = groupTools?.filter { tool ->
-        query.isBlank() ||
-            tool.name.contains(query, ignoreCase = true) ||
-            tool.description.contains(query, ignoreCase = true)
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(WindowInsets.statusBars.asPaddingValues())
-    ) {
-        SettingsTopBar(
-            title = openGroupRes?.let { stringResource(it) } ?: stringResource(R.string.mcp_builtin_config_title),
-            onBack = { if (openGroupRes != null) { openGroupRes = null; query = "" } else onBack() }
-        )
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            item {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    stringResource(R.string.mcp_builtin_config_hint),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            if (openGroupRes == null) {
-                items(groups, key = { it.first }) { (res, descRes, names) ->
-                    val title = stringResource(res)
-                    val desc = stringResource(descRes)
-                    // 自动计数：组内名字在allTools（内置+工作区）里实际存在的数量
-                    val count = names.count { name -> allTools.any { it.name == name } }
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { openGroupRes = res },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Text(
-                                    desc,
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    stringResource(R.string.mcp_builtin_group_count, count),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            Icon(
-                                Icons.AutoMirrored.Filled.ArrowForward,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            } else {
-                item {
-                    OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(stringResource(R.string.mcp_builtin_search_hint)) },
-                    )
-                }
-                items(filteredTools.orEmpty(), key = { it.name }) { tool ->
-                    // 工作区工具serverId="workspace"（非空）——perm查写必须按各自serverId，否则永远查不到/写串轨
-                    val sid = if (tool.serverId.isNotBlank()) tool.serverId else ""
-                    val defaultApproval = if (tool.serverId == WORKSPACE_SERVER_ID)
-                        WorkspaceToolDefaultApprovals[tool.name] ?: false
-                    else BuiltInFileTools.defaultRequireApproval(tool.name)
-                    ToolPermissionCard(
-                        tool = tool,
-                        perm = perms.firstOrNull { it.toolName == tool.name && it.serverId == sid },
-                        defaultApproval = defaultApproval,
-                        showApproval = sid != WORKSPACE_SERVER_ID,
-                        onToggleEnabled = { enabled ->
-                            val cur = perms.firstOrNull { it.toolName == tool.name && it.serverId == sid }
-                            scope.launch {
-                                mcpStore.setToolPermission(
-                                    sid, tool.name, enabled,
-                                    cur?.requireApproval ?: defaultApproval
-                                )
-                            }
-                        },
-                        onToggleApproval = { approval ->
-                            val cur = perms.firstOrNull { it.toolName == tool.name && it.serverId == sid }
-                            scope.launch {
-                                mcpStore.setToolPermission(sid, tool.name, cur?.enabled ?: true, approval)
-                            }
-                        }
-                    )
-                }
-                if (filteredTools?.isEmpty() == true) {
-                    item {
-                        Text(
-                            stringResource(R.string.mcp_builtin_search_empty),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        )
-                    }
-                }
-            }
-            item { Spacer(modifier = Modifier.height(32.dp)) }
         }
     }
 }
@@ -939,57 +662,6 @@ fun McpServerEditorScreen(
             }
 
             Spacer(modifier = Modifier.height(40.dp))
-        }
-    }
-}
-
-@Composable
-private fun ToolPermissionCard(
-    tool: McpTool,
-    perm: McpToolPermission?,
-    onToggleEnabled: (Boolean) -> Unit,
-    onToggleApproval: (Boolean) -> Unit,
-    defaultApproval: Boolean = true,
-    showApproval: Boolean = true,
-) {
-    val enabled = perm?.enabled ?: true
-    // 服务器默认值与逐工具覆盖使用执行侧相同的优先级。
-    val requireApproval = perm?.requireApproval ?: defaultApproval
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(
-                tool.name,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (tool.description.isNotBlank()) {
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    tool.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.mcp_tool_enable), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                Switch(checked = enabled, onCheckedChange = onToggleEnabled)
-            }
-            if (showApproval) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.mcp_tool_approval), style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                    Switch(checked = requireApproval, onCheckedChange = onToggleApproval, enabled = enabled)
-                }
-            }
         }
     }
 }

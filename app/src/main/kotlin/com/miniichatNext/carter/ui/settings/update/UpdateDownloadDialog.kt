@@ -22,6 +22,7 @@ import com.miniichatNext.carter.data.update.UpdateDownloader
 import com.miniichatNext.carter.data.update.UpdateInfo
 import com.miniichatNext.carter.data.update.UpdateInstaller
 import com.miniichatNext.carter.data.update.displayVersion
+import com.miniichatNext.carter.data.update.packageForDevice
 import com.miniichatNext.carter.util.AppForeground
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -70,16 +71,27 @@ fun startUpdateDownload(
     onInstallNow: (File) -> Unit,
 ) {
     val version = info.displayVersion()
-    com.miniichatNext.carter.debug.DebugLog.i("Update", "startDownload: url=" + info.DownloadUrl.take(80))
+    val selectedPackage = info.packageForDevice()
+    if (selectedPackage.downloadUrl.isBlank() || (selectedPackage.abi == "armeabi-v7a" && selectedPackage.sha256.isBlank())) {
+        onState(UpdateDownloadState.Failed(
+            version = version,
+            message = context.getString(R.string.update_package_missing, selectedPackage.abi),
+        ))
+        return
+    }
+    com.miniichatNext.carter.debug.DebugLog.i(
+        "Update",
+        "startDownload abi=${selectedPackage.abi} url=${selectedPackage.downloadUrl.take(80)}"
+    )
     try {
         onState(UpdateDownloadState.Downloading(version, UpdateDownloader.Progress(0, -1, 0)))
         val apkFile = UpdateInstaller.cacheApk(context)
         UpdateDownloader.start(
             context = context,
             scope = scope,
-            url = info.DownloadUrl,
+            url = selectedPackage.downloadUrl,
             targetFile = apkFile,
-            expectedSha256 = info.SHA256,
+            expectedSha256 = selectedPackage.sha256,
             onProgress = { p ->
                 scope.launch(Dispatchers.Main.immediate) {
                     onState(UpdateDownloadState.Downloading(version, p))
@@ -91,7 +103,7 @@ fun startUpdateDownload(
                     is UpdateDownloader.Result.Success -> {
                         scope.launch(Dispatchers.IO) {
                             val published = runCatching {
-                                UpdateInstaller.publishToDownloads(context, result.apkFile, version)
+                                UpdateInstaller.publishToDownloads(context, result.apkFile, version, selectedPackage.abi)
                             }.onFailure { com.miniichatNext.carter.debug.DebugLog.e("Update", "publish update to Downloads failed", it) }
                             val location = published.getOrNull()
                             withContext(Dispatchers.Main) {

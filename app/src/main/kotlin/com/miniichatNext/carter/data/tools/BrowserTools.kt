@@ -1,7 +1,8 @@
-package com.miniichatNext.carter.data.mcp
+package com.miniichatNext.carter.data.tools
 
 import android.content.Context
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.data.mcp.McpToolResult
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.util.AppJson
 import kotlinx.serialization.json.JsonObject
@@ -12,7 +13,7 @@ import java.net.URL
 import java.util.concurrent.TimeUnit
 
 /**
- * 浏览器工具（browser_fetch）：AI抓取网页正文转Markdown交付。
+ * 浏览器工具（browser_fetch）：AI抓取网页原始内容交付。
  * UA三态（mobile/desktop/custom）持久化到SharedPreferences，AI可通过args切换或自定义。
  * 免审批默认启用（只读网络请求，无破坏性）。
  */
@@ -126,10 +127,9 @@ object BrowserTools {
             conn.disconnect()
             val title = Regex("<title[^>]*>(.*?)</title>", RegexOption.DOT_MATCHES_ALL)
                 .find(html)?.groupValues?.get(1)?.trim().orEmpty()
-            val md = htmlToMarkdown(html)
             val text = buildString {
-                if (title.isNotBlank()) append("## $title\n\n")
-                append(md.ifBlank { "(empty page)" })
+                if (title.isNotBlank()) append("TITLE: $title\n\n")
+                append(html.ifBlank { "(empty page)" })
             }
             val capped = if (text.length > MAX_RESULT_CHARS)
                 text.take(MAX_RESULT_CHARS) + "\n\n...[truncated ${text.length - MAX_RESULT_CHARS} chars]"
@@ -146,39 +146,6 @@ object BrowserTools {
         "application/xml", "application/json", "text/markdown",
     )
     private const val MAX_RESULT_CHARS = 32_000
-
-    /** 极简HTML→Markdown：script/style剔除、块级换行、常见实体解码、标签内文本保留 */
-    internal fun htmlToMarkdown(html: String): String {
-        var s = html
-        s = Regex("""(?is)<(script|style|noscript|svg|iframe|head)[^>]*>.*?</\1>""").replace(s, " ")
-        s = Regex("""(?is)<!--.*?-->""").replace(s, " ")
-        s = Regex("""(?i)<br\s*/?>""").replace(s, "\n")
-        s = Regex("""(?i)</?(p|div|section|article|header|footer|nav|main|ul|ol|li|table|tr|td|th|h[1-6]|blockquote|pre|hr)[^>]*>""").replace(s, "\n")
-        s = Regex("""(?is)<a[^>]*href="([^"]+)"[^>]*>(.*?)</a>""").replace(s) { m ->
-            val text = m.groupValues.getOrNull(2)?.trim().orEmpty()
-            val href = m.groupValues.getOrNull(1).orEmpty()
-            if (text.isBlank()) "" else "[$text]($href)"
-        }
-        s = Regex("""(?s)<[^>]+>""").replace(s, " ")
-        s = decodeEntities(s)
-        s = s.replace(Regex("""[ \t]+"""), " ")
-        s = s.replace(Regex("""\n\s*\n(\s*\n)+"""), "\n\n")
-        return s.trim()
-    }
-
-    private fun decodeEntities(s: String): String {
-        var r = s
-            .replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
-            .replace("&quot;", "\"").replace("&#39;", "'").replace("&apos;", "'")
-            .replace("&nbsp;", " ")
-        r = Regex("""&#(\d+);""").replace(r) { m ->
-            m.groupValues.getOrNull(1)?.toIntOrNull()?.toChar()?.toString() ?: ""
-        }
-        r = Regex("""&#x([0-9a-fA-F]+);""").replace(r) { m ->
-            m.groupValues.getOrNull(1)?.toIntOrNull(16)?.toChar()?.toString() ?: ""
-        }
-        return r
-    }
 
     /**
      * WebView渲染抓取（借鉴OpenMinis）：真实Chromium执行JS后提取可读正文。

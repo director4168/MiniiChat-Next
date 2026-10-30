@@ -93,8 +93,12 @@ internal fun ChatViewModel.fetchModels(providerId: String) {
         try {
             val models = client.listModels(provider)
             if (models.isEmpty()) {
-                _toast.trySend(getApplication<Application>()
-                        .getString(com.miniichatNext.carter.R.string.models_none_returned))
+                pushToast(com.miniichatNext.carter.data.model.ToastItem(
+                    message = getApplication<Application>().getString(com.miniichatNext.carter.R.string.models_none_returned),
+                    action = com.miniichatNext.carter.data.model.ToastAction.Copy,
+                    tone = com.miniichatNext.carter.data.model.ToastTone.Warning,
+                    withDismiss = true,
+                ))
             } else {
                 // 代理/聚合API常返回重名模型；不去重会让modelIds()出现重复项，
                 // 模型选择器的LazyColumn key冲突直接崩（同类崩溃见挂载重复附件）
@@ -124,12 +128,16 @@ internal fun ChatViewModel.fetchModels(providerId: String) {
                     ))
             }
         } catch (e: Exception) {
-            _error.value = getApplication<Application>()
-                .getString(
+            pushToast(com.miniichatNext.carter.data.model.ToastItem(
+                message = getApplication<Application>().getString(
                     R.string.error_fetch_models,
                     provider.name,
                     e.message ?: ""
-                )
+                ),
+                action = com.miniichatNext.carter.data.model.ToastAction.Copy,
+                tone = com.miniichatNext.carter.data.model.ToastTone.Error,
+                withDismiss = true,
+            ))
         } finally {
             _fetchingModelsFor.value = null
         }

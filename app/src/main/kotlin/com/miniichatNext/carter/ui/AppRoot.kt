@@ -56,7 +56,7 @@ import com.miniichatNext.carter.ui.chat.CompressContextDialog
 import com.miniichatNext.carter.ui.chat.ModelPickerSheet
 import com.miniichatNext.carter.ui.components.ToastStackHost
 import com.miniichatNext.carter.data.mcp.McpClient
-import com.miniichatNext.carter.ui.mcp.BuiltInToolsScreen
+import com.miniichatNext.carter.ui.tools.BuiltInToolsScreen
 import com.miniichatNext.carter.ui.mcp.McpServerDetailScreen
 import com.miniichatNext.carter.ui.mcp.McpServerEditorScreen
 import com.miniichatNext.carter.ui.mcp.McpServersScreen
@@ -131,7 +131,7 @@ import android.widget.Toast
 /** 路由表：新增页面只需在这里加一项（配合AppNavRegistry可自定义过渡动画） */
 internal enum class Screen {
     Chat, Settings, Providers, ProviderEdit, Assistants, AssistantEdit,
-    Skills, UserProfile, About, Debug, DialogTest, ThemeColors, MorePreferences, UpdateSettings, Acknowledgements,
+    Skills, UserProfile, About, Debug, DebugCropTest, DialogTest, ThemeColors, MorePreferences, UpdateSettings, Acknowledgements,
     Workspace, WorkspaceDetail, WorkspaceTerminal,
     Mcp, McpDetail, McpEdit, McpBuiltIn,
     MermaidPreview
@@ -254,6 +254,7 @@ fun AppRoot(vm: ChatViewModel) {
     val skills by vm.skills.collectAsState()
     val userProfile by vm.userProfile.collectAsState()
     val compressDialog by vm.compressDialog.collectAsState()
+    val compressing by vm.compressing.collectAsState()
     val suggestionsGenerating by vm.suggestionsGenerating.collectAsState()
     val activeAssistant = assistants.firstOrNull { it.id == settings.activeAssistantId }
 
@@ -694,8 +695,12 @@ fun AppRoot(vm: ChatViewModel) {
                             onBack = { nav.back() },
                             vm = vm,
                             onOpenDialogTest = { nav.push(Screen.DialogTest.name) },
-                                onOpenThemeColors = { nav.push(Screen.ThemeColors.name) },
+                            onOpenThemeColors = { nav.push(Screen.ThemeColors.name) },
+                            onOpenCropTest = { nav.push(Screen.DebugCropTest.name) },
                         )
+                    }
+                    Screen.DebugCropTest -> {
+                        com.miniichatNext.carter.debug.ui.DebugCropTestScreen(onBack = { nav.back() })
                     }
                     Screen.DialogTest -> {
                         DialogTestScreen(onBack = { nav.back() }, vm = vm)
@@ -863,9 +868,11 @@ fun AppRoot(vm: ChatViewModel) {
     if (compressDialog) {
         CompressContextDialog(
             onDismiss = { vm.dismissCompressDialog() },
+            isCompressing = compressing,
             onConfirm = { targetTokens, keepRecent, additionalPrompt ->
-                vm.compressContext(targetTokens, keepRecent, additionalPrompt)
-                vm.dismissCompressDialog()
+                val job = vm.compressContext(targetTokens, keepRecent, additionalPrompt)
+                if (job == null) vm.dismissCompressDialog()
+                job
             }
         )
     }

@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -317,7 +318,7 @@ class McpClient {
         val responseId = obj["id"]?.jsonPrimitive?.intOrNull
             ?: throw RuntimeException("MCP response missing id (expected=$id)")
         if (responseId != id) throw RuntimeException("MCP response id mismatch: expected=$id actual=$responseId")
-        obj["error"]?.let { err ->
+        obj["error"]?.takeUnless { it is JsonNull }?.let { err ->
             val msg = (err as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull ?: err.toString()
             throw RuntimeException("MCP error: $msg")
         }

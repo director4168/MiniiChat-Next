@@ -1,7 +1,6 @@
 package com.miniichatNext.carter.ui.workspace
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -71,6 +70,7 @@ import com.miniichatNext.carter.data.workspace.WorkspaceToolCategory
 import com.miniichatNext.carter.data.workspace.storageKey
 import com.miniichatNext.carter.ui.components.SettingsTopBar
 import com.miniichatNext.carter.util.AppThemeOverrides
+import com.miniichatNext.carter.ui.theme.LocalDarkMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -533,7 +533,7 @@ fun WorkspaceDetailScreen(
 @Composable
 private fun statusColor(status: String): Color {
     val context = LocalContext.current
-    val dark = isSystemInDarkTheme()
+    val dark = LocalDarkMode.current
     val version = AppThemeOverrides.version.intValue
     val overrides = remember(version, dark) {
         AppThemeOverrides.load(context)[if (dark) "dark" else "light"].orEmpty()

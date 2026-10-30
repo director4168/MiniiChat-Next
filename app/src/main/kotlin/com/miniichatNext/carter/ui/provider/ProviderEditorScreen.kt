@@ -65,37 +65,40 @@ fun ProviderEditorScreen(
     onCancel: () -> Unit,
     onSave: (ProviderConfig) -> Unit
 ) {
-    var name by remember(initial?.id) { mutableStateOf(initial?.name ?: "") }
-    var baseUrl by remember(initial?.id) { mutableStateOf(initial?.baseUrl ?: "") }
-    var apiKey by remember(initial?.id) { mutableStateOf(initial?.apiKey ?: "") }
-    var apiKeyCleared by remember(initial?.id) { mutableStateOf(initial?.apiKeyCleared ?: false) }
-    var chatCompletionsPath by remember(initial?.id) {
+    // 首次组合就把编辑对象固定下来：保存时外层会先清空initial再返回，
+    // 若仍用initial?.id当key，整页状态会被重置，预设弹窗会闪一下
+    val editorKey = remember { initial?.id ?: NO_INITIAL_PROVIDER }
+    var name by remember(editorKey) { mutableStateOf(initial?.name ?: "") }
+    var baseUrl by remember(editorKey) { mutableStateOf(initial?.baseUrl ?: "") }
+    var apiKey by remember(editorKey) { mutableStateOf(initial?.apiKey ?: "") }
+    var apiKeyCleared by remember(editorKey) { mutableStateOf(initial?.apiKeyCleared ?: false) }
+    var chatCompletionsPath by remember(editorKey) {
         mutableStateOf(initial?.chatCompletionsPath ?: "/chat/completions")
     }
-    var useResponseApi by remember(initial?.id) { mutableStateOf(initial?.useResponseApi ?: false) }
-    var presetBaseUrl by remember(initial?.id) { mutableStateOf("") }
-    var providerType by remember(initial?.id) {
+    var useResponseApi by remember(editorKey) { mutableStateOf(initial?.useResponseApi ?: false) }
+    var presetBaseUrl by remember(editorKey) { mutableStateOf("") }
+    var providerType by remember(editorKey) {
         mutableStateOf(initial?.type() ?: com.miniichatNext.carter.data.model.ProviderType.OPENAI)
     }
-    var promptCache by remember(initial?.id) { mutableStateOf(initial?.promptCache ?: false) }
-    var promptCacheTtl by remember(initial?.id) {
+    var promptCache by remember(editorKey) { mutableStateOf(initial?.promptCache ?: false) }
+    var promptCacheTtl by remember(editorKey) {
         mutableStateOf(initial?.cacheTtl() ?: com.miniichatNext.carter.data.model.PromptCacheTtl.FIVE_MINUTES)
     }
-    var headerRows by remember(initial?.id) {
+    var headerRows by remember(editorKey) {
         mutableStateOf<List<Pair<String, String>>>(
             initial?.customHeaders?.map { it.key to it.value } ?: emptyList()
         )
     }
-    var bodyRows by remember(initial?.id) {
+    var bodyRows by remember(editorKey) {
         mutableStateOf<List<Pair<String, String>>>(
             initial?.extraBody?.map { it.key to it.value } ?: emptyList()
         )
     }
-    var advancedOpen by remember(initial?.id) {
+    var advancedOpen by remember(editorKey) {
         mutableStateOf((initial?.customHeaders?.isNotEmpty() == true)
             || (initial?.extraBody?.isNotEmpty() == true))
     }
-    var presetSheetOpen by remember(initial?.id) { mutableStateOf(initial == null) }
+    var presetSheetOpen by remember { mutableStateOf(initial == null) }
     var showResponseApiWarning by remember { mutableStateOf(false) }
 
     Column(
@@ -616,3 +619,6 @@ private fun KeyValueEditor(
         }
     }
 }
+
+/** 新建服务商时没有id，用一个固定占位key保证状态只初始化一次 */
+private const val NO_INITIAL_PROVIDER = "new_provider"

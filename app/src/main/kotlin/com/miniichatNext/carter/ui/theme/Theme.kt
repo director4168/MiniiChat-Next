@@ -23,48 +23,78 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 
-/**
- * Clean iOS-style flat theme.
- * Pure white / near-black backgrounds, hairline dividers, accent purple for primary.
- */
 internal val DefaultLightColors = lightColorScheme(
     primary = Color(0xFF6E5CFF),
-    onPrimary = Color.White,
+    onPrimary = Color(0xFFFFFFFF),
     primaryContainer = Color(0xFFEDE9FF),
     onPrimaryContainer = Color(0xFF170B5C),
-    secondary = Color(0xFF6E5CFF),
-    onSecondary = Color.White,
+    
+    secondary = Color(0xFF5B4FB8),
+    onSecondary = Color(0xFFFFFFFF),
+    secondaryContainer = Color(0xFFE5DFFF),
+    onSecondaryContainer = Color(0xFF1A0F3E),
+    
+    tertiary = Color(0xFF7D5260),
+    onTertiary = Color(0xFFFFFFFF),
+    tertiaryContainer = Color(0xFFFFD8E4),
+    onTertiaryContainer = Color(0xFF31111D),
+    
     background = Color(0xFFFFFFFF),
-    onBackground = Color(0xFF111114),
-    surface = Color(0xFFFFFFFF),
-    onSurface = Color(0xFF111114),
+    onBackground = Color(0xFF1B1B1F),
+    surface = Color(0xFFFFFBFF),
+    onSurface = Color(0xFF1B1B1F),
     surfaceVariant = Color(0xFFF3F2F7),
-    onSurfaceVariant = Color(0xFF6F6E78),
-    outline = Color(0xFFE3E1EA),
-    outlineVariant = Color(0xFFEEEDF2),
-    error = Color(0xFFE34864),
-    onError = Color.White
+    onSurfaceVariant = Color(0xFF47464F),
+    
+    surfaceTint = Color(0xFF6E5CFF),
+    inverseSurface = Color(0xFF303033),
+    inverseOnSurface = Color(0xFFF2F0F4),
+    
+    outline = Color(0xFFCAC4D0),
+    outlineVariant = Color(0xFFE7E0EC),
+    scrim = Color(0xFF000000),
+    
+    error = Color(0xFFBA1A1A),
+    onError = Color(0xFFFFFFFF),
+    errorContainer = Color(0xFFFFDAD6),
+    onErrorContainer = Color(0xFF410002)
 )
 
-// Tightened dark scheme: lighter onSurfaceVariant for legibility, slightly bolder
-// surface contrast so subtle UI (chips, dividers, hint text) reads cleanly.
 internal val DefaultDarkColors = darkColorScheme(
-    primary = Color(0xFFB1A4FF),
-    onPrimary = Color(0xFF15093D),
-    primaryContainer = Color(0xFF3826A8),
-    onPrimaryContainer = Color(0xFFEDE7FF),
-    secondary = Color(0xFFB1A4FF),
-    onSecondary = Color(0xFF15093D),
-    background = Color(0xFF000000),
-    onBackground = Color(0xFFF2F1F7),
-    surface = Color(0xFF101013),
-    onSurface = Color(0xFFF2F1F7),
-    surfaceVariant = Color(0xFF24242C),
-    onSurfaceVariant = Color(0xFFC4C2D0),
-    outline = Color(0xFF3A3A45),
-    outlineVariant = Color(0xFF26262E),
-    error = Color(0xFFFF8FA0),
-    onError = Color(0xFF3D0011)
+    primary = Color(0xFFBDB1FF),
+    onPrimary = Color(0xFF2A1A6B),
+    primaryContainer = Color(0xFF4235A1),
+    onPrimaryContainer = Color(0xFFE5DEFF),
+    
+    secondary = Color(0xFFCBC2DB),
+    onSecondary = Color(0xFF332D41),
+    secondaryContainer = Color(0xFF4A4458),
+    onSecondaryContainer = Color(0xFFE8DEF8),
+    
+    tertiary = Color(0xFFEFB8C8),
+    onTertiary = Color(0xFF492532),
+    tertiaryContainer = Color(0xFF633B48),
+    onTertiaryContainer = Color(0xFFFFD8E4),
+    
+    background = Color(0xFF1B1B1F),
+    onBackground = Color(0xFFE4E1E6),
+    surface = Color(0xFF1B1B1F),
+    onSurface = Color(0xFFE4E1E6),
+    surfaceVariant = Color(0xFF49454F),
+    onSurfaceVariant = Color(0xFFCAC4D0),
+    
+    surfaceTint = Color(0xFFBDB1FF),
+    inverseSurface = Color(0xFFE4E1E6),
+    inverseOnSurface = Color(0xFF303033),
+    
+    outline = Color(0xFF938F99),
+    outlineVariant = Color(0xFF49454F),
+    scrim = Color(0xFF000000),
+    
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6)
 )
 
 private val AppTypography = Typography(

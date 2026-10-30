@@ -1,8 +1,8 @@
 package com.miniichatNext.carter
 
-import com.miniichatNext.carter.data.mcp.planTextEdit
-import com.miniichatNext.carter.data.mcp.resolveToolPath
-import com.miniichatNext.carter.data.mcp.resolveRenameTarget
+import com.miniichatNext.carter.data.tools.planTextEdit
+import com.miniichatNext.carter.data.tools.resolveToolPath
+import com.miniichatNext.carter.data.tools.resolveRenameTarget
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test

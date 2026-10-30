@@ -1,6 +1,7 @@
 package com.miniichatNext.carter
 
 import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
 import android.os.Bundle
 import android.widget.Toast
@@ -15,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.miniichatNext.carter.ui.AppRoot
+import com.miniichatNext.carter.ui.onboarding.WelcomeActivity
 import com.miniichatNext.carter.ui.theme.MiniiChatTheme
 import java.util.Locale
 import com.miniichatNext.carter.debug.DebugLog
@@ -56,6 +58,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val onboardingPrefs = getSharedPreferences("onboarding_pref", Context.MODE_PRIVATE)
+        if (!onboardingPrefs.getBoolean("has_initialized", false)) {
+            startActivity(Intent(this, WelcomeActivity::class.java))
+            finish()
+            return
+        }
         com.miniichatNext.carter.debug.DebugLog.i(
             "Activity", "MainActivity.onCreate (savedState=${savedInstanceState != null})"
         )
