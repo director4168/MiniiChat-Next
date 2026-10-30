@@ -17,9 +17,9 @@
 - [功能概览](#功能概览)
   - [模型与服务商](#模型与服务商)
   - [对话与辅助模型](#对话与辅助模型)
-  - [Markdown 与内容渲染](#markdown-与内容渲染)
-  - [工具、MCP 与特殊工具](#工具mcp-与特殊工具)
-  - [Linux 工作区与终端](#linux-工作区与终端)
+  - [Markdown与内容渲染](#markdown与内容渲染)
+  - [工具、MCP与特殊工具](#工具mcp与特殊工具)
+  - [Linux工作区与终端](#linux工作区与终端)
   - [头像、背景与调试](#头像背景与调试)
 - [项目结构](#项目结构)
 - [构建环境](#构建环境)
@@ -33,16 +33,6 @@
 - [打赏](#打赏)
 
 MiniiChat Next 是一款支持多服务商、多助手、多会话和本地工具调用的 Android LLM 客户端。项目基于 MiniiChat 衍生开发，并加入了 MCP、Linux 工作区、交互式终端、Markdown/LaTeX 渲染、技能系统和多种辅助模型能力。
-
-## 当前版本
-
-```text
-versionName: v1.6.0
-versionCode: 261029111
-applicationId: com.miniichatNext.carter
-```
-
-版本历史见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 功能概览
 
@@ -72,7 +62,7 @@ applicationId: com.miniichatNext.carter
 - 压缩辅助模型支持“使用对话模型”
 - Token 用量、耗时和请求状态展示
 
-### Markdown 与内容渲染
+### Markdown与内容渲染
 
 - 完整 Markdown 上下文解析
 - 列表、表格、引用、代码围栏和嵌套格式
@@ -83,7 +73,7 @@ applicationId: com.miniichatNext.carter
 - 浅色/深色主题配色
 - 流式回复期间实时 Markdown 渲染
 
-### 工具、MCP 与特殊工具
+### 工具、MCP与特殊工具
 
 - 内置工具统一在“内置工具管理”页面配置
 - 文件读取、写入、追加、编辑、复制、移动、重命名、删除和搜索
@@ -106,7 +96,7 @@ applicationId: com.miniichatNext.carter
   - `calendar_list`：读取日历，免审批
   - `calendar_create`：创建日历事件，默认需要审批
 
-### Linux 工作区与终端
+### Linux工作区与终端
 
 - 创建多个独立工作区
 - 每个助手和对话可以绑定工作区
