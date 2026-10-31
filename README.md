@@ -242,16 +242,20 @@ rm -rf .gradle build app/build
 
 | 字段 | 用途 |
 |------|------|
+| `name` | 识别名称，实际使用时无意义 |
+| ` time` | 发布时间 |
 | `versionCode` | 新版客户端兼容字段 |
 | `version` | 旧版客户端兼容字段 |
 | `versionName` | 更新弹窗显示的版本名称 |
-| `DownloadUrl` | `arm64-v8a`安装包地址 |
-| `DownloadUrl_armabi_v7a` | `armeabi-v7a`安装包地址 |
+| `compulsory` | 是否强制更新，当值为`true`时强制更新 |
+| `DownloadUrl` | `arm64-v8a`安装包下载地址 |
+| `DownloadUrl_armabi_v7a` | `armeabi-v7a`安装包下载地址 |
 | `SHA256` | 64位安装包校验值 |
 | `SHA256_armabi_v7a` | 32位安装包校验值 |
 
-> TIP
->`verison`和`verisonCode`字段用于客户端判断是否为新版本。在新版本`verison`字段已弃用，此字段仅用于兼容旧版本支持解析判断是否有新版本
+> [!TIP]
+>`verison`和`verisonCode`字段均用于客户端判断自身是否为新版本。在新版本`verison`字段已弃用，此字段仅用于兼容旧版本支持解析判断是否有新版本
+> [完整配置](https://director4168.github.io/AAAJsonConfiguration/MiniiChat-Next.json)
 
 ## 权限说明
 
