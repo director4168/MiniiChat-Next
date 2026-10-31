@@ -1,4 +1,4 @@
-<div align="center">
+<div align='center'>
 
 # MiniiChat Next
 
@@ -14,28 +14,29 @@
 
 ## 目录
 
-- (功能概览)[#功能概览]
-  - (模型与服务商)[#模型与服务商]
-  - (对话与辅助模型)[#对话与辅助模型]
-  - (Markdown与内容渲染)[#markdown与内容渲染]
-  - (工具、MCP与特殊工具)[#工具mcp与特殊工具]
-  - (Linux工作区与终端)[#linux工作区与终端]
-  - (头像、背景与调试)[#头像背景与调试]
-- (项目结构)[#项目结构]
-- (构建环境)[#构建环境]
-- (开始构建)[#开始构建]
-  - (克隆项目)[#克隆项目]
-  - (构建)[#构建debug包]
-- (更新配置)[#更新配置]
-- (权限说明)[#权限说明]
-- (许可证与第三方声明)[#许可证与第三方声明]
-- (反馈与联系)[#反馈与联系]
-- (打赏)[#打赏]
+- [功能概览](#FeatureOverview)
+  - [模型与服务商](#ModelsAndServiceProviders)
+  - [对话与辅助模型](#ConversationalAndAssistiveModels)
+  - [Markdown与内容渲染](#MarkdownAndcontentRendering)
+  - [工具、MCP与特殊工具](#ToolsMcpandspecialTools)
+  - [Linux工作区与终端](#LinuxWorkspaceAndTerminal)
+  - [头像、背景与调试](#AvatarBackgroundAndDebugging)
+- [项目结构](#ProjectStructure)
+- [构建环境](#BuildEnvironment)
+- [开始构建](#StartBuilding)
+  - [克隆项目](#CloneProject)
+  - [构建](#BuildDebugPackage)
+- [更新配置](#UpdateConfiguration)
+- [权限说明](#PermissionDescription)
+- [许可证与第三方声明](#LicenseAndThird-PartyNotices)
+- [反馈与联系](#FeedbackAndContact)
+- [打赏](#Reward)
 
 MiniiChat Next 是一款支持多服务商、多助手、多会话和本地工具调用的 Android LLM 客户端。项目基于 MiniiChat 衍生开发，并加入了 MCP、Linux 工作区、交互式终端、Markdown/LaTeX 渲染、技能系统和多种辅助模型能力。
 
 ## 功能概览
 
+<a name='FeatureOverview'></a>
 ### 模型与服务商
 
 - OpenAI 兼容 Chat Completions API
@@ -49,6 +50,7 @@ MiniiChat Next 是一款支持多服务商、多助手、多会话和本地工�
 - 流式与非流式回复
 - 按设备 ABI 选择更新安装包：`arm64-v8a` / `armeabi-v7a`
 
+<a name='ModelsAndServiceProviders'></a>
 ### 对话与辅助模型
 
 - 多助手、多会话本地保存
@@ -62,6 +64,7 @@ MiniiChat Next 是一款支持多服务商、多助手、多会话和本地工�
 - 压缩辅助模型支持“使用对话模型”
 - Token 用量、耗时和请求状态展示
 
+<a name='MarkdownAndContentRendering'></a>
 ### Markdown与内容渲染
 
 - 完整 Markdown 上下文解析
@@ -73,6 +76,7 @@ MiniiChat Next 是一款支持多服务商、多助手、多会话和本地工�
 - 浅色/深色主题配色
 - 流式回复期间实时 Markdown 渲染
 
+<a name='ToolsMCPAndSpecialTools'></a>
 ### 工具、MCP与特殊工具
 
 - 内置工具统一在“内置工具管理”页面配置
@@ -96,6 +100,7 @@ MiniiChat Next 是一款支持多服务商、多助手、多会话和本地工�
   - `calendar_list`：读取日历，免审批
   - `calendar_create`：创建日历事件，默认需要审批
 
+<a name='LinuxWorkspaceAndTerminal'></a>
 ### Linux工作区与终端
 
 - 创建多个独立工作区
@@ -108,6 +113,7 @@ MiniiChat Next 是一款支持多服务商、多助手、多会话和本地工�
 - 工作区文件浏览、编辑、图片查看、压缩、解压、搜索和哈希校验
 - 工作区工具按读取、写入/编辑、执行三类审批
 
+<a name='AvatarBackgroundAndDebugging'></a>
 ### 头像、背景与调试
 
 - 用户头像规范保存为：
@@ -130,6 +136,7 @@ MiniiChat Next 是一款支持多服务商、多助手、多会话和本地工�
 - 临时裁剪、导入和外部打开文件使用应用缓存目录
 - 已下载但未安装的更新 APK保留在 `cache/Update/`
 
+<a name='ProjectStructure'></a>
 ## 项目结构
 
 ```text
@@ -158,6 +165,7 @@ app/src/main/kotlin/com/miniichatNext/carter/
 └── vm/                  ChatViewModel 与生成、工具、辅助模型逻辑
 ```
 
+<a name='BuildEnvironment'></a>
 ## 构建环境
 
 | 项目 | 版本 |
@@ -175,8 +183,10 @@ app/src/main/kotlin/com/miniichatNext/carter/
 
 完整构建需要 Android SDK Platform 36、对应 Build Tools 和 NDK。项目还使用原生 CMake 代码、proot、Termux Terminal View、uCrop 和 JLaTeXMath。
 
+<a name='StartBuilding'></a>
 ## 开始构建
 
+<a name='ClonePZroject'></a>
 ### 克隆项目
 
 ```bash
@@ -184,6 +194,7 @@ git clone https://github.com/director4168/MiniiChat-Next.git
 cd MiniiChat-Next
 ```
 
+<a name='BuildDebugPackage'></a>
 ### 构建Debug包
 
 ```bash
@@ -218,6 +229,7 @@ rm -rf .gradle build app/build
 ./gradlew :app:assembleRelease
 ```
 
+<a name='UpdateCZonfiguration'></a>
 ## 更新配置
 
 自v1.6.0版本，更新配置如下：
@@ -257,6 +269,7 @@ rm -rf .gradle build app/build
 >`verison`和`verisonCode`字段均用于客户端判断自身是否为新版本。在新版本`verison`字段已弃用，此字段仅用于兼容旧版本支持解析判断是否有新版本
 > [完整配置](https://director4168.github.io/AAAJsonConfiguration/MiniiChat-Next.json)
 
+<a name='PermissionDescription'></a>
 ## 权限说明
 
 截止v1.6.0版本，应用可能需要以下权限：
@@ -269,6 +282,7 @@ rm -rf .gradle build app/build
 
 权限只在对应功能触发时使用，日历创建工具默认需要审批
 
+<a name='LicenseAndThird-PartyNotices'></a>
 ## 许可证与第三方声明
 
 项目主体使用 [AGPL-3.0](LICENSE)。第三方组件、源码来源、许可证和修改说明见 [AGPL_NOTICE.md](AGPL_NOTICE.md)
@@ -283,6 +297,7 @@ rm -rf .gradle build app/build
 - [Termux proot](https://github.com/termux/proot)
 - [Mermaid](https://github.com/mermaid-js/mermaid)
 
+<a name='FeedbackAndContact'></a>
 ## 反馈与联系
 
 - GitHub Issues：[director4168/MiniiChat-Next/issues](https://github.com/director4168/MiniiChat-Next/issues)
@@ -290,10 +305,11 @@ rm -rf .gradle build app/build
 - MT论坛：[director_mark](https://bbs.binmt.cc/home.php?mod=space&uid=134138&do=profile&mobile=2)
 - 邮箱：director4168@163.com
 
+<a name='Reward'></a>
 ## 打赏
 
 如果本项目对你有帮助，可以通过下方二维码赞助我已维持后续开发：
 
 <div align="center">
-  <img src="https://director4168.page.gd/DSM.png" alt="MiniiChat Next 打赏二维码" width="360" />
+  <img src='https://director4168.page.gd/DSM.png" alt='MiniiChat Next 打赏二维码" width='360" />
 </div>
