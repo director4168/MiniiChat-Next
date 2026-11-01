@@ -57,15 +57,14 @@ class LlmClient {
         }
     }
 
-    /** 工具JSON Schema原文->JsonElement；解析失败时退回空object schema */
-    private fun toolSchema(raw: String): kotlinx.serialization.json.JsonElement =
-        runCatching { json.parseToJsonElement(raw) }
-            .getOrElse {
-                kotlinx.serialization.json.buildJsonObject {
-                    put("type", "object")
-                    put("properties", kotlinx.serialization.json.buildJsonObject { })
-                }
-            }
+    /** 部分模型会拒绝缺少type的空参数schema，统一规范成object */
+    private fun toolSchema(raw: String): kotlinx.serialization.json.JsonObject =
+        normalizeFunctionParameters(raw)
+
+    /** 工具调用arguments是调用结果，不是schema；保留原对象，不自动补字段 */
+    private fun rawJsonObject(raw: String): kotlinx.serialization.json.JsonObject =
+        runCatching { json.parseToJsonElement(raw) as? kotlinx.serialization.json.JsonObject }
+            .getOrNull() ?: kotlinx.serialization.json.buildJsonObject { }
 
     internal fun buildRequestBody(
         provider: ProviderConfig,
@@ -477,7 +476,7 @@ class LlmClient {
                                     put("type", "tool_use")
                                     put("id", tc.id)
                                     put("name", tc.name)
-                                    put("input", toolSchema(tc.arguments.ifBlank { "{}" }))
+                                    put("input", rawJsonObject(tc.arguments))
                                 })
                             }
                         })

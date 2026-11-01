@@ -661,7 +661,7 @@
     <!-- 内置工具描述与Schema -->
     <string name="debug_log_truncated_head">> (日志过长，仅显示末尾部分)\n</string>
     <string name="attachment_binary_file">二进制文件</string>
-    <string name="builtin_tool_clarification_desc">当需要确认或进一步理解用户的需求、偏好或方案时调用此工具。可抛出1个问题（最多4个预设选项），也可一次抛出最多16个问题；用户可单选、多选或在末尾自定义输入补充信息。</string>
+    <string name="builtin_tool_clarification_desc">当需要确认或进一步理解用户的需求、偏好或方案时调用此工具。可提出1个问题（最多4个预设选项），也可一次提出最多16个问题；用户可单选、多选，并可为每题补充自定义回答。</string>
     <string name="builtin_tool_shell_desc">在安卓本机环境中执行 Shell (sh/bash) 脚本或终端命令，返回标准输出与错误输出。</string>
     <string name="builtin_tool_file_list_desc">列出指定目录下的文件与子目录。返回名称、类型、大小。</string>
     <string name="builtin_tool_file_read_desc">读取文本文件内容。可指定最大读取字节数，默认 256KB。</string>
@@ -675,7 +675,7 @@
     <string name="builtin_tool_file_exists_desc">判断路径是否存在，并返回是文件还是目录。</string>
     <string name="builtin_tool_file_search_desc">在指定目录下按文件名关键字递归搜索，返回匹配的路径列表。</string>
     <string name="builtin_tool_file_info_desc">获取文件/目录的详细信息：大小、最后修改时间、是否目录。</string>
-    <string name="builtin_tool_clarification_schema">{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"description\":\"需要向用户确认的问题或题目\"},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"选项列表，最多4个具体选项\"},\"allow_multiple\":{\"type\":\"boolean\",\"description\":\"是否允许多选\"},\"questions\":{\"type\":\"array\",\"maxItems\":16,\"items\":{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"description\":\"需要向用户确认的问题\"},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"选项列表，最多4个具体选项\"},\"allow_multiple\":{\"type\":\"boolean\",\"description\":\"是否允许多选\"}},\"required\":[\"question\",\"options\"]},\"description\":\"一次提出多个问题，最多16个\"}},\"anyOf\":[{\"required\":[\"question\",\"options\"]},{\"required\":[\"questions\"]}]}</string>
+    <string name="builtin_tool_clarification_schema">{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"description\":\"需要向用户确认的问题或题目\"},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"选项列表，最多4个具体选项\"},\"allow_multiple\":{\"type\":\"boolean\",\"description\":\"是否允许多选\"},\"questions\":{\"type\":\"array\",\"maxItems\":16,\"items\":{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"description\":\"需要向用户确认的问题\"},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"选项列表，最多4个具体选项\"},\"allow_multiple\":{\"type\":\"boolean\",\"description\":\"是否允许多选\"}},\"required\":[\"question\",\"options\"]},\"description\":\"一次提出多个问题，最多16个\"}}}</string>
     <string name="builtin_tool_browser_desc">抓取网页并返回原始内容。参数：url（必填）、ua（可选：mobile/desktop/custom:&lt;UA&gt;）、mode（可选：auto/http/render——render 用真实 WebView 渲染以绕过反爬）、timeout_seconds（可选，默认15）。当前默认UA模式：%1$s</string>
     <string name="builtin_tool_browser_schema">{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"要抓取的URL\"},\"ua\":{\"type\":\"string\",\"description\":\"UA模式：mobile / desktop / custom:&lt;自定义UA&gt;\"},\"timeout_seconds\":{\"type\":\"integer\",\"description\":\"请求超时秒数，默认15\"}},\"required\":[\"url\"]}</string>
     <string name="builtin_tool_shell_schema">{\"type\":\"object\",\"properties\":{\"script\":{\"type\":\"string\",\"description\":\"要执行的 Shell 脚本代码或命令行\"},\"timeout_seconds\":{\"type\":\"integer\",\"description\":\"执行超时时间（秒），默认 30 秒\"}},\"required\":[\"script\"]}</string>
@@ -807,7 +807,7 @@
     <string name="builtin_tool_time_desc">获取当前日期、时间和时区。可选传入timeZone（IANA时区id，如Asia/Shanghai、UTC）查询其他时区的时间。</string>
     <string name="builtin_tool_time_schema">{\"type\":\"object\",\"properties\":{\"timeZone\":{\"type\":\"string\",\"description\":\"要查询的IANA时区id，如Asia/Shanghai、America/New_York、UTC（可选，默认使用设备时区）\"}}}</string>
     <string name="builtin_tool_clipboard_read_desc">读取系统剪贴板中的文本。</string>
-    <string name="builtin_tool_clipboard_read_schema">{}</string>
+    <string name="builtin_tool_clipboard_read_schema">{\"type\":\"object\",\"properties\":{}}</string>
     <string name="builtin_tool_clipboard_write_desc">向系统剪贴板写入文本。</string>
     <string name="builtin_tool_clipboard_write_schema">{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;text&quot;:{&quot;type&quot;:&quot;string&quot;}},&quot;required&quot;:[&quot;text&quot;]}</string>
     <string name="builtin_tool_calendar_list_desc">列出未来指定天数内的日历事件。</string>

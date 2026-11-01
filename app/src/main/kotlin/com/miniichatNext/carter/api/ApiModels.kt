@@ -1,9 +1,14 @@
 package com.miniichatNext.carter.api
 
 import com.miniichatNext.carter.data.model.TokenUsage
+import com.miniichatNext.carter.util.AppJson
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 
 /** Anthropic的多块content和OpenAI的多oart都用这个 */
 @Serializable
@@ -71,6 +76,27 @@ data class ToolSpec(
     val description: String,
     val inputSchema: String,
 )
+
+/** Function parameters在各家模型API里都必须是object schema；空schema会被部分模型拒绝。 */
+internal fun normalizeFunctionParameters(raw: String): JsonObject {
+    val parsed = runCatching { AppJson.json.parseToJsonElement(raw) }.getOrNull() as? JsonObject
+        ?: return buildJsonObject {
+            put("type", "object")
+            putJsonObject("properties") { }
+        }
+    val schemaType = (parsed["type"] as? JsonPrimitive)?.content
+    return if (schemaType == "object" && parsed["properties"] != null) {
+        parsed
+    } else {
+        buildJsonObject {
+            put("type", "object")
+            parsed.forEach { (key, value) ->
+                if (key != "type") put(key, value)
+            }
+            if (parsed["properties"] == null) putJsonObject("properties") { }
+        }
+    }
+}
 
 data class StreamDelta(
     val text: String = "",

@@ -4,6 +4,7 @@ import com.miniichatNext.carter.api.ChatMessage
 import com.miniichatNext.carter.api.ChatPart
 import com.miniichatNext.carter.api.ResponsesApiStreamParser
 import com.miniichatNext.carter.api.parseResponsesApiBody
+import com.miniichatNext.carter.api.normalizeFunctionParameters
 import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.model.ThinkingLevel
 import com.miniichatNext.carter.api.ToolSpec
@@ -24,6 +25,20 @@ import org.junit.Test
 
 class ResponsesApiTests {
     private val json = Json { ignoreUnknownKeys = true }
+
+    @Test
+    fun emptyFunctionSchemaIsNormalizedToObject() {
+        val normalized = normalizeFunctionParameters("{}")
+        assertEquals("object", normalized["type"]?.jsonPrimitive?.content)
+        assertTrue(normalized["properties"] is kotlinx.serialization.json.JsonObject)
+    }
+
+    @Test
+    fun schemaWithoutTypeGetsObjectTypeWithoutDroppingProperties() {
+        val normalized = normalizeFunctionParameters("""{"properties":{"value":{"type":"string"}}}""")
+        assertEquals("object", normalized["type"]?.jsonPrimitive?.content)
+        assertTrue(normalized["properties"]!!.jsonObject.containsKey("value"))
+    }
 
     @Test
     fun requestPreservesImageToolsAndProviderExtraBody() {
@@ -52,6 +67,9 @@ class ResponsesApiTests {
         assertEquals("call-1", input[1].jsonObject["call_id"]!!.jsonPrimitive.content)
         assertEquals("function_call_output", input[2].jsonObject["type"]!!.jsonPrimitive.content)
         assertEquals("fixture_tool", body["tools"]!!.jsonArray.single().jsonObject["name"]!!.jsonPrimitive.content)
+        val parameters = body["tools"]!!.jsonArray.single().jsonObject["parameters"]!!.jsonObject
+        assertEquals("object", parameters["type"]!!.jsonPrimitive.content)
+        assertTrue(parameters["properties"] is kotlinx.serialization.json.JsonObject)
         assertFalse(body["reasoning"]?.jsonObject?.containsKey("effort") == true)
     }
 

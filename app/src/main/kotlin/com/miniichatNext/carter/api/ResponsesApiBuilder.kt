@@ -83,8 +83,7 @@ internal fun buildResponsesApiRequest(
         }
         if (tools.isNotEmpty()) put("tools", buildJsonArray {
             tools.forEach { tool ->
-                val parameters = runCatching { AppJson.json.parseToJsonElement(tool.inputSchema) }
-                    .getOrElse { buildJsonObject { put("type", "object"); put("properties", buildJsonObject {}) } }
+                val parameters = normalizeFunctionParameters(tool.inputSchema)
                 add(buildJsonObject {
                     put("type", "function")
                     put("name", tool.name)
