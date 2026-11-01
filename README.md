@@ -311,5 +311,5 @@ rm -rf .gradle build app/build
 如果本项目对你有帮助，可以通过下方二维码赞助我已维持后续开发：
 
 <div align="center">
-  <img src='https://director4168.page.gd/DSM.png" alt='MiniiChat Next 打赏二维码" width='360" />
+  <img src="https://director4168.page.gd/DSM.png" alt="MiniiChat Next 打赏二维码" width="360" />
 </div>
