@@ -50,7 +50,7 @@ MiniiChat Next 是一款支持多服务商、多助手、多会话和本地工�
 - 流式与非流式回复
 - 按设备 ABI 选择更新安装包：`arm64-v8a` / `armeabi-v7a`
 
-<a name='ModelsAndServiceProviders'></a>
+<a name='ConversationalAndAssistiveModels'></a>
 ### 对话与辅助模型
 
 - 多助手、多会话本地保存
@@ -186,7 +186,7 @@ app/src/main/kotlin/com/miniichatNext/carter/
 <a name='StartBuilding'></a>
 ## 开始构建
 
-<a name='ClonePZroject'></a>
+<a name='CloneProject'></a>
 ### 克隆项目
 
 ```bash
@@ -229,7 +229,7 @@ rm -rf .gradle build app/build
 ./gradlew :app:assembleRelease
 ```
 
-<a name='UpdateCZonfiguration'></a>
+<a name='UpdateConfiguration'></a>
 ## 更新配置
 
 自v1.6.0版本，更新配置如下：
