@@ -1,8 +1,5 @@
 package com.miniichatNext.carter.ui.settings
 
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
@@ -32,12 +29,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.miniichatNext.carter.R
-import com.miniichatNext.carter.util.openUrl
 import com.miniichatNext.carter.ui.components.SectionCard
 import com.miniichatNext.carter.ui.components.SettingsTopBar
 
@@ -109,23 +108,20 @@ private fun AcknowledgementsRow(
     url: String,
     showDivider: Boolean = true,
 ) {
-    val context = LocalContext.current
+    var confirmOpen by remember { mutableStateOf(false) }
     if (showDivider) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+    }
+    if (confirmOpen) {
+        com.miniichatNext.carter.ui.components.ConfirmOpenExternalLinkDialog(
+            url = url,
+            onDismiss = { confirmOpen = false },
+        )
     }
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = url.isNotBlank()) {
-                runCatching {
-                    context.startActivity(
-                        Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    )
-                }.onFailure {
-                    Toast.makeText(context, R.string.markdown_open_link_failed, Toast.LENGTH_SHORT).show()
-                }
-            }
+            .clickable(enabled = url.isNotBlank()) { confirmOpen = true }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.Top,
     ) {
@@ -153,14 +149,17 @@ private fun SponsorRow(sponsor: com.miniichatNext.carter.data.model.Sponsor, sho
         if (showDivider) {
             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
         }
-    val outerCtx = LocalContext.current
+    var confirmOpen by remember { mutableStateOf(false) }
+    if (confirmOpen) {
+        com.miniichatNext.carter.ui.components.ConfirmOpenExternalLinkDialog(
+            url = sponsor.url.orEmpty(),
+            onDismiss = { confirmOpen = false },
+        )
+    }
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(enabled = !sponsor.url.isNullOrBlank()) {
-                // openUrl走IntentExt：任意scheme（https/mqqapi://等）统一交给系统分发，失败有Toast
-                sponsor.url?.let { outerCtx.openUrl(it) }
-            }
+            .clickable(enabled = !sponsor.url.isNullOrBlank()) { confirmOpen = true }
             .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {

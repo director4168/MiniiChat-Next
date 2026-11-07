@@ -20,28 +20,19 @@ import androidx.compose.material3.Snackbar
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
-import com.miniichatNext.carter.util.AppThemeOverrides
-import com.miniichatNext.carter.ui.theme.LocalDarkMode
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.model.ToastAction
 import com.miniichatNext.carter.data.model.ToastItem
-import com.miniichatNext.carter.data.model.ToastTone
 import kotlinx.coroutines.delay
-
-private const val TOAST_SHOW_MS = 2000L
-private const val TOAST_EXIT_MS = 250L
-private const val MAX_STACK = 3
 
 /**
  * 堆叠式toast栈：替换M3 SnackbarHost（单条队列做不到堆叠，且计时起点/关闭时机不可控）。
@@ -62,15 +53,15 @@ fun ToastStackHost(
 ) {
     // 栈上限：最多同时3条，超出时立即移除最旧的（避免占满屏幕）
     LaunchedEffect(items.size) {
-        if (items.size > MAX_STACK) {
-            items.take(items.size - MAX_STACK).forEach { onRemove(it.id) }
+        if (items.size > ToastStyle.MAX_STACK) {
+            items.take(items.size - ToastStyle.MAX_STACK).forEach { onRemove(it.id) }
         }
     }
     // 注意：不要加animateContentSize——条目自身的expand/shrink已平滑改变总高度，
     // 两层高度动画叠加会让下方条目"上移→回弹→再上移"（B移动两次的根因）
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(ToastStyle.SPACING_DP.dp),
     ) {
         items.forEach { item ->
             key(item.id) {
@@ -86,26 +77,28 @@ private fun ToastStackEntry(
     onRemove: (String) -> Unit,
     onAction: (ToastItem) -> Unit,
 ) {
+    val spec = rememberToastSpec(item.tone)
     var visible by remember(item.id) { mutableStateOf(false) }
     // dismissing=true：手动×触发的出场动画中（防重入）；动画播完再从栈移除
     var dismissing by remember(item.id) { mutableStateOf(false) }
     LaunchedEffect(item.id, dismissing) {
         if (dismissing) {
-            delay(TOAST_EXIT_MS)
+            delay(ToastStyle.EXIT_MS.toLong())
             onRemove(item.id)
             return@LaunchedEffect
         }
         visible = true
-        delay(TOAST_SHOW_MS)
+        delay(spec.showMs)
         visible = false
-        delay(TOAST_EXIT_MS)
+        delay(ToastStyle.EXIT_MS.toLong())
         onRemove(item.id)
     }
     AnimatedVisibility(
         visible = visible,
-        enter = expandVertically(animationSpec = tween(250)) + fadeIn(tween(250)),
-        exit = shrinkVertically(animationSpec = tween(TOAST_EXIT_MS.toInt())) +
-            fadeOut(tween(TOAST_EXIT_MS.toInt())),
+        enter = expandVertically(animationSpec = tween(ToastStyle.ENTER_MS)) +
+            fadeIn(tween(ToastStyle.ENTER_MS)),
+        exit = shrinkVertically(animationSpec = tween(ToastStyle.EXIT_MS)) +
+            fadeOut(tween(ToastStyle.EXIT_MS)),
     ) {
         ToastCard(
             item = item,
@@ -126,25 +119,14 @@ private fun ToastCard(
     onAction: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val context = LocalContext.current
-    val dark = LocalDarkMode.current
-    val overrideVersion = AppThemeOverrides.version.intValue
-    val overrides = remember(overrideVersion, dark) {
-        AppThemeOverrides.load(context)[if (dark) "dark" else "light"].orEmpty()
-    }
-    val warningActionColor = AppThemeOverrides.customColor(
-        overrides,
-        "toastWarningAction",
-        Color(0xFFB1A4FF),
-    )
-    val actionColor = if (item.tone == ToastTone.Normal) Color(0xFF4DD0E1) else warningActionColor
+    // 配色与时长统一来自ToastStyle，避免各处不一致
+    val spec = rememberToastSpec(item.tone)
+    val actionColor = spec.action
     Snackbar(
-        // 固定深色配色（不随主题反转）：黑底白字，两种主题下观感一致
-        containerColor = Color(0xE6222226),
-        contentColor = Color(0xFFF2F1F7),
-        // 青色调：与灰底对比更清晰（原浅紫与灰底不够突出）
-        actionContentColor = actionColor,
-        dismissActionContentColor = Color(0xFFF2F1F7),
+        containerColor = spec.container,
+        contentColor = spec.content,
+        actionContentColor = spec.action,
+        dismissActionContentColor = spec.dismiss,
         shape = RoundedCornerShape(12.dp),
         action = {
             when (item.action) {

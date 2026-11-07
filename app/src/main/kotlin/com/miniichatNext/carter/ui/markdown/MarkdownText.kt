@@ -5,7 +5,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -33,9 +35,12 @@ internal fun MarkdownText(
     color: Color = LocalContentColor.current,
     palette: InlinePalette = BubblePalette,
     onFullscreen: ((String, Boolean) -> Unit)? = null,
+    onLinkClick: ((String) -> Unit)? = null,
 ) {
     val effColor = if (color.isSpecified) color else LocalContentColor.current
     val style = MaterialTheme.typography.bodyLarge
+    // 默认点链接先弹确认框，不直接跳转；调用方要自定义时传onLinkClick
+    var pendingLink by remember { mutableStateOf<String?>(null) }
     CompositionLocalProvider(LocalContentColor provides effColor) {
         Markdown(
             content = text,
@@ -43,6 +48,13 @@ internal fun MarkdownText(
             style = style,
             theme = mdTheme(style, palette),
             components = mdComponents(palette, onFullscreen),
+            onLinkClick = onLinkClick ?: { url -> pendingLink = url },
+        )
+    }
+    pendingLink?.let { url ->
+        com.miniichatNext.carter.ui.components.ConfirmOpenExternalLinkDialog(
+            url = url,
+            onDismiss = { pendingLink = null },
         )
     }
 }

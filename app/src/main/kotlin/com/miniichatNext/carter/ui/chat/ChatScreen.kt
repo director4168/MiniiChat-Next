@@ -510,7 +510,9 @@ fun ChatScreen(
                         streamingOverlay = streamingOverlay,
                         userAvatar = userProfile.avatar,
                         assistantAvatar = assistantDisplayAvatar,
-                        senderLabel = if (msg.role == "user") userSenderLabel else assistantSenderLabel,
+                        // 每条消息显示它自己实际使用的模型：切换当前模型后历史消息不跟着变
+                        senderLabel = if (msg.role == "user") userSenderLabel
+                        else msg.model?.takeIf { it.isNotBlank() } ?: assistantSenderLabel,
                         onStartEdit = {
                             editingMessageId = msg.id
                             input = msg.content

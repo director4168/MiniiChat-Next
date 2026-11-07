@@ -89,15 +89,15 @@ import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.model.ProviderType
 import com.miniichatNext.carter.data.model.UserProfile
 import com.miniichatNext.carter.data.model.UserProfileStore
+import com.miniichatNext.carter.api.LlmClient
+import com.miniichatNext.carter.data.model.ModelConfig
+import com.miniichatNext.carter.data.store.SettingsRepository
 import com.miniichatNext.carter.data.store.ProviderStore
 import com.miniichatNext.carter.ui.components.AvatarPicker
 import com.miniichatNext.carter.ui.components.AvatarView
 import com.miniichatNext.carter.ui.theme.MiniiChatTheme
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.launch
-
-private const val ONBOARDING_PREFS = "onboarding_pref"
-private const val ONBOARDING_DONE = "has_initialized"
 
 private enum class OnboardingPage {
     INTRO,
@@ -161,10 +161,7 @@ class WelcomeActivity : ComponentActivity() {
     }
 
     private fun finishOnboarding() {
-        getSharedPreferences(ONBOARDING_PREFS, Context.MODE_PRIVATE)
-            .edit()
-            .putBoolean(ONBOARDING_DONE, true)
-            .apply()
+        OnboardingState.markDone(this)
         startActivity(Intent(this, MainActivity::class.java))
         finish()
     }
@@ -221,6 +218,8 @@ private fun WelcomeFlowScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val settingsRepo = remember { SettingsRepository(context) }
+    val llmClient = remember { LlmClient() }
     var profile by remember { mutableStateOf(UserProfile()) }
     var providers by remember { mutableStateOf(emptyList<ProviderConfig>()) }
     var loaded by remember { mutableStateOf(false) }
@@ -386,6 +385,31 @@ private fun WelcomeFlowScreen(
                                             )
                                             scope.launch {
                                                 providerStore.upsert(provider)
+                                                // 静默获取可用模型：失败不提示、不阻断引导流程
+                                                val fetched = runCatching {
+                                                    llmClient.listModels(provider)
+                                                }.getOrNull().orEmpty().distinct()
+                                                if (fetched.isNotEmpty()) {
+                                                    providerStore.update(provider.id) { current ->
+                                                        val existing = current.modelIds().toSet()
+                                                        current.copy(
+                                                            models = current.models + fetched
+                                                                .filter { it !in existing }
+                                                                .map { ModelConfig(modelId = it, displayName = it) }
+                                                        )
+                                                    }
+                                                    // 首个服务商且尚未选模型时自动选中，进聊天页即可用
+                                                    settingsRepo.update { s ->
+                                                        if (s.activeProviderId.isBlank()) {
+                                                            s.copy(
+                                                                activeProviderId = provider.id,
+                                                                activeModel = fetched.firstOrNull().orEmpty(),
+                                                            )
+                                                        } else {
+                                                            s
+                                                        }
+                                                    }
+                                                }
                                                 providers = providerStore.snapshot()
                                                 saving = false
                                                 pageIndex = (pageIndex + 1).coerceAtMost(pages.lastIndex)

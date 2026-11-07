@@ -272,7 +272,7 @@ rm -rf .gradle build app/build
 <a name='PermissionDescription'></a>
 ## 权限说明
 
-截止v1.6.0版本，应用可能需要以下权限：
+截止v1.6.1版本，应用可能需要以下权限：
 
 - **网络权限**：访问LLM服务商、下载工作区rootfs、MCP服务和网页抓取工具等网络服务
 - **通知/悬浮窗相关权限**：Debug球和后台提示等通知服务

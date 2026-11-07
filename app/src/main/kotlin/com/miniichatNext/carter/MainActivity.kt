@@ -58,8 +58,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val onboardingPrefs = getSharedPreferences("onboarding_pref", Context.MODE_PRIVATE)
-        if (!onboardingPrefs.getBoolean("has_initialized", false)) {
+        if (!com.miniichatNext.carter.ui.onboarding.OnboardingState.isDone(this)) {
             startActivity(Intent(this, WelcomeActivity::class.java))
             finish()
             return

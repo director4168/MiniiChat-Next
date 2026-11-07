@@ -21,8 +21,8 @@ android {
         applicationId = "com.miniichatNext.carter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 261101001
-        versionName = "v1.6.1"
+        versionCode = 261102005
+        versionName = "v1.6.2"
         vectorDrawables { useSupportLibrary = true }
         externalNativeBuild {
             cmake {

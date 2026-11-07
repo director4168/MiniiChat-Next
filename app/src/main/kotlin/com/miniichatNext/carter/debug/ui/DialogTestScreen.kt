@@ -34,6 +34,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.data.model.ToastTone
+import com.miniichatNext.carter.ui.components.rememberToastSpec
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.ui.components.ConfirmDeleteDialog
 import com.miniichatNext.carter.ui.components.InputDialog
@@ -94,14 +96,36 @@ fun DialogTestScreen(
             SectionCard {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.debug_dialog_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    // 按钮文字用toast标准动作色，避免与真正弹出来的toast配色不一致
+                    val toastActionColor = rememberToastSpec(ToastTone.Warning).action
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        TextButton(onClick = { vm?.setToast(context.getString(R.string.debug_dialog_sample_toast)) }) {
+                        TextButton(
+                            onClick = {
+                                vm?.setToast(
+                                    context.getString(R.string.debug_dialog_sample_toast),
+                                    com.miniichatNext.carter.data.model.ToastTone.Error,
+                                )
+                            },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = toastActionColor
+                            ),
+                        ) {
                             Text(stringResource(R.string.debug_dialog_error_toast))
                         }
-                        TextButton(onClick = { vm?.setError(context.getString(R.string.debug_dialog_sample_error)) }) {
+                        TextButton(
+                            onClick = { vm?.setError(context.getString(R.string.debug_dialog_sample_error)) },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = toastActionColor
+                            ),
+                        ) {
                             Text(stringResource(R.string.debug_dialog_error_dialog))
                         }
-                        TextButton(onClick = { vm?.setAuxError("suggestion:" + context.getString(R.string.debug_dialog_sample_aux)) }) {
+                        TextButton(
+                            onClick = { vm?.setAuxError("suggestion:" + context.getString(R.string.debug_dialog_sample_aux)) },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = toastActionColor
+                            ),
+                        ) {
                             Text(stringResource(R.string.debug_dialog_aux_toast))
                         }
                     }

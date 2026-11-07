@@ -137,7 +137,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     internal val _pendingConvId = MutableStateFlow<String?>(null)
     val pendingConvId: StateFlow<String?> = _pendingConvId.asStateFlow()
 
-    internal val _toast = kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.BUFFERED)
+    internal val _toast = kotlinx.coroutines.channels.Channel<com.miniichatNext.carter.data.model.ToastPayload>(kotlinx.coroutines.channels.Channel.BUFFERED)
     val toast = _toast.receiveAsFlow()
 
     /** 底部堆叠toast栈：新条目追加到末尾（视觉底部），旧的被顶上去；每条由UI层独立计时移除 */
@@ -295,7 +295,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     fun clearError() { _error.value = null }
     fun clearToast() { /* Channel消费即出队，无需清理；保留兼容旧调用点 */ }
     fun setError(msg: String) { _error.value = msg }
-    fun setToast(msg: String) { _toast.trySend(msg) }
+    fun setToast(msg: String, tone: com.miniichatNext.carter.data.model.ToastTone = com.miniichatNext.carter.data.model.ToastTone.Normal) {
+        _toast.trySend(com.miniichatNext.carter.data.model.ToastPayload(msg, tone))
+    }
     fun setAuxError(payload: String) { _auxError.trySend(payload) }
 
     fun requestCompressDialog() { _compressDialog.value = true }

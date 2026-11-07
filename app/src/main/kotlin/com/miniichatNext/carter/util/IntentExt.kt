@@ -28,3 +28,16 @@ fun Context.openUrl(url: String) = openUri(Uri.parse(url))
 private fun Context.DebugLog_e(msg: String) {
     com.miniichatNext.carter.debug.DebugLog.w("IntentExt", "openUri failed: $msg")
 }
+
+/** 打开网页/外部链接：失败时提示链接无法打开（与Markdown链接同一文案） */
+fun Context.openExternalLink(url: String) {
+    runCatching {
+        startActivity(
+            Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }.onFailure { e ->
+        com.miniichatNext.carter.debug.DebugLog.w("IntentExt", "openExternalLink failed: ${e.message}")
+        Toast.makeText(this, getString(R.string.markdown_open_link_failed), Toast.LENGTH_SHORT).show()
+    }
+}

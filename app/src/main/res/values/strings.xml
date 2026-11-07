@@ -87,7 +87,6 @@
 
     <!-- Errors and avatar transfer -->
     <string name="error_no_model">No model selected.</string>
-    <string name="error_api_key_empty">The API key for %1$s is empty.</string>
     <string name="models_none_returned">/models returned no models</string>
     <string name="models_fetched">Fetched %1$d models</string>
     <string name="error_fetch_models">Failed to fetch models (%1$s): %2$s</string>
@@ -770,7 +769,6 @@
     <string name="cache_ttl_1h">1 hour</string>
 
     <!-- Runtime limits and update results -->
-    <string name="tool_round_limit">Tool round limit reached. Send a message to continue.</string>
     <string name="compress_source_changed">Conversation changed during compression. The original messages were kept; retry compression.</string>
     <string name="update_saved_location">Saved to Downloads: %1$s</string>
     <string name="builtin_path_outside_roots">The path is outside the allowed roots.</string>
@@ -799,6 +797,8 @@
     <string name="compressing_context">Compressing conversation context…</string>
     <string name="debug_crop_test_title">Image crop test</string>
     <string name="debug_crop_test_sub">Test image cropper</string>
+    <string name="debug_reload_onboarding_title">Reload onboarding</string>
+    <string name="debug_reload_onboarding_sub">Reset the first-run guide and open it again</string>
     <string name="debug_crop_test_pick">Pick and crop image</string>
     <string name="debug_crop_test_empty">No cropped image yet</string>
     <string name="debug_crop_failed">Image crop failed</string>

@@ -68,17 +68,6 @@ internal fun ChatViewModel.sendMessage(
             return
         }
 
-    if (provider.apiKey.isBlank()
-        && !provider.baseUrl.contains("localhost")
-        && !provider.baseUrl.contains("10.0.2.2")
-    ) {
-        _error.value = app.getString(
-            com.miniichatNext.carter.R.string.error_api_key_empty,
-            provider.name
-        )
-        return
-    }
-
     val activeId = ensureActiveConversationId()
     val userMsg = Message(id = newId(), role = "user", content = trimmed, attachments = attachments)
     stopTaskSession()
@@ -131,11 +120,10 @@ private fun ChatViewModel.launchGeneration(
                         messages = current.messages + initialMessage)
                 }
             }
-            var round = 0
             var reuse = reuseMsgId
-            while (round < MAX_TOOL_ROUNDS) {
+            // 工具调用不设轮数上限：只有无待处理调用、转人工审批或用户中止时才退出
+            while (true) {
                 currentCoroutineContext().ensureActive()
-                round++
                 val res = runGenerationRound(cid, reuse) ?: break
                 reuse = res.msgId
                 if (res.pending.isEmpty()) break
@@ -146,9 +134,6 @@ private fun ChatViewModel.launchGeneration(
                     _hasPendingTools.value = waitingApproval
                     _pendingConvId.value = cid.takeIf { waitingApproval }
                     break
-                }
-                if (round == MAX_TOOL_ROUNDS) {
-                    _error.value = getApplication<Application>().getString(R.string.tool_round_limit)
                 }
             }
         } catch (e: CancellationException) {
@@ -173,7 +158,6 @@ private fun ChatViewModel.launchGeneration(
 private fun ToolInvocation.isUnanswered(): Boolean =
     state == ToolInvocationState.PENDING_APPROVAL || state == ToolInvocationState.EXECUTING
 
-private const val MAX_TOOL_ROUNDS = 8
 /** 流式期间DataStore节流落库间隔（ms）；toolCalls delta在流末尾统一到达，流结束后的强制落库兜底 */
 private const val PERSIST_INTERVAL_MS = 800L
 private const val STREAM_OVERLAY_INTERVAL_MS = 33L
@@ -1006,9 +990,13 @@ private suspend fun ChatViewModel.buildApiMessages(
             add(app.getString(R.string.attachment_read_failed, readFailedNames.joinToString(listSeparator)))
     }
     if (notes.isNotEmpty()) {
-        _toast.trySend(app.getString(
-            R.string.attachment_inline_note,
-            notes.joinToString(app.getString(R.string.common_note_separator)))
+        _toast.trySend(
+            com.miniichatNext.carter.data.model.ToastPayload(
+                app.getString(
+                    R.string.attachment_inline_note,
+                    notes.joinToString(app.getString(R.string.common_note_separator)),
+                )
+            )
         )
     }
     return messages

@@ -116,6 +116,7 @@ fun AboutScreen(
     var showDonateDialog by remember { mutableStateOf(false) }
     var showLogLevelDialog by remember { mutableStateOf(false) }
     var updateInfo by remember { mutableStateOf<UpdateInfo?>(null) }
+    var pendingIssueUrl by remember { mutableStateOf<String?>(null) }
     var showEasterEgg by remember { mutableStateOf(false) }
     var easterEggElapsed by remember { mutableStateOf(-1L) }
     var easterEggClosingElapsed by remember { mutableStateOf(-1L) }
@@ -313,19 +314,7 @@ fun AboutScreen(
                         icon = Icons.Default.BugReport,
                         title = stringResource(R.string.about_issue_title),
                         subtitle = stringResource(R.string.about_issue_sub),
-                        onClick = {
-                            val url = "https://github.com/director4168/MiniiChat-Next/issues"
-                            runCatching {
-                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-                            }.onFailure { e ->
-                                DebugLog.w("About", "cannot open issue url: ${e.message}")
-                                Toast.makeText(
-                                    context,
-                                    context.getString(R.string.about_open_link_failed),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
+                        onClick = { pendingIssueUrl = "https://github.com/director4168/MiniiChat-Next/issues" }
                     )
                     HorizontalDivider(
                         color = MaterialTheme.colorScheme.outlineVariant,
@@ -457,6 +446,13 @@ fun AboutScreen(
                         }
                     )
                 }
+
+            pendingIssueUrl?.let { url ->
+                com.miniichatNext.carter.ui.components.ConfirmOpenExternalLinkDialog(
+                    url = url,
+                    onDismiss = { pendingIssueUrl = null },
+                )
+            }
 
             // 更新弹窗：用户点"检测更新"后fetch成功→展示UpdateInfo
             // 注：UpdateDialog内置"忽略此版本"按钮（在右按钮区），不传customActions避免重复

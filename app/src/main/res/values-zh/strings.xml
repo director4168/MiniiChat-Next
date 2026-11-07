@@ -87,7 +87,6 @@
 
     <!-- 错误与头像转存 -->
     <string name="error_no_model">没有选择模型</string>
-    <string name="error_api_key_empty">%1$s 的API Key为空</string>
     <string name="models_none_returned">/models 没有返回任何模型</string>
     <string name="models_fetched">已获取 %1$d 个模型</string>
     <string name="error_fetch_models">获取模型失败（%1$s）：%2$s</string>
@@ -770,7 +769,6 @@
     <string name="cache_ttl_1h">1 小时</string>
 
     <!-- 运行限制与更新结果 -->
-    <string name="tool_round_limit">工具调用已达本轮上限，可发送消息继续。</string>
     <string name="compress_source_changed">压缩期间对话已变化，已保留原消息，请重试压缩。</string>
     <string name="update_saved_location">已保存到下载目录：%1$s</string>
     <string name="builtin_path_outside_roots">路径不在允许的目录中。</string>
@@ -799,6 +797,8 @@
     <string name="compressing_context">正在压缩对话上下文…</string>
     <string name="debug_crop_test_title">图片裁剪测试</string>
     <string name="debug_crop_test_sub">测试图片裁剪器</string>
+    <string name="debug_reload_onboarding_title">重新载入初始页</string>
+    <string name="debug_reload_onboarding_sub">重置首次引导标记并再次打开</string>
     <string name="debug_crop_test_pick">选择并裁剪图片</string>
     <string name="debug_crop_test_empty">还没有裁剪图片</string>
     <string name="debug_crop_failed">图片裁剪失败</string>

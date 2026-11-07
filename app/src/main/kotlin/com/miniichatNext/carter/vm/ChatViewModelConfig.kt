@@ -121,11 +121,14 @@ internal fun ChatViewModel.fetchModels(providerId: String) {
                         )
                     }
                 }
-                _toast.trySend(getApplication<Application>()
-                        .getString(
-                        com.miniichatNext.carter.R.string.models_fetched,
-                        incoming.size
-                    ))
+                _toast.trySend(
+                    com.miniichatNext.carter.data.model.ToastPayload(
+                        getApplication<Application>().getString(
+                            com.miniichatNext.carter.R.string.models_fetched,
+                            incoming.size,
+                        )
+                    )
+                )
             }
         } catch (e: Exception) {
             pushToast(com.miniichatNext.carter.data.model.ToastItem(

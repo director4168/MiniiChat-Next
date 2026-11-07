@@ -15,6 +15,12 @@ data class ToastItem(
 
 enum class ToastTone { Normal, Warning, Error }
 
+/** 通过Channel投递的toast请求（文本+语气，UI据此决定配色与停留时长） */
+data class ToastPayload(
+    val text: String,
+    val tone: ToastTone = ToastTone.Normal,
+)
+
 /** toast操作按钮语义 */
 sealed interface ToastAction {
     data object None : ToastAction

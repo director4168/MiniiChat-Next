@@ -313,11 +313,12 @@ fun AppRoot(vm: ChatViewModel) {
         }
     }
     LaunchedEffect(Unit) {
-        vm.toast.collect { msg ->
+        vm.toast.collect { payload ->
             vm.pushToast(com.miniichatNext.carter.data.model.ToastItem(
-                message = msg,
+                message = payload.text,
                 action = com.miniichatNext.carter.data.model.ToastAction.Copy,
                 withDismiss = true,
+                tone = payload.tone,
             ))
         }
     }
@@ -632,6 +633,9 @@ fun AppRoot(vm: ChatViewModel) {
                                         message = context.getString(
                                             com.miniichatNext.carter.R.string.workspace_terminal_unbound
                                         ),
+                                        action = com.miniichatNext.carter.data.model.ToastAction.Copy,
+                                        withDismiss = true,
+                                        tone = com.miniichatNext.carter.data.model.ToastTone.Warning,
                                     ))
                                 } else {
                                     nav.push(

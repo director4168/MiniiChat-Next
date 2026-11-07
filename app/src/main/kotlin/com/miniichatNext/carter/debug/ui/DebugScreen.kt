@@ -363,6 +363,31 @@ fun DebugScreen(
                     Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
                 }
             }
+
+            // 重新载入初始页：清掉完成标记并直接打开引导页，方便反复体验
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+            com.miniichatNext.carter.ui.components.SectionCard {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { reloadOnboarding(context) }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.debug_reload_onboarding_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            stringResource(R.string.debug_reload_onboarding_sub),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                }
+            }
         }
     }
 
@@ -392,6 +417,19 @@ fun DebugScreen(
             dismissButton = {
                 TextButton(onClick = { crashConfirm = null }) { Text(stringResource(R.string.cancel)) }
             },
+        )
+    }
+}
+
+/** 清掉初始页完成标记并重新打开引导页 */
+internal fun reloadOnboarding(context: android.content.Context) {
+    com.miniichatNext.carter.ui.onboarding.OnboardingState.reset(context)
+    runCatching {
+        context.startActivity(
+            android.content.Intent(
+                context,
+                com.miniichatNext.carter.ui.onboarding.WelcomeActivity::class.java,
+            ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     }
 }
