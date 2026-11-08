@@ -15,7 +15,9 @@ data class McpServerConfig(
     val requireApproval: Boolean = false,
     val headers: Map<String, String> = emptyMap(),
     val toolsFetched: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val syncError: String? = null,
+    val lastSyncAt: Long? = null,
 ) {
     fun tp(): McpTransport = runCatching { McpTransport.valueOf(transport) }
         .getOrDefault(McpTransport.STREAMABLE_HTTP)
@@ -36,7 +38,8 @@ data class McpToolPermission(
     val toolName: String,
     val serverId: String = "",
     val enabled: Boolean = true,
-    val requireApproval: Boolean = true
+    val requireApproval: Boolean = true,
+    val inheritApproval: Boolean = false
 )
 
 data class McpPendingApproval(

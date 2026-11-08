@@ -27,6 +27,7 @@ object AppThemeOverrides {
         "outline", "outlineVariant",
         "error", "onError",
         "workspaceWarning", "workspaceDanger", "toastWarningAction",
+        "messageJumperBackground", "messageJumperContent",
     )
 
     /** 当前覆盖：{"light": {role: hex}, "dark": {role: hex}}；解析失败返回空 */
@@ -121,6 +122,8 @@ object AppThemeOverrides {
             put("workspaceWarning", if (dark) "#FFCA5C" else "#8A5A00")
             put("workspaceDanger", if (dark) "#FFB4AB" else "#BA1A1A")
             put("toastWarningAction", "#B1A4FF")
+            put("messageJumperBackground", "#CC82B1FF")
+            put("messageJumperContent", "#102A56")
         }
     }
 

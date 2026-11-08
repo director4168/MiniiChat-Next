@@ -1,24 +1,36 @@
 package com.miniichatNext.carter.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarResult
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDrawerState
@@ -31,32 +43,35 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import com.miniichatNext.carter.vm.ChatViewModel
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.dp
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.data.mcp.McpClient
+import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.model.ProviderConfig
+import com.miniichatNext.carter.data.model.ProviderOverride
+import com.miniichatNext.carter.data.model.UserProfile
+import com.miniichatNext.carter.data.update.displayVersion
+import com.miniichatNext.carter.data.update.ignoreKey
 import com.miniichatNext.carter.debug.CrashLogger
+import com.miniichatNext.carter.debug.DebugLevel
+import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.debug.ui.CrashReportScreen
 import com.miniichatNext.carter.debug.ui.DebugScreen
 import com.miniichatNext.carter.debug.ui.DialogTestScreen
-import kotlinx.coroutines.launch
-import com.miniichatNext.carter.data.model.Assistant
-import com.miniichatNext.carter.data.model.UserProfile
-import com.miniichatNext.carter.data.update.ignoreKey
-import com.miniichatNext.carter.data.update.displayVersion
-import com.miniichatNext.carter.debug.DebugLog
-import com.miniichatNext.carter.debug.DebugLevel
-import androidx.compose.foundation.clickable
 import com.miniichatNext.carter.ui.assistant.AssistantEditorScreen
 import com.miniichatNext.carter.ui.assistant.AssistantsScreen
 import com.miniichatNext.carter.ui.chat.ChatScreen
 import com.miniichatNext.carter.ui.chat.CompressContextDialog
 import com.miniichatNext.carter.ui.chat.ModelPickerSheet
 import com.miniichatNext.carter.ui.components.ToastStackHost
-import com.miniichatNext.carter.data.mcp.McpClient
-import com.miniichatNext.carter.ui.tools.BuiltInToolsScreen
+import com.miniichatNext.carter.ui.markdown.LocalMarkdownPreferences
+import com.miniichatNext.carter.ui.markdown.MarkdownPreferences
 import com.miniichatNext.carter.ui.mcp.McpServerDetailScreen
 import com.miniichatNext.carter.ui.mcp.McpServerEditorScreen
 import com.miniichatNext.carter.ui.mcp.McpServersScreen
@@ -68,12 +83,11 @@ import com.miniichatNext.carter.ui.provider.ProvidersScreen
 import com.miniichatNext.carter.ui.settings.AboutScreen
 import com.miniichatNext.carter.ui.settings.SettingsScreen
 import com.miniichatNext.carter.ui.settings.UserProfileScreen
-import com.miniichatNext.carter.ui.markdown.LocalMarkdownPreferences
-import com.miniichatNext.carter.ui.markdown.MarkdownPreferences
 import com.miniichatNext.carter.ui.skills.SkillsScreen
+import com.miniichatNext.carter.ui.tools.BuiltInToolsScreen
 import com.miniichatNext.carter.ui.workspace.WorkspaceDetailScreen
 import com.miniichatNext.carter.ui.workspace.WorkspaceListScreen
-import com.miniichatNext.carter.data.model.ProviderOverride
+import com.miniichatNext.carter.vm.ChatViewModel
 import com.miniichatNext.carter.vm.addManualModel
 import com.miniichatNext.carter.vm.approveToolCall
 import com.miniichatNext.carter.vm.clearConversationToolOverrides
@@ -84,53 +98,43 @@ import com.miniichatNext.carter.vm.deleteMessage
 import com.miniichatNext.carter.vm.deleteProvider
 import com.miniichatNext.carter.vm.deleteSkill
 import com.miniichatNext.carter.vm.editMessage
+import com.miniichatNext.carter.vm.effectiveConversationModel
 import com.miniichatNext.carter.vm.effectiveMcpServerIds
 import com.miniichatNext.carter.vm.effectiveSkillIds
 import com.miniichatNext.carter.vm.effectiveSkillIdsFlow
 import com.miniichatNext.carter.vm.effectiveWorkspaceId
-import com.miniichatNext.carter.vm.effectiveConversationModel
 import com.miniichatNext.carter.vm.ensureActiveConversationId
 import com.miniichatNext.carter.vm.fetchModels
 import com.miniichatNext.carter.vm.generateSuggestions
-import com.miniichatNext.carter.vm.rejectToolCall
 import com.miniichatNext.carter.vm.providerOverride
-import com.miniichatNext.carter.vm.setConversationProviderOverride
-import com.miniichatNext.carter.vm.setConversationThinkingLevel
 import com.miniichatNext.carter.vm.regenerateFrom
+import com.miniichatNext.carter.vm.rejectToolCall
 import com.miniichatNext.carter.vm.removeModel
+import com.miniichatNext.carter.vm.reorderProviders
+import com.miniichatNext.carter.vm.saveMcpServer
 import com.miniichatNext.carter.vm.saveSkill
 import com.miniichatNext.carter.vm.saveSkillFiles
 import com.miniichatNext.carter.vm.selectAssistant
-import com.miniichatNext.carter.vm.setConversationModel
 import com.miniichatNext.carter.vm.selectModel
 import com.miniichatNext.carter.vm.sendMessage
 import com.miniichatNext.carter.vm.setConversationMcpServer
+import com.miniichatNext.carter.vm.setConversationModel
+import com.miniichatNext.carter.vm.setConversationProviderOverride
+import com.miniichatNext.carter.vm.setConversationThinkingLevel
 import com.miniichatNext.carter.vm.setConversationWorkspace
 import com.miniichatNext.carter.vm.setSkillEnabled
+import com.miniichatNext.carter.vm.syncMcpServer
 import com.miniichatNext.carter.vm.toggleAssistantSkill
 import com.miniichatNext.carter.vm.toggleTemporarySkill
 import com.miniichatNext.carter.vm.updateUserProfile
 import com.miniichatNext.carter.vm.upsertAssistant
 import com.miniichatNext.carter.vm.upsertProvider
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.unit.dp
-import android.widget.Toast
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /** 路由表：新增页面只需在这里加一项（配合AppNavRegistry可自定义过渡动画） */
 internal enum class Screen {
-    Chat, Settings, Providers, ProviderEdit, Assistants, AssistantEdit,
+    Chat, Settings, Providers, ProviderEdit, Assistants, AssistantEdit, Backup, Logs,
     Skills, UserProfile, About, Debug, DebugCropTest, DialogTest, ThemeColors, MorePreferences, UpdateSettings, Acknowledgements,
     Workspace, WorkspaceDetail, WorkspaceTerminal,
     Mcp, McpDetail, McpEdit, McpBuiltIn,
@@ -141,6 +145,7 @@ internal enum class Screen {
 @Composable
 fun AppRoot(vm: ChatViewModel) {
     val mcpServers by vm.mcpServers.collectAsState()
+    val syncingMcpIds by vm.syncingMcpIds.collectAsState()
     // 对外可见的MCP服务器：设置里关闭的服务器在助手/聊天等处完全隐藏（仅MCP设置列表保留）；
     // 编辑页（initial查找）仍用全量——已关闭的服务器也要能进编辑
     val visibleMcpServers = mcpServers.filter { it.enabled }
@@ -219,6 +224,21 @@ fun AppRoot(vm: ChatViewModel) {
     val conversations by vm.conversations.collectAsState()
     val activeId by vm.activeId.collectAsState()
     val settings by vm.settings.collectAsState()
+    LaunchedEffect(Unit) {
+        if (vm.startupApplied) return@LaunchedEffect
+        vm.startupApplied = true
+        val startup = vm.settingsRepo.settings.first()
+        val previous = vm.store.snapshot().filter { it.assistantId == startup.activeAssistantId }
+        if (startup.autoNewChatOnLaunch) vm.newConversation()
+        else {
+            val lastId = context.getSharedPreferences("last_conversation", android.content.Context.MODE_PRIVATE).getString("id", null)
+            vm.selectConversation(previous.firstOrNull { it.id == lastId }?.id ?: previous.maxByOrNull { it.updatedAt }?.id)
+        }
+    }
+
+    LaunchedEffect(activeId) {
+        activeId?.let { context.getSharedPreferences("last_conversation", android.content.Context.MODE_PRIVATE).edit().putString("id", it).apply() }
+    }
     val providers by vm.providers.collectAsState()
     val isStreaming by vm.isStreaming.collectAsState()
     val streamingConvId by vm.streamingConvId.collectAsState()
@@ -383,6 +403,8 @@ fun AppRoot(vm: ChatViewModel) {
                 .background(MaterialTheme.colorScheme.background)
         ) {
             androidx.compose.runtime.CompositionLocalProvider(
+                com.miniichatNext.carter.ui.settings.LocalAppPreferences provides settings,
+                com.miniichatNext.carter.ui.settings.LocalUsageProviders provides providers,
                 LocalMarkdownPreferences provides MarkdownPreferences(
                     codeWrap = settings.codeWrap,
                     codeFold = settings.codeFold,
@@ -403,8 +425,9 @@ fun AppRoot(vm: ChatViewModel) {
                                     activeAssistantId = settings.activeAssistantId,
                                     onSelectAssistant = { vm.selectAssistant(it) },
                                     onSelect = { id ->
+                                        // 先收侧滑栏再切换：切换会触发首帧解析，放在后面不会拖住关闭
+                                        scope.launch { drawerState.snapTo(DrawerValue.Closed) }
                                         vm.selectConversation(id)
-                                        scope.launch { drawerState.close() }
                                     },
                                     onNew = {
                                         vm.newConversation()
@@ -539,6 +562,7 @@ fun AppRoot(vm: ChatViewModel) {
                             onOpenWorkspace = { nav.push(Screen.Workspace.name) },
                             onOpenMcp = { nav.push(Screen.Mcp.name) },
                             onOpenBuiltInTools = { nav.push(Screen.McpBuiltIn.name) },
+                            onOpenBackup = { nav.push(Screen.Backup.name) },
                             scrollState = settingsScrollState
                         )
                     }
@@ -546,6 +570,8 @@ fun AppRoot(vm: ChatViewModel) {
                     Screen.Mcp -> {
                         McpServersScreen(
                             mcpStore = vm.mcpStore,
+                            syncingIds = syncingMcpIds,
+                            onRetry = { vm.syncMcpServer(it) },
                             onBack = { nav.back() },
                             onAdd = { nav.push(Screen.McpEdit.name) },
                             onOpenServerDetail = { id ->
@@ -560,27 +586,23 @@ fun AppRoot(vm: ChatViewModel) {
                         McpServerDetailScreen(
                             mcpStore = vm.mcpStore,
                             serverId = serverId,
+                            syncing = serverId in syncingMcpIds,
                             onBack = { nav.back() },
                             onEdit = { nav.push(Screen.McpEdit.name, mapOf("serverId" to serverId)) },
                             onDeleted = { nav.popUpTo(Screen.Mcp.name) },
+                            onSync = { vm.syncMcpServer(serverId) },
                         )
                     }
 
                     Screen.McpEdit -> {
                         val editingId = nav.current.args["serverId"]
-                        McpServerEditorScreen(
+                        if (editingId == null || mcpServers.any { it.id == editingId }) McpServerEditorScreen(
                             initial = mcpServers.firstOrNull { it.id == editingId },
                             onBack = { nav.back() },
-                            onSaved = { entity ->
-                                scope.launch { vm.mcpStore.upsertServer(entity) }
-                                nav.back()
-                            },
-                            onSyncNow = { entity ->
-                                runCatching {
-                                    val fetched = McpClient().listTools(entity)
-                                    vm.mcpStore.replaceToolsForServer(entity.id, fetched)
-                                    vm.mcpStore.upsertServer(entity.copy(toolsFetched = true))
-                                    fetched.size
+                            onSaved = { entity, onFailed ->
+                                vm.saveMcpServer(entity, onFailed) { savedId ->
+                                    nav.back()
+                                    if (editingId == null) nav.push(Screen.McpDetail.name, mapOf("serverId" to savedId))
                                 }
                             },
                         )
@@ -694,6 +716,12 @@ fun AppRoot(vm: ChatViewModel) {
                         )
                     }
 
+                    Screen.Backup -> {
+                        com.miniichatNext.carter.ui.settings.BackupScreen(vm = vm, onBack = { nav.back() })
+                    }
+                    Screen.Logs -> {
+                        com.miniichatNext.carter.debug.ui.LogViewerScreen(onBack = { nav.back() })
+                    }
                     Screen.Debug -> {
                         DebugScreen(
                             onBack = { nav.back() },
@@ -701,6 +729,7 @@ fun AppRoot(vm: ChatViewModel) {
                             onOpenDialogTest = { nav.push(Screen.DialogTest.name) },
                             onOpenThemeColors = { nav.push(Screen.ThemeColors.name) },
                             onOpenCropTest = { nav.push(Screen.DebugCropTest.name) },
+                            onOpenLogs = { nav.push(Screen.Logs.name) },
                         )
                     }
                     Screen.DebugCropTest -> {
@@ -753,6 +782,7 @@ fun AppRoot(vm: ChatViewModel) {
 
                     Screen.Providers -> {
                         ProvidersScreen(
+                            onReorder = { ids -> vm.reorderProviders(ids) },
                             providers = providers,
                             fetchingId = fetchingId,
                             activeProviderId = settings.activeProviderId,
@@ -846,6 +876,7 @@ fun AppRoot(vm: ChatViewModel) {
         val pickerConvId = activeId ?: vm.ensureActiveConversationId()
 
         ModelPickerSheet(
+            onOpenProviders = { nav.push(Screen.Providers.name) },
             providers = providers,
             activeProviderId = pickerProviderId,
             activeModel = pickerModelId,

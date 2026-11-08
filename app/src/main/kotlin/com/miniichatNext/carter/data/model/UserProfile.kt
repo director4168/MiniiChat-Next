@@ -6,12 +6,12 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.miniichatNext.carter.data.avatar.Avatar
+import com.miniichatNext.carter.util.AppJson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.json.Json
-import com.miniichatNext.carter.util.AppJson
-import com.miniichatNext.carter.data.avatar.Avatar
 
 private val Context.userProfileDataStore: DataStore<Preferences> by preferencesDataStore(name = "user_profile")
 
@@ -31,6 +31,8 @@ class UserProfileStore(private val context: Context) {
         else runCatching { json.decodeFromString(UserProfile.serializer(), raw) }
             .getOrDefault(UserProfile())
     }
+
+    suspend fun isConfigured(): Boolean = context.userProfileDataStore.data.first()[key]?.isNotBlank() == true
 
     suspend fun snapshot(): UserProfile = profileFlow.first()
 

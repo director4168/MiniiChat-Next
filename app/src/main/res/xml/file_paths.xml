@@ -6,6 +6,7 @@
     <files-path name="avatars" path="avatars/" />
     <!-- 用户导入的附件副本：打开失败时回退用 FileProvider 分享 -->
     <files-path name="uploads" path="uploads/" />
+    <files-path name="restored_attachments" path="restored/" />
     <files-path name="debug_logs" path="logs/" />
     <!-- 崩溃日志已挪到 logs/crash/，FileProvider 必须指向新目录才能分享崩溃 zip -->
     <files-path name="crash" path="logs/crash/" />

@@ -29,6 +29,7 @@ internal class ChatTaskSession(
     fun rememberTool(callId: String) { calls.add(callId) }
     fun toolCallIds(): Set<String> = calls.toSet()
     fun cancel() { root.cancel() }
+    suspend fun awaitStopped() { root.join() }
 
     @Synchronized
     fun launchGeneration(block: suspend (Long) -> Unit): Job {

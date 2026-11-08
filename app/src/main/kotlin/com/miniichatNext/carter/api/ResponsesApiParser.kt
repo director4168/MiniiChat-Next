@@ -3,8 +3,8 @@ package com.miniichatNext.carter.api
 import com.miniichatNext.carter.data.model.TokenUsage
 import com.miniichatNext.carter.util.AppJson
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -86,9 +86,7 @@ internal class ResponsesApiStreamParser {
                 val response = event["response"] as? JsonObject
                 val usage = response?.get("usage") as? JsonObject
                 if (usage != null) {
-                    val input = usage.int("input_tokens") ?: 0
-                    val output = usage.int("output_tokens") ?: 0
-                    latestUsage = TokenUsage(promptTokens = input, completionTokens = output, totalTokens = input + output)
+                    latestUsage = parseResponsesTokenUsage(usage)
                 }
                 response?.get("output")?.let { output ->
                     val items = output as? JsonArray ?: JsonArray(emptyList())
@@ -198,9 +196,7 @@ internal fun parseResponsesApiBody(text: String): List<StreamDelta> {
     response["usage"]?.let { usageElement ->
         val usage = usageElement as? JsonObject
         if (usage != null) {
-            val input = usage.int("input_tokens") ?: 0
-            val outputTokens = usage.int("output_tokens") ?: 0
-            deltas += StreamDelta(usage = TokenUsage(input, outputTokens, input + outputTokens))
+            deltas += StreamDelta(usage = parseResponsesTokenUsage(usage))
         }
     }
     if (calls.isNotEmpty()) deltas += StreamDelta(toolCalls = calls)

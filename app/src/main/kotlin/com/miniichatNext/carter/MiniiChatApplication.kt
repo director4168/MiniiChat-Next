@@ -7,6 +7,25 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
 class MiniiChatApplication : Application() {
+    private val launchRecorder by lazy {
+        com.miniichatNext.carter.data.store.AppLaunchRecorder(
+            com.miniichatNext.carter.data.store.SettingsRepository(this)
+        )
+    }
+    private val appScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+    fun recordAppLaunch() {
+        appScope.launch {
+            try {
+                launchRecorder.recordOnce()
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                DebugLog.e("App", "record launch failed", error)
+            }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         // 调试日志等级持久化恢复、崩溃捕获

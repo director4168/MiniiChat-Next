@@ -95,6 +95,18 @@ object DebugLog {
 
     fun dir(context: Context): File = File(context.filesDir, DIR).apply { mkdirs() }
 
+    fun readLogFile(context: Context, file: File): String = synchronized(fileLock) {
+        require(file.canonicalPath.startsWith(dir(context).canonicalPath + File.separator))
+        require(file.extension.lowercase() in setOf("log", "txt"))
+        file.readText()
+    }
+
+    fun deleteLogFile(context: Context, file: File) = synchronized(fileLock) {
+        require(file.canonicalPath.startsWith(dir(context).canonicalPath + File.separator))
+        require(file.extension.lowercase() in setOf("log", "txt"))
+        check(!file.exists() || file.delete()) { "Log deletion failed" }
+    }
+
     fun logFile(context: Context, lvl: DebugLevel = level): File =
         File(dir(context), "DEBUG_" + lvl.name + ".log")
 

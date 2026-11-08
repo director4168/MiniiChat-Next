@@ -14,12 +14,12 @@
     },
     {
       "name": "rikkahub/rikkahub",
-      "desc": "（AGPL-3.0）工具调用、MCP、Markdown/LaTeX渲染等多处功能参考了该项目",
+      "desc": "（AGPL-3.0）工具调用、MCP、Markdown/LaTeX渲染等多处功能参考了该项目；消息用量组件、缓存统计及计量合并源码移植自该项目",
       "url": "https://github.com/rikkahub/rikkahub"
     },
     {
       "name": "jiuweiby/MiniiChat-Next (Flutter)",
-      "desc": "（AGPL-3.0）MiniiChat Next的衍生版，MCP客户端与工具调用层的最初实现参考了该项目",
+      "desc": "（AGPL-3.0）MiniiChat Next的衍生版，MCP客户端与工具调用层的最初实现参考了该项目。此为，消息统计、偏好设置、日志预览及备份交互参考了此项目",
       "url": "https://github.com/jiuweiby/MiniiChat-Next"
     },
     {

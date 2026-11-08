@@ -11,6 +11,7 @@ import android.os.Environment
 import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -62,10 +63,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,23 +83,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
 import com.miniichatNext.carter.MainActivity
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.api.LlmClient
 import com.miniichatNext.carter.data.avatar.Avatar
 import com.miniichatNext.carter.data.avatar.AvatarStorage
+import com.miniichatNext.carter.data.model.ModelConfig
 import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.model.ProviderType
 import com.miniichatNext.carter.data.model.UserProfile
 import com.miniichatNext.carter.data.model.UserProfileStore
-import com.miniichatNext.carter.api.LlmClient
-import com.miniichatNext.carter.data.model.ModelConfig
-import com.miniichatNext.carter.data.store.SettingsRepository
 import com.miniichatNext.carter.data.store.ProviderStore
+import com.miniichatNext.carter.data.store.SettingsRepository
 import com.miniichatNext.carter.ui.components.AvatarPicker
 import com.miniichatNext.carter.ui.components.AvatarView
 import com.miniichatNext.carter.ui.theme.MiniiChatTheme
 import com.miniichatNext.carter.util.newId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 private enum class OnboardingPage {
@@ -142,7 +145,10 @@ class WelcomeActivity : ComponentActivity() {
         val profileStore = UserProfileStore(this)
         val providerStore = ProviderStore(this)
         setContent {
-            MiniiChatTheme {
+            val theme by remember { SettingsRepository(this) }.settings.collectAsState(
+                initial = com.miniichatNext.carter.data.store.AppSettings()
+            )
+            MiniiChatTheme(themeMode = theme.themeMode, dynamicColor = theme.dynamicColor) {
                 val version by permissionVersion
                 WelcomeFlowScreen(
                     profileStore = profileStore,
@@ -150,6 +156,7 @@ class WelcomeActivity : ComponentActivity() {
                     permissionVersion = version,
                     onRequestPermission = ::requestPermission,
                     onFinish = ::finishOnboarding,
+                    onExit = { finish() },
                 )
             }
         }
@@ -160,9 +167,19 @@ class WelcomeActivity : ComponentActivity() {
         permissionVersion.value++
     }
 
+    companion object {
+        const val EXTRA_PREVIEW = "onboarding_preview"
+    }
+
     private fun finishOnboarding() {
+        if (intent.getBooleanExtra(EXTRA_PREVIEW, false)) {
+            finish()
+            return
+        }
         OnboardingState.markDone(this)
-        startActivity(Intent(this, MainActivity::class.java))
+        startActivity(Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        })
         finish()
     }
 
@@ -172,10 +189,10 @@ class WelcomeActivity : ComponentActivity() {
                 openSpecialPermission(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
             } else {
                 runtimePermissionLauncher.launch(
-                    arrayOf(
+                    if (Build.VERSION.SDK_INT <= 28) arrayOf(
                         Manifest.permission.READ_EXTERNAL_STORAGE,
                         Manifest.permission.WRITE_EXTERNAL_STORAGE,
-                    )
+                    ) else arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
                 )
             }
             "calendar" -> runtimePermissionLauncher.launch(
@@ -215,6 +232,7 @@ private fun WelcomeFlowScreen(
     permissionVersion: Int,
     onRequestPermission: (String) -> Unit,
     onFinish: () -> Unit,
+    onExit: () -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -223,39 +241,62 @@ private fun WelcomeFlowScreen(
     var profile by remember { mutableStateOf(UserProfile()) }
     var providers by remember { mutableStateOf(emptyList<ProviderConfig>()) }
     var loaded by remember { mutableStateOf(false) }
-    var pageIndex by remember { mutableStateOf(0) }
-    var profileName by remember { mutableStateOf("") }
-    var profileAvatar by remember { mutableStateOf<Avatar>(Avatar.Emoji("🙂")) }
-    var providerName by remember { mutableStateOf("") }
-    var providerBaseUrl by remember { mutableStateOf("") }
+    var pageIndex by rememberSaveable { mutableStateOf(0) }
+    var initialPages by rememberSaveable { mutableStateOf<List<String>>(emptyList()) }
+    var profileName by rememberSaveable { mutableStateOf("") }
+    var profileAvatarPath by rememberSaveable { mutableStateOf("") }
+    var profileAvatarEmoji by rememberSaveable { mutableStateOf("🙂") }
+    val profileAvatar: Avatar = if (profileAvatarPath.isNotBlank()) Avatar.Image(profileAvatarPath) else Avatar.Emoji(profileAvatarEmoji)
+    val providerId = rememberSaveable { newId() }
+    var providerName by rememberSaveable { mutableStateOf("") }
+    var providerBaseUrl by rememberSaveable { mutableStateOf("") }
     var providerApiKey by remember { mutableStateOf("") }
-    var providerType by remember { mutableStateOf(ProviderType.OPENAI) }
+    var providerType by rememberSaveable { mutableStateOf(ProviderType.OPENAI) }
     var showAvatarPicker by remember { mutableStateOf(false) }
-    var profileError by remember { mutableStateOf(false) }
-    var providerError by remember { mutableStateOf(false) }
+    var profileError by rememberSaveable { mutableStateOf(false) }
+    var providerError by rememberSaveable { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
+    var loadVersion by remember { mutableStateOf(0) }
 
-    LaunchedEffect(Unit) {
-        profile = profileStore.snapshot()
-        providers = providerStore.snapshot()
-        profileName = profile.displayName.takeUnless { it == "You" }.orEmpty()
-        profileAvatar = profile.avatar
-        loaded = true
+    LaunchedEffect(loadVersion) {
+        try {
+            profile = profileStore.snapshot()
+            providers = providerStore.snapshot()
+            if (initialPages.isEmpty()) profileName = profile.displayName
+            if (profileAvatarPath.isBlank() && profileAvatarEmoji == "🙂") {
+                (profile.avatar as? Avatar.Image)?.let { profileAvatarPath = it.path }
+                (profile.avatar as? Avatar.Emoji)?.let { profileAvatarEmoji = it.content }
+            }
+            if (initialPages.isEmpty()) {
+                initialPages = buildList {
+                    add(OnboardingPage.INTRO.name)
+                    if (!profileStore.isConfigured()) add(OnboardingPage.PROFILE.name)
+                    if (providers.isEmpty()) add(OnboardingPage.PROVIDER.name)
+                    if (!readPermissionSnapshot(context).allGranted) add(OnboardingPage.PERMISSIONS.name)
+                }
+            }
+            loaded = true
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            saveError = error.message.orEmpty()
+        }
     }
 
     val permissionSnapshot = remember(permissionVersion) { readPermissionSnapshot(context) }
-    val pages = remember(profile, providers, permissionSnapshot) {
-        buildList {
-            add(OnboardingPage.INTRO)
-            if (!profileConfigured(profile)) add(OnboardingPage.PROFILE)
-            if (providers.isEmpty()) add(OnboardingPage.PROVIDER)
-            if (!permissionSnapshot.allGranted) add(OnboardingPage.PERMISSIONS)
-        }
-    }
-    LaunchedEffect(pages.size) {
-        pageIndex = pageIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+    val pages = initialPages.map { OnboardingPage.valueOf(it) }
+    BackHandler {
+        if (!saving) { if (pageIndex > 0) pageIndex-- else onExit() }
     }
 
+    saveError?.let { message ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { saveError = null },
+            title = { Text(stringResource(R.string.error_generic, "")) },
+            text = { Text(message) },
+            confirmButton = { TextButton(onClick = { saveError = null; if (!loaded) loadVersion++ }) { Text(stringResource(R.string.ok)) } },
+        )
+    }
     if (!loaded) {
         Box(
             modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
@@ -297,7 +338,7 @@ private fun WelcomeFlowScreen(
                     OnboardingHeader(
                         page = currentPage,
                         stepText = stepText,
-                        canSkip = currentPage != OnboardingPage.INTRO,
+                        canSkip = currentPage != OnboardingPage.INTRO && !saving,
                         onSkip = {
                             if (isLast) onFinish() else pageIndex = (pageIndex + 1).coerceAtMost(pages.lastIndex)
                         },
@@ -343,7 +384,7 @@ private fun WelcomeFlowScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         if (isFirst) Spacer(Modifier.width(1.dp))
-                        else OutlinedButton(onClick = { pageIndex = (pageIndex - 1).coerceAtLeast(0) }) {
+                        else OutlinedButton(enabled = !saving, onClick = { pageIndex = (pageIndex - 1).coerceAtLeast(0) }) {
                             Text(stringResource(R.string.onboarding_previous))
                         }
                         val actionLabel = when {
@@ -362,10 +403,16 @@ private fun WelcomeFlowScreen(
                                             saving = true
                                             val updated = profile.copy(displayName = trimmed, avatar = profileAvatar)
                                             scope.launch {
-                                                profileStore.save(updated)
-                                                profile = updated
-                                                saving = false
-                                                pageIndex = (pageIndex + 1).coerceAtMost(pages.lastIndex)
+                                                try {
+                                                    profileStore.save(updated)
+                                                    profile = updated
+                                                    if (isLast) onFinish() else pageIndex++
+                                                } catch (error: Exception) {
+                                                    if (error is CancellationException) throw error
+                                                    saveError = error.message.orEmpty()
+                                                } finally {
+                                                    saving = false
+                                                }
                                             }
                                         }
                                     }
@@ -377,42 +424,52 @@ private fun WelcomeFlowScreen(
                                         } else {
                                             saving = true
                                             val provider = ProviderConfig(
-                                                id = newId(),
+                                                id = providerId,
                                                 name = name,
                                                 baseUrl = base,
                                                 apiKey = providerApiKey.trim(),
                                                 providerType = providerType.name,
                                             )
                                             scope.launch {
-                                                providerStore.upsert(provider)
-                                                // 静默获取可用模型：失败不提示、不阻断引导流程
-                                                val fetched = runCatching {
-                                                    llmClient.listModels(provider)
-                                                }.getOrNull().orEmpty().distinct()
-                                                if (fetched.isNotEmpty()) {
-                                                    providerStore.update(provider.id) { current ->
-                                                        val existing = current.modelIds().toSet()
-                                                        current.copy(
-                                                            models = current.models + fetched
-                                                                .filter { it !in existing }
-                                                                .map { ModelConfig(modelId = it, displayName = it) }
-                                                        )
-                                                    }
-                                                    // 首个服务商且尚未选模型时自动选中，进聊天页即可用
-                                                    settingsRepo.update { s ->
-                                                        if (s.activeProviderId.isBlank()) {
-                                                            s.copy(
-                                                                activeProviderId = provider.id,
-                                                                activeModel = fetched.firstOrNull().orEmpty(),
+                                                try {
+                                                    val previous = providerStore.snapshot().firstOrNull { it.id == provider.id }
+                                                    providerStore.upsert(provider.copy(models = previous?.models.orEmpty()))
+                                                    // 静默获取可用模型：失败不提示、不阻断引导流程
+                                                    val fetched = runCatching {
+                                                        llmClient.listModels(provider)
+                                                    }.getOrElse { error ->
+                                                        if (error is CancellationException) throw error
+                                                        emptyList()
+                                                    }.filter(String::isNotBlank).distinct()
+                                                    if (fetched.isNotEmpty()) {
+                                                        providerStore.update(provider.id) { current ->
+                                                            val existing = current.modelIds().toSet()
+                                                            current.copy(
+                                                                models = current.models + fetched
+                                                                    .filter { it !in existing }
+                                                                    .map { ModelConfig(modelId = it, displayName = it) }
                                                             )
-                                                        } else {
-                                                            s
+                                                        }
+                                                        // 首个服务商且尚未选模型时自动选中，进聊天页即可用
+                                                        settingsRepo.update { s ->
+                                                            if (s.activeProviderId.isBlank()) {
+                                                                s.copy(
+                                                                    activeProviderId = provider.id,
+                                                                    activeModel = fetched.firstOrNull().orEmpty(),
+                                                                )
+                                                            } else {
+                                                                s
+                                                            }
                                                         }
                                                     }
+                                                    providers = providerStore.snapshot()
+                                                    if (isLast) onFinish() else pageIndex++
+                                                } catch (error: Exception) {
+                                                    if (error is CancellationException) throw error
+                                                    saveError = error.message.orEmpty()
+                                                } finally {
+                                                    saving = false
                                                 }
-                                                providers = providerStore.snapshot()
-                                                saving = false
-                                                pageIndex = (pageIndex + 1).coerceAtMost(pages.lastIndex)
                                             }
                                         }
                                     }
@@ -435,7 +492,11 @@ private fun WelcomeFlowScreen(
         AvatarPicker(
             current = profileAvatar,
             canonicalPath = AvatarStorage.userAvatarFile(context).absolutePath,
-            onChange = { profileAvatar = it; showAvatarPicker = false },
+            onChange = { picked ->
+                profileAvatarPath = (picked as? Avatar.Image)?.path.orEmpty()
+                profileAvatarEmoji = (picked as? Avatar.Emoji)?.content ?: "🙂"
+                showAvatarPicker = false
+            },
             onDismiss = { showAvatarPicker = false },
         )
     }
@@ -688,16 +749,12 @@ private fun OnboardingField(
     }
 }
 
-private fun profileConfigured(profile: UserProfile): Boolean =
-    profile.displayName.isNotBlank() && profile.displayName != "You" &&
-        profile.avatar != Avatar.Emoji("🙂")
-
 private fun readPermissionSnapshot(context: Context): PermissionSnapshot {
     val storage = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
         Environment.isExternalStorageManager()
     } else {
         ContextCompat.checkSelfPermission(context, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED &&
-            (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED)
+            (Build.VERSION.SDK_INT > 28 || ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED)
     }
     val calendar = ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED &&
         ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) == PackageManager.PERMISSION_GRANTED

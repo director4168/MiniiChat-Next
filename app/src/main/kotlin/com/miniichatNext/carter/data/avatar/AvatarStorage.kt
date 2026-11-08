@@ -5,31 +5,20 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.core.net.toUri
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import com.miniichatNext.carter.util.newId
 import java.io.File
 import java.io.FileOutputStream
-import java.util.Base64
-import com.miniichatNext.carter.util.newId
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 object AvatarStorage {
     private const val DIR = "avatars"
-    private const val ASSISTANT_DIR = "Avatars_Assistant"
 
     fun userAvatarFile(context: Context): File =
-        File(dir(context), "Avatars_User.jpg")
+        AvatarPaths.user(context.filesDir).also { it.parentFile?.mkdirs() }
 
-    fun assistantAvatarFile(context: Context, assistantId: String): File {
-        val encoded = if (assistantId.matches(Regex("[A-Za-z0-9]+"))) {
-            assistantId
-        } else {
-            Base64.getUrlEncoder().withoutPadding()
-                .encodeToString(assistantId.toByteArray(Charsets.UTF_8))
-        }
-        val folder = File(dir(context), ASSISTANT_DIR)
-        if (!folder.exists()) folder.mkdirs()
-        return File(folder, "Avatars_${encoded}_Assistant.jpg")
-    }
+    fun assistantAvatarFile(context: Context, assistantId: String): File =
+        AvatarPaths.assistant(context.filesDir, assistantId).also { it.parentFile?.mkdirs() }
 
     fun dir(context: Context): File {
         val d = File(context.filesDir, DIR)

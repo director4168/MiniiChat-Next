@@ -6,9 +6,15 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.miniichatNext.carter.data.model.ModelConfig
+import com.miniichatNext.carter.data.model.ProviderConfig
+import com.miniichatNext.carter.data.util.ApiKeyCrypto
+import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.util.AppJson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -16,12 +22,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.builtins.ListSerializer
-import com.miniichatNext.carter.util.AppJson
-import com.miniichatNext.carter.data.util.ApiKeyCrypto
-import com.miniichatNext.carter.data.model.ModelConfig
-import com.miniichatNext.carter.data.model.ProviderConfig
-import com.miniichatNext.carter.debug.DebugLog
 
 private val Context.providersDataStore: DataStore<Preferences> by preferencesDataStore(name = "providers")
 
@@ -39,6 +39,22 @@ class ProviderStore(private val context: Context) {
         }
 
     suspend fun snapshot(): List<ProviderConfig> = providersFlow.first()
+
+    suspend fun backupSnapshot(): List<ProviderConfig> {
+        val stored = storedProviders(context.providersDataStore.data.first())
+        fun checkKey(value: String?) {
+            if (!value.isNullOrEmpty()) require(ApiKeyCrypto.decrypt(value).isNotEmpty()) { "Stored credential cannot be decrypted; re-enter it before backing up" }
+        }
+        stored.forEach { provider ->
+            checkKey(provider.apiKey)
+            provider.customHeaders.values.forEach(::checkKey)
+            provider.models.forEach { model ->
+                checkKey(model.apiKey)
+                model.customHeaders.values.forEach(::checkKey)
+            }
+        }
+        return stored.map(::decryptProvider)
+    }
 
     private fun storedProviders(prefs: Preferences): List<ProviderConfig> =
         prefs[key]?.let { decode(it) }.orEmpty()
@@ -96,6 +112,15 @@ class ProviderStore(private val context: Context) {
 
     suspend fun save(list: List<ProviderConfig>) {
         context.providersDataStore.edit { prefs -> prefs[key] = encodeProviders(list, storedProviders(prefs)) }
+    }
+
+    suspend fun reorder(ids: List<String>) {
+        context.providersDataStore.edit { prefs ->
+            val current = storedProviders(prefs)
+            val byId = current.associateBy { it.id }
+            val ordered = ids.distinct().mapNotNull { byId[it] } + current.filterNot { it.id in ids }
+            prefs[key] = json.encodeToString(ListSerializer(ProviderConfig.serializer()), ordered)
+        }
     }
 
     suspend fun upsert(provider: ProviderConfig) {

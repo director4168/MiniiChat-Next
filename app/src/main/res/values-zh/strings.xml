@@ -74,6 +74,8 @@
     <string name="about_subtitle">版本、许可证与第三方声明</string>
     <string name="about_version_label">版本</string>
     <string name="about_build_label">构建</string>
+    <string name="about_launch_count">应用启动次数</string>
+    <string name="about_launch_count_value">%1$d次</string>
     <string name="about_issue_title">提交GitHub Issue</string>
     <string name="about_open_link_failed">无法打开链接</string>
     <string name="about_mail_subject">MiniiChat Next反馈</string>
@@ -863,4 +865,138 @@
     <string name="onboarding_skip">跳过</string>
     <string name="onboarding_enter">进入应用</string>
 
+
+
+
+    <!-- 偏好设置、数据备份与日志查看 -->
+
+    <!-- 模型选择与消息统计 -->
+    <string name="model_selection">模型选择</string>
+    <string name="message_usage_live_stats">↑ %1$s tokens   ↓ %2$s tokens   速度 %3$s tokens/s   耗时 %4$.1fs</string>
+    <string name="message_usage_live_context">上下文 %1$s tokens · %2$d 次请求</string>
+    <string name="message_usage_estimate_hint">≈表示本地文本估算，实际用量以服务商为准。</string>
+    <string name="message_usage_stats">↑ %1$d tokens   ↓ %2$d tokens   速度 %3$.1f tokens/s   耗时 %4$.1fs</string>
+    <string name="message_usage_estimated">Token数量为估算值</string>
+
+    <!-- 会话与显示偏好 -->
+    <string name="pref_conversations">会话管理</string>
+    <string name="pref_auto_new_chat">启动时新建会话</string>
+    <string name="pref_auto_new_chat_desc">关闭则回到上次对话</string>
+    <string name="pref_display">显示与字号</string>
+    <string name="pref_font_size">消息文字大小：%1$d sp</string>
+    <string name="pref_font_preview">预览效果</string>
+    <string name="pref_reasoning">显示思考卡片</string>
+    <string name="pref_reasoning_desc">显示模型思考内容，不改变请求设置</string>
+    <string name="pref_usage">显示Token、速度与耗时</string>
+    <string name="pref_usage_desc">在回复下方显示生成统计</string>
+
+    <!-- 输入偏好 -->
+    <string name="pref_interaction">交互习惯</string>
+    <string name="pref_enter">按Enter发送</string>
+    <string name="pref_enter_desc">Shift+Enter仍然换行</string>
+    <string name="pref_paste">超长粘贴转为附件</string>
+    <string name="pref_paste_desc">粘贴超过4000字时转为文本文件附件</string>
+
+    <!-- 数据备份与恢复 -->
+    <string name="backup_title">数据导入与备份</string>
+    <string name="backup_subtitle">导出ZIP备份或恢复应用数据</string>
+    <string name="backup_warning">加密备份将把所有数据加密处理，密码丢失无法恢复！快速备份不对数据进行加密处理。API Key字段始终以密文备份</string>
+    <string name="backup_scope">包含设置、服务商、助手、对话、MCP、Skills、头像、背景及可读取附件。不包含工作区和Linux rootfs</string>
+    <string name="backup_export">导出备份</string>
+    <string name="backup_import">导入备份</string>
+    <string name="backup_done">数据已导入，正在重启应用…</string>
+    <string name="backup_saved">备份已保存</string>
+    <string name="backup_missing">部分关联文件读取失败或被排除，保留原引用。数量</string>
+    <string name="backup_restore_confirm">请选择恢复方式。覆盖会替换现有应用数据，合并保留同ID的现有内容并导入新增内容，保留当前设置和个人资料。恢复完成后会重启应用</string>
+    <string name="backup_replace_warning">覆盖导入将替换现有全部应用配置和对话，是否继续？</string>
+    <string name="backup_replace">覆盖恢复</string>
+    <string name="backup_merge">合并导入</string>
+
+    <!-- 日志文件浏览 -->
+    <string name="log_viewer_title">日志查看</string>
+    <string name="log_search">搜索当前日志</string>
+    <string name="log_previous">上一处</string>
+    <string name="log_next">下一处</string>
+    <string name="log_refresh">刷新</string>
+    <string name="log_share">分享</string>
+    <string name="log_export">导出</string>
+    <string name="log_empty">暂无日志文件</string>
+    <string name="log_delete_title">删除此日志文件？</string>
+
+
+
+    <!-- 对话翻页与加密备份 -->
+    <string name="jump_first">第一条消息</string>
+    <string name="jump_previous">上一条消息</string>
+    <string name="jump_next">下一条消息</string>
+    <string name="jump_last">最后一条消息</string>
+    <string name="backup_password_title">设置备份密码</string>
+    <string name="backup_password">备份密码</string>
+    <string name="backup_password_confirm">确认密码</string>
+    <string name="backup_password_import">备份密码</string>
+    <string name="backup_password_error">密码不正确或加密数据已损坏</string>
+    <string name="message_usage_context">上下文 %1$d tokens · %2$d 次请求</string>
+
+
+
+    <!-- MCP保存与同步状态 -->
+    <string name="mcp_saved">MCP配置已保存</string>
+    <string name="mcp_save_failed">MCP配置保存失败：%1$s</string>
+    <string name="mcp_saved_sync_failed">配置已保存，工具同步失败：%1$s。请在此服务详情重试，无需再次添加</string>
+    <string name="mcp_syncing">配置已保存 · 正在同步工具…</string>
+    <string name="mcp_status_saved_error">已保存 · 工具同步失败</string>
+    <string name="mcp_status_synced">已保存 · 工具已同步</string>
+    <string name="mcp_status_saved">已保存 · 工具待同步</string>
+    <string name="mcp_retry_sync">重试工具同步</string>
+
+
+
+    <!-- 消息用量与翻页配色 -->
+    <string name="chat_message_usage_title">用量详情</string>
+    <string name="chat_message_usage_steps">%1$d次工具请求</string>
+    <string name="chat_message_usage_context_short">%1$s 上下文</string>
+    <string name="chat_message_usage_cached_short">（%1$s 缓存）</string>
+    <string name="chat_message_usage_context">上下文</string>
+    <string name="chat_message_usage_step_count">工具请求次数</string>
+    <string name="chat_message_usage_input">输入</string>
+    <string name="chat_message_usage_cached">缓存命中</string>
+    <string name="chat_message_usage_output">输出</string>
+    <string name="chat_message_usage_total_input">累计输入</string>
+    <string name="chat_message_usage_total_cached">累计缓存命中</string>
+    <string name="chat_message_usage_total_output">累计输出</string>
+    <string name="chat_message_usage_speed">速度</string>
+    <string name="chat_message_usage_duration">生成耗时</string>
+    <string name="debug_message_jumper_background">消息翻页按钮背景（含透明度）</string>
+    <string name="debug_message_jumper_content">消息翻页按钮图标</string>
+
+
+
+    <!-- 备份模式 -->
+    <string name="backup_quick">快速备份</string>
+    <string name="backup_encrypted">加密备份</string>
+    <string name="backup_quick_hint">快速备份，不进行数据加密。但API Key与请求头仍以密文保存，恢复密钥存放在manifest.json中，持有ZIP的人也能解密，因此并不安全</string>
+    <string name="backup_encrypted_hint">加密备份，数据将被加密备份，需要密码。聊天数据、头像、附件、Skills等全部数据文件均加密，仅索引可读，密码丢失将无法恢复，因此请妥善保管密码</string>
+    <string name="backup_detected_encrypted">加密备份文件，请输入备份密码后才能恢复</string>
+    <string name="backup_detected_quick">快速备份文件</string>
+
+
+
+    <!-- 配色角色说明 -->
+    <string name="debug_role_primary">主色</string>
+    <string name="debug_role_on_primary">主色前景</string>
+    <string name="debug_role_primary_container">主色容器</string>
+    <string name="debug_role_on_primary_container">主色容器前景</string>
+    <string name="debug_role_background">背景</string>
+    <string name="debug_role_on_background">背景前景</string>
+    <string name="debug_role_surface">表面</string>
+    <string name="debug_role_on_surface">表面前景</string>
+    <string name="debug_role_surface_variant">表面变体</string>
+    <string name="debug_role_on_surface_variant">表面变体前景</string>
+    <string name="debug_role_outline">轮廓线</string>
+    <string name="debug_role_outline_variant">次级轮廓线</string>
+    <string name="debug_role_error">错误</string>
+    <string name="debug_role_on_error">错误前景</string>
+    <string name="debug_role_workspace_warning">工作区警告</string>
+    <string name="debug_role_workspace_danger">工作区危险</string>
+    <string name="debug_role_toast_warning_action">提示警告操作</string>
 </resources>

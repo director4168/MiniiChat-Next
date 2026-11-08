@@ -1,5 +1,9 @@
 package com.miniichatNext.carter.ui.settings
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.LinearEasing
@@ -35,20 +39,23 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -62,18 +69,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableFloatStateOf
-import kotlin.math.sin
-import kotlin.math.cos
-import kotlin.random.Random
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -81,22 +82,8 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
 import com.miniichatNext.carter.BuildConfig
 import com.miniichatNext.carter.R
-import com.miniichatNext.carter.debug.DebugLog
-import com.miniichatNext.carter.debug.shortVibrate
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-
-import com.miniichatNext.carter.ui.components.SectionCard
-import com.miniichatNext.carter.ui.components.SectionHeader
 import com.miniichatNext.carter.data.store.SettingsRepository
 import com.miniichatNext.carter.data.update.UpdateInfo
 import com.miniichatNext.carter.data.update.UpdateRepository
@@ -104,7 +91,19 @@ import com.miniichatNext.carter.data.update.UpdateState
 import com.miniichatNext.carter.data.update.ignoreKey
 import com.miniichatNext.carter.data.update.isRemoteNewer
 import com.miniichatNext.carter.data.update.remoteVersionCode
+import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.debug.shortVibrate
+import com.miniichatNext.carter.ui.components.SectionCard
+import com.miniichatNext.carter.ui.components.SectionHeader
 import com.miniichatNext.carter.ui.settings.update.UpdateDialog
+import kotlin.math.cos
+import kotlin.math.sin
+import kotlin.random.Random
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun AboutScreen(
@@ -306,6 +305,7 @@ fun AboutScreen(
                     )
                 }
             }
+
 
             Spacer(Modifier.height(8.dp))
             SectionCard {

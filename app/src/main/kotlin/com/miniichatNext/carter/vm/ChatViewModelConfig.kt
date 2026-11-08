@@ -2,13 +2,15 @@ package com.miniichatNext.carter.vm
 
 import android.app.Application
 import androidx.lifecycle.viewModelScope
-import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.R
-import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.data.mcp.McpServerConfig
+import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.model.ModelConfig
 import com.miniichatNext.carter.data.model.ProviderConfig
-import com.miniichatNext.carter.data.skills.Skill
 import com.miniichatNext.carter.data.model.UserProfile
+import com.miniichatNext.carter.data.skills.Skill
+import com.miniichatNext.carter.debug.DebugLog
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
@@ -276,4 +278,58 @@ internal suspend fun ChatViewModel.activeEnabledSkills(assistant: Assistant?, co
     }
     if (ids.isEmpty()) return emptyList()
     return skillStore.snapshot().filter { (it.id in ids || it.name in ids) && it.enabled }
+}
+
+/** 配置保存成功后明确反馈，工具同步失败只更新连接状态，不否定保存结果。 */
+internal fun ChatViewModel.saveMcpServer(server: McpServerConfig, onFailed: () -> Unit = {}, onSaved: (String) -> Unit) {
+    viewModelScope.launch {
+        val saved = try {
+            mcpStore.saveEditor(server)
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            onFailed()
+            setToast(getApplication<Application>().getString(R.string.mcp_save_failed, error.message.orEmpty()), com.miniichatNext.carter.data.model.ToastTone.Error)
+            return@launch
+        }
+        setToast(getApplication<Application>().getString(R.string.mcp_saved))
+        onSaved(saved.id)
+        if (saved.enabled && (!saved.toolsFetched || saved.syncError != null)) syncMcpServer(saved.id)
+    }
+}
+
+internal fun ChatViewModel.syncMcpServer(serverId: String) {
+    // 同服务合并重复点击；连接配置变动后取消旧任务，其结果还会在存储层校验。
+    mcpSyncJobs[serverId]?.cancel()
+    val job = viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+        var current: McpServerConfig? = null
+        _syncingMcpIds.value = _syncingMcpIds.value + serverId
+        try {
+            val config = mcpStore.snapshot().firstOrNull { it.id == serverId } ?: return@launch
+            current = config
+            val tools = mcpClient.listTools(config)
+            if (mcpStore.commitTools(config, tools)) setToast(getApplication<Application>().getString(R.string.mcp_synced, tools.size))
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            if (current != null && mcpStore.recordSyncFailure(current, error.message.orEmpty())) {
+                setToast(getApplication<Application>().getString(R.string.mcp_saved_sync_failed, error.message.orEmpty()), com.miniichatNext.carter.data.model.ToastTone.Error)
+            }
+        } finally {
+            if (mcpSyncJobs[serverId] === kotlinx.coroutines.currentCoroutineContext()[Job]) {
+                mcpSyncJobs.remove(serverId)
+                _syncingMcpIds.value = _syncingMcpIds.value - serverId
+            }
+        }
+    }
+    mcpSyncJobs[serverId] = job
+    job.start()
+}
+
+internal fun ChatViewModel.reorderProviders(ids: List<String>) {
+    viewModelScope.launch {
+        try { providerStore.reorder(ids) }
+        catch (error: kotlinx.coroutines.CancellationException) { throw error }
+        catch (error: Exception) { setToast(error.message.orEmpty(), com.miniichatNext.carter.data.model.ToastTone.Error) }
+    }
 }

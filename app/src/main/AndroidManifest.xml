@@ -54,6 +54,11 @@
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.MiniiChat" />
 
+        <activity
+            android:name=".ui.components.ThemedCropActivity"
+            android:exported="false"
+            android:theme="@style/Theme.MiniiChat.UCrop" />
+
         <!-- UCrop裁剪页 -->
         <activity
             android:name="com.yalantis.ucrop.UCropActivity"

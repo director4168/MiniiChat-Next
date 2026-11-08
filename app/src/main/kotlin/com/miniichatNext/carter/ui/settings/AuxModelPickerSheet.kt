@@ -2,7 +2,7 @@ package com.miniichatNext.carter.ui.settings
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.model.ProviderConfig
@@ -59,24 +60,22 @@ fun AuxModelPickerSheet(
                 .padding(horizontal = 16.dp)
                 .heightIn(max = 640.dp)
         ) {
-            Box(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 4.dp, vertical = 4.dp)
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     label,
-                    style = androidx.compose.material3.MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.align(Alignment.CenterStart)
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
-                if (!showConversationModel) {
-                    TextButton(
-                        onClick = onClear,
-                        modifier = Modifier.align(Alignment.CenterEnd)
-                    ) {
-                        Text(stringResource(R.string.aux_model_not_set))
-                    }
+                TextButton(onClick = onClear) {
+                    Text(stringResource(R.string.aux_model_not_set))
                 }
             }
             Spacer(Modifier.height(10.dp))

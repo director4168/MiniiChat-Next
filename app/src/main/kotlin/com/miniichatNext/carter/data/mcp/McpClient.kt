@@ -1,16 +1,26 @@
 package com.miniichatNext.carter.data.mcp
 
-import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.util.AppJson
+import java.io.BufferedReader
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
@@ -18,15 +28,6 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.LinkedBlockingQueue
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * MCP JSON-RPC 2.0客户端，纯JDK HttpURLConnection，不依赖Ktor/OkHttp。
@@ -37,12 +38,30 @@ class McpClient {
     private val json get() = AppJson.jsonCompact
     private val idGen = AtomicInteger(1)
     private val sessions = ConcurrentHashMap<String, String>()
+    private val connectionConfigs = ConcurrentHashMap<String, McpServerConfig>()
+    private val operationLocks = ConcurrentHashMap<String, Mutex>()
+    private val initialized = ConcurrentHashMap.newKeySet<String>()
+    private val protocolVersions = ConcurrentHashMap<String, String>()
+    @Synchronized
+    private fun refreshConnection(server: McpServerConfig) {
+        val old = connectionConfigs.put(server.id, server)
+        if (old != null && (old.url != server.url || old.headers != server.headers || old.transport != server.transport)) {
+            initialized.remove(server.id)
+            protocolVersions.remove(server.id)
+            sessions.remove(server.id)
+            endpoints.remove(server.id)
+            sseUrls.remove(server.id)
+            sseChannels.remove(server.id)?.close()
+        }
+    }
     private val endpoints = ConcurrentHashMap<String, String>()
     private val sseChannels = ConcurrentHashMap<String, SseChannel>()
     private val sseUrls = ConcurrentHashMap<String, String>()
     private val sseLocks = ConcurrentHashMap<String, Mutex>()
 
-    suspend fun listTools(server: McpServerConfig): List<McpTool> = withContext(Dispatchers.IO) {
+    private suspend fun ensureInitialized(server: McpServerConfig) {
+        refreshConnection(server)
+        if (server.id in initialized) return
         val initResult = rpc(server, "initialize", buildJsonObject {
             put("protocolVersion", "2024-11-05")
             put("capabilities", buildJsonObject { })
@@ -51,10 +70,18 @@ class McpClient {
                 put("version", "1.0")
             })
         })
+        (initResult["protocolVersion"] as? JsonPrimitive)?.contentOrNull?.let { protocolVersions[server.id] = it }
         DebugLog.i("Mcp", "initialize ok server=${server.name} result=${initResult.toString().take(200)}")
 
-        runCatching { notify(server, "notifications/initialized", buildJsonObject { }) }
+        notify(server, "notifications/initialized", buildJsonObject { })
 
+        initialized.add(server.id)
+    }
+
+    suspend fun listTools(server: McpServerConfig): List<McpTool> = withContext(Dispatchers.IO) {
+        operationLocks.getOrPut(server.id) { Mutex() }.withLock {
+        try {
+        ensureInitialized(server)
         val tools = mutableListOf<McpTool>()
         var cursor: String? = null
         var pages = 0
@@ -76,6 +103,11 @@ class McpClient {
             cursor = next
         }
         tools.distinctBy { it.name }
+        } catch (error: Exception) {
+            forget(server.id)
+            throw error
+        }
+        }
     }
 
     suspend fun callTool(
@@ -83,10 +115,12 @@ class McpClient {
         toolName: String,
         argumentsJson: String
     ): McpToolResult = withContext(Dispatchers.IO) {
+        operationLocks.getOrPut(server.id) { Mutex() }.withLock {
         val args = runCatching {
             json.parseToJsonElement(argumentsJson.ifBlank { "{}" }).jsonObject
         }.getOrDefault(JsonObject(emptyMap()))
         runCatching {
+            ensureInitialized(server)
             val result = rpc(server, "tools/call", buildJsonObject {
                 put("name", toolName)
                 put("arguments", args)
@@ -95,9 +129,12 @@ class McpClient {
             val text = extractContent(result)
             McpToolResult(ok = !isError, content = text)
         }.getOrElse { e ->
+            forget(server.id)
+            if (e is kotlinx.coroutines.CancellationException) throw e
             DebugLog.e("Mcp", "callTool failed ${server.name}/$toolName: ${e.message}", e)
             McpToolResult(ok = false, content = "", error = e.message ?: "unknown error")
         }
+    }
     }
 
     private fun extractContent(result: JsonObject): String {
@@ -140,11 +177,14 @@ class McpClient {
             put("params", params)
         }.toString()
         val endpoint = if (server.tp() == McpTransport.SSE) endpoints[server.id] ?: server.url else server.url
-        runCatching {
-            val conn = openPost(server, endpoint, body)
-            runCatching { conn.inputStream.use { it.readBytes() } }
-            conn.disconnect()
-        }
+        val conn = openPost(server, endpoint, body)
+        try {
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                val detail = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
+                throw IllegalStateException("MCP notification HTTP $code: ${detail.take(300)}")
+            }
+        } finally { conn.disconnect() }
     }
 
     private fun streamableRpc(server: McpServerConfig, body: String, id: Int): JsonObject {
@@ -285,9 +325,10 @@ class McpClient {
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty(
                 "Accept",
-                if (acceptStream) "application/json, text/event-stream" else "application/json"
+                "application/json, text/event-stream"
             )
             sessions[server.id]?.let { setRequestProperty("Mcp-Session-Id", it) }
+            protocolVersions[server.id]?.let { setRequestProperty("MCP-Protocol-Version", it) }
             for ((k, v) in server.headers) if (k.isNotBlank()) setRequestProperty(k, v)
         }
         conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
@@ -333,6 +374,9 @@ class McpClient {
     }
 
     fun forget(serverId: String) {
+        initialized.remove(serverId)
+        protocolVersions.remove(serverId)
+        connectionConfigs.remove(serverId)
         sessions.remove(serverId)
         endpoints.remove(serverId)
         sseUrls.remove(serverId)

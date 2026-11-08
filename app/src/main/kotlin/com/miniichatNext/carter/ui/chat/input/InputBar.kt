@@ -2,11 +2,6 @@ package com.miniichatNext.carter.ui.chat.input
 
 import android.net.Uri
 import android.widget.Toast
-import com.miniichatNext.carter.data.util.AttachmentImporter
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -17,6 +12,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,32 +25,32 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Fullscreen
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -72,8 +68,8 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -82,11 +78,18 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.isShiftPressed
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -95,11 +98,16 @@ import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.mcp.McpServerConfig
 import com.miniichatNext.carter.data.model.Attachment
 import com.miniichatNext.carter.data.skills.Skill
+import com.miniichatNext.carter.data.util.AttachmentImporter
+import com.miniichatNext.carter.data.util.AttachmentLoader
 import com.miniichatNext.carter.data.workspace.WorkspaceEntity
 import com.miniichatNext.carter.data.workspace.WorkspaceShellStatus
-import com.miniichatNext.carter.data.util.AttachmentLoader
-import com.miniichatNext.carter.util.AppThemeOverrides
 import com.miniichatNext.carter.ui.theme.LocalDarkMode
+import com.miniichatNext.carter.util.AppThemeOverrides
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun InputBar(
@@ -149,6 +157,15 @@ fun InputBar(
     onCommitEdit: (String) -> Unit = {},
     onCancelEdit: () -> Unit = {},
 ) {
+    val preferences = com.miniichatNext.carter.ui.settings.LocalAppPreferences.current
+    val enterModifier = Modifier.onPreviewKeyEvent { event ->
+        if (preferences.sendOnEnter && event.key == Key.Enter && !event.isShiftPressed) {
+            if (event.type == KeyEventType.KeyUp && !isStreaming && enabled && value.isNotBlank()) {
+                if (editing) onCommitEdit(value) else onSend()
+            }
+            true
+        } else false
+    }
     val focus = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
     val ctx = LocalContext.current
@@ -157,6 +174,10 @@ fun InputBar(
     var fullScreen by remember { mutableStateOf(false) }
     var workspaceDialogOpen by remember { mutableStateOf(false) }
     var mcpDialogOpen by remember { mutableStateOf(false) }
+    var skillDraft by remember { mutableStateOf(emptySet<String>()) }
+    var mcpDraft by remember { mutableStateOf(emptySet<String>()) }
+    var workspaceDraft by remember { mutableStateOf<String?>(null) }
+    var resetDraft by remember { mutableStateOf(false) }
     val imeVisible = WindowInsets.isImeVisible
 
     // 键盘弹出→收起面板（避免面板+键盘同时占屏把内容挤没）
@@ -344,7 +365,7 @@ fun InputBar(
                     BasicTextField(
                         value = value,
                         onValueChange = onValueChange,
-                        modifier = Modifier
+                        modifier = enterModifier
                             .fillMaxWidth()
                             .padding(horizontal = 6.dp)
                             .focusRequester(inputFocus),
@@ -355,8 +376,10 @@ fun InputBar(
                         ),
                         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                         keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Sentences
+                            capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = if (preferences.sendOnEnter) ImeAction.Send else ImeAction.Default
                         ),
+                        keyboardActions = KeyboardActions(onSend = { if (!isStreaming && enabled && value.isNotBlank()) { if (editing) onCommitEdit(value) else onSend() } }),
                         maxLines = 6,
                         enabled = enabled
                     )
@@ -427,12 +450,12 @@ fun InputBar(
                     val canSend = if (editing) value.trim().isNotEmpty() && enabled
                         else (value.trim().isNotEmpty() || attachments.isNotEmpty()) && !isStreaming && enabled
                     val sendBg = when {
-                        isStreaming -> MaterialTheme.colorScheme.onSurface
+                        isStreaming -> MaterialTheme.colorScheme.error
                         canSend -> MaterialTheme.colorScheme.primary
                         else -> MaterialTheme.colorScheme.surfaceVariant
                     }
                     val sendFg = when {
-                        isStreaming -> MaterialTheme.colorScheme.background
+                        isStreaming -> MaterialTheme.colorScheme.onError
                         canSend -> MaterialTheme.colorScheme.onPrimary
                         else -> MaterialTheme.colorScheme.onSurfaceVariant
                     }
@@ -489,9 +512,9 @@ fun InputBar(
                 },
                 onPickFile = { pickFiles.launch("*/*") },
                 onCompress = onContextCompress,
-                onSkills = { skillSheetOpen = true },
-                onWorkspace = { workspaceDialogOpen = true },
-                onMcp = { mcpDialogOpen = true },
+                onSkills = { skillDraft = enabledSkillIds.toSet(); skillSheetOpen = true },
+                onWorkspace = { workspaceDraft = effectiveWorkspaceId; workspaceDialogOpen = true },
+                onMcp = { mcpDraft = effectiveMcpServerIds.toSet(); resetDraft = false; mcpDialogOpen = true },
                 onTerminal = onOpenTerminal,
             )
         }
@@ -544,6 +567,9 @@ fun InputBar(
                         val fsCanSend = if (editing) value.trim().isNotEmpty() && enabled
                             else (value.trim().isNotEmpty() || attachments.isNotEmpty()) && !isStreaming && enabled
                         TextButton(
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = if (isStreaming) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                            ),
                             enabled = if (editing) value.trim().isNotEmpty() else (isStreaming || fsCanSend),
                             onClick = {
                                 if (editing) {
@@ -578,7 +604,7 @@ fun InputBar(
                             // fillMaxWidth（不能fillMaxSize）：字段高度须随内容增长，
                             // 外部verticalScroll才有滚动范围；fillMaxSize会把字段钉死在视口高，
                             // 底部内容只进内部光标滚动，徒手滑不到底
-                            modifier = Modifier
+                            modifier = enterModifier
                                 .fillMaxWidth()
                                 .verticalScroll(rememberScrollState())
                                 .focusRequester(fsFocus),
@@ -589,8 +615,10 @@ fun InputBar(
                             ),
                             cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                             keyboardOptions = KeyboardOptions(
-                                capitalization = KeyboardCapitalization.Sentences
+                                capitalization = KeyboardCapitalization.Sentences,
+                            imeAction = if (preferences.sendOnEnter) ImeAction.Send else ImeAction.Default
                             ),
+                            keyboardActions = KeyboardActions(onSend = { if (!isStreaming && enabled && value.isNotBlank()) { if (editing) onCommitEdit(value) else onSend() } }),
                             enabled = enabled
                         )
                     }
@@ -629,8 +657,8 @@ fun InputBar(
                                     }
                                 }
                                 Switch(
-                                    checked = s.id in enabledSkillIds,
-                                    onCheckedChange = { onToggleSkill(s.id, it) }
+                                    checked = s.id in skillDraft,
+                                    onCheckedChange = { on -> skillDraft = if (on) skillDraft + s.id else skillDraft - s.id }
                                 )
                             }
                         }
@@ -645,8 +673,13 @@ fun InputBar(
                     }) {
                         Text(stringResource(R.string.manage))
                     }
-                    TextButton(onClick = { skillSheetOpen = false }) {
-                        Text(stringResource(R.string.ok))
+                    TextButton(onClick = {
+                        skills.forEach { s ->
+                            if ((s.id in skillDraft) != (s.id in enabledSkillIds)) onToggleSkill(s.id, s.id in skillDraft)
+                        }
+                        skillSheetOpen = false
+                    }) {
+                        Text(stringResource(R.string.save))
                     }
                 }
             }
@@ -693,8 +726,8 @@ fun InputBar(
                                     )
                                 }
                                 Switch(
-                                    checked = ws.id == effectiveWorkspaceId,
-                                    onCheckedChange = { on -> onPickWorkspace(if (on) ws.id else null) }
+                                    checked = ws.id == workspaceDraft,
+                                    onCheckedChange = { on -> workspaceDraft = if (on) ws.id else null }
                                 )
                             }
                         }
@@ -702,8 +735,11 @@ fun InputBar(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { workspaceDialogOpen = false }) {
-                    Text(stringResource(R.string.ok))
+                TextButton(onClick = {
+                    if (workspaceDraft != effectiveWorkspaceId) onPickWorkspace(workspaceDraft)
+                    workspaceDialogOpen = false
+                }) {
+                    Text(stringResource(R.string.save))
                 }
             },
             dismissButton = {
@@ -762,21 +798,27 @@ fun InputBar(
                                     )
                                 }
                                 Switch(
-                                    checked = srv.id in effectiveMcpServerIds,
-                                    onCheckedChange = { on -> onToggleMcpServer(srv.id, on) }
+                                    checked = srv.id in mcpDraft,
+                                    onCheckedChange = { on -> resetDraft = false; mcpDraft = if (on) mcpDraft + srv.id else mcpDraft - srv.id }
                                 )
                             }
                         }
                         Spacer(Modifier.heightIn(min = 4.dp))
-                        TextButton(onClick = onResetToolOverrides) {
+                        TextButton(onClick = { resetDraft = true }) {
                             Text(stringResource(R.string.tool_override_reset))
                         }
                     }
                 }
             },
             confirmButton = {
-                TextButton(onClick = { mcpDialogOpen = false }) {
-                    Text(stringResource(R.string.ok))
+                TextButton(onClick = {
+                    if (resetDraft) onResetToolOverrides()
+                    else mcpServers.forEach { srv ->
+                        if ((srv.id in mcpDraft) != (srv.id in effectiveMcpServerIds)) onToggleMcpServer(srv.id, srv.id in mcpDraft)
+                    }
+                    mcpDialogOpen = false
+                }) {
+                    Text(stringResource(R.string.save))
                 }
             },
             dismissButton = {

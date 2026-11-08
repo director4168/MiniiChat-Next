@@ -7,20 +7,30 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.miniichatNext.carter.data.model.TokenUsage
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import com.miniichatNext.carter.data.model.TokenUsage
+import kotlinx.serialization.Serializable
 
 const val COMPRESS_MODEL_CONVERSATION = "@conversation"
 
 private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
 
+@Serializable
 data class AppSettings(
+    val launchCount: Long = 0,
+    val autoNewChatOnLaunch: Boolean = true,
+    val fontSizeSp: Float = 15f,
+    val showReasoningCard: Boolean = true,
+    val showCardTokenUsage: Boolean = true,
+    val sendOnEnter: Boolean = false,
+    val pasteAsAttachment: Boolean = false,
     val activeProviderId: String = "",
     val activeModel: String = "",
     val activeAssistantId: String = "default",
@@ -40,15 +50,16 @@ data class AppSettings(
     val ocrModel: String = "",
     /** OCR触发模式：auto=仅纯文本模型/always=所有带图消息（视觉模型也附加文字）/off=禁用 */
     val ocrMode: String = "auto",
-    val titleModel: String = "",
+    val titleModel: String = COMPRESS_MODEL_CONVERSATION,
     val compressModel: String = COMPRESS_MODEL_CONVERSATION,
-    val suggestionModel: String = "",
+    val suggestionModel: String = COMPRESS_MODEL_CONVERSATION,
     /** 辅助模型无法使用时回退到当前正在使用的模型 */
     val auxFallbackToActive: Boolean = false,
     /** 调试悬浮球：显示在所有页面之上的日志等级快速切换入口 */
     val debugLogBall: Boolean = false,
-    val totalPromptTokens: Int = 0,
-    val totalCompletionTokens: Int = 0,
+    val totalPromptTokens: Long = 0,
+    val totalCompletionTokens: Long = 0,
+    val totalCachedTokens: Long = 0,
     /** 启动时自动检查更新 */
     val autoCheckUpdate: Boolean = true,
     /** 用户已忽略的版本号集合（持久化为逗号分隔字符串） */
@@ -61,6 +72,13 @@ class SettingsRepository(private val context: Context) {
     private val updateMutex = Mutex()
 
     private object Keys {
+        val LAUNCH_COUNT = longPreferencesKey("launch_count")
+        val AUTO_NEW_CHAT = booleanPreferencesKey("pref_auto_new_chat")
+        val FONT_SIZE = floatPreferencesKey("pref_font_size")
+        val SHOW_REASONING = booleanPreferencesKey("pref_show_reasoning")
+        val SHOW_USAGE = booleanPreferencesKey("pref_show_usage")
+        val SEND_ENTER = booleanPreferencesKey("pref_send_enter")
+        val PASTE_ATTACHMENT = booleanPreferencesKey("pref_paste_attachment")
         val PROVIDER = stringPreferencesKey("active_provider_id")
         val MODEL = stringPreferencesKey("active_model")
         val ASSISTANT = stringPreferencesKey("active_assistant_id")
@@ -80,8 +98,11 @@ class SettingsRepository(private val context: Context) {
         val COMPRESS_MODEL = stringPreferencesKey("compress_model")
         val SUGGESTION_MODEL = stringPreferencesKey("suggestion_model")
         val AUX_FALLBACK = booleanPreferencesKey("aux_fallback_to_active")
-        val TOTAL_PROMPT = intPreferencesKey("total_prompt_tokens")
-        val TOTAL_COMPLETION = intPreferencesKey("total_completion_tokens")
+        val TOTAL_PROMPT_LEGACY = intPreferencesKey("total_prompt_tokens")
+        val TOTAL_PROMPT = longPreferencesKey("total_prompt_tokens_long")
+        val TOTAL_CACHED = longPreferencesKey("total_cached_tokens_long")
+        val TOTAL_COMPLETION_LEGACY = intPreferencesKey("total_completion_tokens")
+        val TOTAL_COMPLETION = longPreferencesKey("total_completion_tokens_long")
         val AUTO_CHECK_UPDATE = booleanPreferencesKey("auto_check_update")
         val IGNORED_UPDATE_VERSIONS = stringPreferencesKey("ignored_update_versions")
     }
@@ -89,6 +110,13 @@ class SettingsRepository(private val context: Context) {
     val settings: Flow<AppSettings> = context.settingsDataStore.data.map { p: Preferences -> read(p) }
 
     private fun read(p: Preferences) = AppSettings(
+        launchCount = (p[Keys.LAUNCH_COUNT] ?: 0L).coerceAtLeast(0L),
+        autoNewChatOnLaunch = p[Keys.AUTO_NEW_CHAT] ?: true,
+        fontSizeSp = p[Keys.FONT_SIZE] ?: 15f,
+        showReasoningCard = p[Keys.SHOW_REASONING] ?: true,
+        showCardTokenUsage = p[Keys.SHOW_USAGE] ?: true,
+        sendOnEnter = p[Keys.SEND_ENTER] ?: false,
+        pasteAsAttachment = p[Keys.PASTE_ATTACHMENT] ?: false,
         activeProviderId = p[Keys.PROVIDER] ?: "",
         activeModel = p[Keys.MODEL] ?: "",
         activeAssistantId = p[Keys.ASSISTANT] ?: "default",
@@ -103,14 +131,14 @@ class SettingsRepository(private val context: Context) {
         latexEnabled = p[Keys.LATEX_ENABLED] ?: true,
         ocrModel = p[Keys.OCR_MODEL] ?: "",
         ocrMode = p[Keys.OCR_MODE] ?: "auto",
-        titleModel = p[Keys.TITLE_MODEL] ?: "",
-        compressModel = p[Keys.COMPRESS_MODEL]?.takeIf(String::isNotBlank)
-            ?: COMPRESS_MODEL_CONVERSATION,
-        suggestionModel = p[Keys.SUGGESTION_MODEL] ?: "",
+        titleModel = p[Keys.TITLE_MODEL] ?: COMPRESS_MODEL_CONVERSATION,
+        compressModel = p[Keys.COMPRESS_MODEL] ?: COMPRESS_MODEL_CONVERSATION,
+        suggestionModel = p[Keys.SUGGESTION_MODEL] ?: COMPRESS_MODEL_CONVERSATION,
         auxFallbackToActive = p[Keys.AUX_FALLBACK] ?: false,
         debugLogBall = p[Keys.DEBUG_LOG_BALL] ?: false,
-        totalPromptTokens = p[Keys.TOTAL_PROMPT] ?: 0,
-        totalCompletionTokens = p[Keys.TOTAL_COMPLETION] ?: 0,
+        totalCachedTokens = p[Keys.TOTAL_CACHED] ?: 0L,
+        totalPromptTokens = p[Keys.TOTAL_PROMPT] ?: p[Keys.TOTAL_PROMPT_LEGACY]?.toLong() ?: 0L,
+        totalCompletionTokens = p[Keys.TOTAL_COMPLETION] ?: p[Keys.TOTAL_COMPLETION_LEGACY]?.toLong() ?: 0L,
         autoCheckUpdate = p[Keys.AUTO_CHECK_UPDATE] ?: true,
         ignoredUpdateVersions = (p[Keys.IGNORED_UPDATE_VERSIONS] ?: "")
             .split(',').filter { it.isNotBlank() }.toSet(),
@@ -119,6 +147,13 @@ class SettingsRepository(private val context: Context) {
     suspend fun update(transform: (AppSettings) -> AppSettings) = updateMutex.withLock {
         context.settingsDataStore.edit { p ->
             val next = transform(read(p))
+            p[Keys.LAUNCH_COUNT] = next.launchCount.coerceAtLeast(0L)
+            p[Keys.AUTO_NEW_CHAT] = next.autoNewChatOnLaunch
+            p[Keys.FONT_SIZE] = next.fontSizeSp
+            p[Keys.SHOW_REASONING] = next.showReasoningCard
+            p[Keys.SHOW_USAGE] = next.showCardTokenUsage
+            p[Keys.SEND_ENTER] = next.sendOnEnter
+            p[Keys.PASTE_ATTACHMENT] = next.pasteAsAttachment
             p[Keys.PROVIDER] = next.activeProviderId
             p[Keys.MODEL] = next.activeModel
             p[Keys.ASSISTANT] = next.activeAssistantId
@@ -137,6 +172,7 @@ class SettingsRepository(private val context: Context) {
             p[Keys.COMPRESS_MODEL] = next.compressModel
             p[Keys.SUGGESTION_MODEL] = next.suggestionModel
             p[Keys.AUX_FALLBACK] = next.auxFallbackToActive
+            p[Keys.TOTAL_CACHED] = next.totalCachedTokens
             p[Keys.TOTAL_PROMPT] = next.totalPromptTokens
             p[Keys.TOTAL_COMPLETION] = next.totalCompletionTokens
             p[Keys.AUTO_CHECK_UPDATE] = next.autoCheckUpdate
@@ -170,7 +206,8 @@ class SettingsRepository(private val context: Context) {
         update {
             it.copy(
                 totalPromptTokens = it.totalPromptTokens + usage.promptTokens,
-                totalCompletionTokens = it.totalCompletionTokens + usage.completionTokens
+                totalCompletionTokens = it.totalCompletionTokens + usage.completionTokens,
+                totalCachedTokens = it.totalCachedTokens + usage.cachedTokens
             )
         }
     }

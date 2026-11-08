@@ -1,20 +1,25 @@
 package com.miniichatNext.carter.vm
 
 import android.app.Application
-import com.miniichatNext.carter.R
 import androidx.lifecycle.viewModelScope
-import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.R
 import com.miniichatNext.carter.api.ChatMessage
 import com.miniichatNext.carter.data.model.Message
-import com.miniichatNext.carter.data.model.mergeCompressedMessages
-import kotlinx.coroutines.CancellationException
 import com.miniichatNext.carter.data.model.ProviderConfig
+import com.miniichatNext.carter.data.model.mergeCompressedMessages
 import com.miniichatNext.carter.data.store.COMPRESS_MODEL_CONVERSATION
+import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.util.newId
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 
 internal fun ChatViewModel.resolveModelRef(ref: String): Pair<ProviderConfig, String>? {
+    if (ref == COMPRESS_MODEL_CONVERSATION) {
+        val conv = conversations.value.firstOrNull { it.id == _activeId.value }
+        val assistant = assistants.value.firstOrNull { it.id == conv?.assistantId } ?: activeAssistant()
+        return effectiveConversationModel(conv, assistant, settings.value, providers.value)
+    }
     if (ref.isBlank()) return null
     if (ref.contains("::")) {
         val pid = ref.substringBefore("::")
@@ -34,12 +39,6 @@ private suspend fun ChatViewModel.runAuxCompletionOnce(
     prompt: String,
     conversationId: String?,
 ): String? {
-    if (provider.apiKey.isBlank()
-        && !provider.baseUrl.contains("localhost")
-        && !provider.baseUrl.contains("10.0.2.2")
-    ) {
-        return null
-    }
     val current = settings.value
     val conv = conversations.value.firstOrNull { it.id == conversationId }
     val assistant = assistants.value.firstOrNull { it.id == conv?.assistantId } ?: activeAssistant()
@@ -54,7 +53,9 @@ private suspend fun ChatViewModel.runAuxCompletionOnce(
             settings = effectiveSettings,
             modelId = model,
             messages = listOf(ChatMessage("user", prompt))
-        ).collect { delta -> if (delta.text.isNotEmpty()) sb.append(delta.text) }
+        ).collect { delta ->
+            if (delta.text.isNotEmpty()) sb.append(delta.text)
+        }
         sb.toString().trim().ifBlank { null }
     } catch (e: CancellationException) {
         throw e
@@ -74,7 +75,11 @@ internal suspend fun ChatViewModel.runAuxCompletion(
     prompt: String,
     conversationId: String? = _activeId.value,
 ): String? {
-    val resolved = resolveModelRef(modelRef)
+    val resolved = if (modelRef == COMPRESS_MODEL_CONVERSATION) {
+        val conv = conversations.value.firstOrNull { it.id == conversationId }
+        val assistant = assistants.value.firstOrNull { it.id == conv?.assistantId } ?: activeAssistant()
+        effectiveConversationModel(conv, assistant, settings.value, providers.value)
+    } else resolveModelRef(modelRef)
     if (resolved != null) {
         val (provider, model) = resolved
         val result = runAuxCompletionOnce(provider, model, prompt, conversationId)
@@ -314,7 +319,9 @@ private suspend fun ChatViewModel.runOcrCompletion(
                     )
                 )
             ))
-        ).collect { delta -> if (delta.text.isNotEmpty()) sb.append(delta.text) }
+        ).collect { delta ->
+            if (delta.text.isNotEmpty()) sb.append(delta.text)
+        }
         sb.toString().trim().ifBlank { null }
     } catch (e: CancellationException) {
         throw e

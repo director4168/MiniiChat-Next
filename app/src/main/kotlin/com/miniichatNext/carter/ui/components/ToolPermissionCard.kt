@@ -34,7 +34,7 @@ fun ToolPermissionCard(
 ) {
     val enabled = perm?.enabled ?: true
     // 服务器默认值与逐工具覆盖使用执行侧相同的优先级。
-    val requireApproval = perm?.requireApproval ?: defaultApproval
+    val requireApproval = perm?.takeUnless { it.inheritApproval }?.requireApproval ?: defaultApproval
 
     Card(
         modifier = Modifier.fillMaxWidth(),

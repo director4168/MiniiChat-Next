@@ -22,50 +22,54 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.delay
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.zIndex
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import com.miniichatNext.carter.R
-import com.miniichatNext.carter.data.store.AppSettings
-import com.miniichatNext.carter.data.model.Conversation
-import com.miniichatNext.carter.data.model.ProviderConfig
-import com.miniichatNext.carter.ui.chat.input.InputBar
 import com.miniichatNext.carter.data.avatar.Avatar
 import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.model.Attachment
+import com.miniichatNext.carter.data.model.Conversation
+import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.model.UserProfile
 import com.miniichatNext.carter.data.skills.Skill
+import com.miniichatNext.carter.data.store.AppSettings
 import com.miniichatNext.carter.debug.DebugLog
-import com.miniichatNext.carter.vm.effectiveSkillIds
-import com.miniichatNext.carter.vm.suggestionCacheKey
-import com.miniichatNext.carter.vm.ChatViewModel
-import com.miniichatNext.carter.vm.StreamOverlay
-import androidx.compose.runtime.collectAsState
+import com.miniichatNext.carter.ui.chat.input.InputBar
 import com.miniichatNext.carter.ui.markdown.MarkdownText
 import com.miniichatNext.carter.ui.markdown.preloadMarkdownDocument
+import com.miniichatNext.carter.vm.ChatViewModel
+import com.miniichatNext.carter.vm.StreamOverlay
+import com.miniichatNext.carter.vm.effectiveSkillIds
+import com.miniichatNext.carter.vm.suggestionCacheKey
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 
 @Composable
 private fun ChatMessageListItem(
@@ -95,6 +99,11 @@ private fun ChatMessageListItem(
                     .ifBlank { message.reasoningContent.orEmpty() }
                     .takeIf { it.isNotBlank() },
                 orderedParts = overlay.parts.ifEmpty { message.orderedParts },
+                usage = overlay.usage,
+                generationTimeMs = overlay.generationTimeMs,
+                lastUsage = overlay.lastUsage,
+                stepCount = overlay.stepCount,
+                finishedAt = overlay.finishedAt,
             )
         } ?: message
     }
@@ -162,6 +171,7 @@ fun ChatScreen(
     onApproveTool: ((com.miniichatNext.carter.data.model.ToolInvocation, String?) -> Unit)? = null,
     onRejectTool: ((com.miniichatNext.carter.data.model.ToolInvocation) -> Unit)? = null
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var input by rememberSaveable { mutableStateOf("") }
     var pendingAttachments by remember { mutableStateOf<List<com.miniichatNext.carter.data.model.Attachment>>(emptyList()) }
     val listState = rememberLazyListState()
@@ -171,7 +181,7 @@ fun ChatScreen(
     var rememberedCount by rememberSaveable { mutableIntStateOf(-1) }
     // 流式overlay只由最后一条生成中的消息订阅，历史消息保持稳定节点。
     val visibleMessages = remember(rawMessages) { rawMessages.filterNot { it.hidden } }
-    LaunchedEffect(conversation?.id, visibleMessages.size) {
+    LaunchedEffect(conversation?.id, visibleMessages.size, isStreaming) {
         snapshotFlow {
             val info = listState.layoutInfo
             val indexes = info.visibleItemsInfo.map { it.index }.filter { it in visibleMessages.indices }
@@ -182,12 +192,15 @@ fun ChatScreen(
                 if (range == null) return@collectLatest
                 delay(70)
                 val (first, last) = range
-                val indexesToPrewarm = ((first - 2).coerceAtLeast(0) until
+                // 往回只预热一条：更早的消息刚才就在屏内，缓存里已有
+                val indexesToPrewarm = ((first - 1).coerceAtLeast(0) until
                     (last + 3).coerceAtMost(visibleMessages.size))
                     .sortedBy { index -> if (index < first) first - index else index - first }
                 indexesToPrewarm.forEach { index ->
                     val message = visibleMessages[index]
-                    if (message.role == "assistant" && message.content.length > 512) {
+                    // 正在生成的那条每帧都在变，预解析只会白跑一遍
+                    val growing = isStreaming && index == visibleMessages.lastIndex
+                    if (message.role == "assistant" && message.content.length > 512 && !growing) {
                         preloadMarkdownDocument(message.content)
                     }
                 }
@@ -237,23 +250,37 @@ fun ChatScreen(
                 }
             }
     }
-    // 只在加载中且用户原本贴底时跟随；用户上滑后保留历史阅读位置。
+    val userScrollConnection = remember(conversation?.id) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y > 0f) followBottom = false
+                return Offset.Zero
+            }
+
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && consumed.y < 0f && !listState.canScrollForward) followBottom = true
+                return Offset.Zero
+            }
+        }
+    }
+    // 内容增长仅触发空闲时的贴底，不抢夺用户拖动和惯性滚动。
     LaunchedEffect(conversation?.id, isStreaming) {
         snapshotFlow {
             val info = listState.layoutInfo
-            val spacer = info.visibleItemsInfo.lastOrNull { it.index == info.totalItemsCount - 1 }
-            val bottomGap = spacer?.let {
-                info.viewportEndOffset - info.afterContentPadding - (it.offset + it.size)
-            } ?: Int.MAX_VALUE
-            Triple(listState.isScrollInProgress, listState.canScrollForward, bottomGap)
-        }
-            .distinctUntilChanged()
-            .collect { (scrolling, canScrollForward, bottomGap) ->
-            val atBottom = bottomGap.toFloat() <= followThresholdPx
-            if (scrolling) {
-                followBottom = atBottom
-            } else if (isStreaming && followBottom && atBottom && canScrollForward) {
-                listState.requestScrollToItem(listState.layoutInfo.totalItemsCount - 1)
+            val tail = info.visibleItemsInfo.lastOrNull()
+            val end = info.viewportEndOffset - info.afterContentPadding
+            val bottomGap = if (tail?.index == info.totalItemsCount - 1) {
+                ((tail.offset + tail.size) - end).coerceAtLeast(0)
+            } else Int.MAX_VALUE
+            Triple(listState.isScrollInProgress, listState.canScrollForward,
+                Triple(bottomGap, tail?.size ?: 0, info.viewportEndOffset))
+        }.collect { (scrolling, canScrollForward, geometry) ->
+            val bottomGap = geometry.first
+            if (!scrolling) {
+                if (bottomGap <= followThresholdPx && !canScrollForward) followBottom = true
+                if (isStreaming && followBottom && canScrollForward && listState.layoutInfo.totalItemsCount > 0) {
+                    listState.requestScrollToItem(listState.layoutInfo.totalItemsCount - 1)
+                }
             }
         }
     }
@@ -494,7 +521,7 @@ fun ChatScreen(
         } else {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().nestedScroll(userScrollConnection),
                 contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
@@ -529,6 +556,8 @@ fun ChatScreen(
                 item(key = "chat-bottom-spacer") { Spacer(Modifier.height(1.dp)) }
             }
             }
+
+        MessageJumper(listState, visibleMessages.size, onJump = { followBottom = false })
 
         // 面板打开时：点一下/滑一下消息区即收起（面板内、输入框内的点击不受影响；不消费事件，所以消息列表照常能滚动）
         if (addPanelOpen || candidatesOpen) {
@@ -584,7 +613,19 @@ fun ChatScreen(
 
         InputBar(
             value = input,
-            onValueChange = { input = it },
+            onValueChange = { updated ->
+                val added = updated.length - input.length
+                if (settings.pasteAsAttachment && added > 4000) {
+                    val file = java.io.File(context.filesDir, "uploads/paste_${java.util.UUID.randomUUID()}.txt")
+                    file.parentFile?.mkdirs()
+                    file.writeText(updated)
+                    pendingAttachments = pendingAttachments + com.miniichatNext.carter.data.model.Attachment(
+                        type = "file", uri = android.net.Uri.fromFile(file).toString(),
+                        mimeType = "text/plain", name = file.name, sizeBytes = file.length(),
+                    )
+                    input = ""
+                } else input = updated
+            },
             editing = editingMessageId != null,
             onCommitEdit = { text ->
                 editingMessageId?.let { id -> onEditMessage(id, text) }

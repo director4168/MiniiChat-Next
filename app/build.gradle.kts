@@ -21,8 +21,8 @@ android {
         applicationId = "com.miniichatNext.carter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 261102005
-        versionName = "v1.6.2"
+        versionCode = 261108023
+        versionName = "v1.7.0-beta"
         vectorDrawables { useSupportLibrary = true }
         externalNativeBuild {
             cmake {
@@ -184,7 +184,7 @@ dependencies {
 
     // intellij-markdown GFM解析器
     implementation(libs.jetbrains.markdown)
-    implementation("org.jsoup:jsoup:1.18.3")   // HTML解析（markdown管线用；不走版本目录，避免AndroidIDE sync缓存过期导致访问器缺失）
+    implementation("org.jsoup:jsoup:1.18.3")   // HTML解析
 }
 
 // 自定义一个工具，用于将打包输出的apk移动到/build-outputs

@@ -1,34 +1,36 @@
 package com.miniichatNext.carter.vm
 
-import androidx.compose.runtime.Immutable
-
 import android.app.Application
-import com.miniichatNext.carter.R
+import androidx.compose.runtime.Immutable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.miniichatNext.carter.R
 import com.miniichatNext.carter.api.LlmClient
-import com.miniichatNext.carter.data.store.AppSettings
-import com.miniichatNext.carter.data.model.Assistant
-import com.miniichatNext.carter.data.store.AssistantStore
-import com.miniichatNext.carter.data.model.Conversation
-import com.miniichatNext.carter.data.store.ConversationStore
-import com.miniichatNext.carter.data.model.ProviderConfig
-import com.miniichatNext.carter.data.model.MessageSegment
-import com.miniichatNext.carter.data.model.ToolInvocationState
-import com.miniichatNext.carter.data.store.ProviderStore
-import com.miniichatNext.carter.data.store.SettingsRepository
-import com.miniichatNext.carter.data.skills.Skill
-import com.miniichatNext.carter.data.skills.SkillStore
-import com.miniichatNext.carter.data.model.UserProfile
-import com.miniichatNext.carter.data.model.UserProfileStore
-import com.miniichatNext.carter.data.tools.BuiltInFileTools
+import com.miniichatNext.carter.data.avatar.Avatar
+import com.miniichatNext.carter.data.avatar.AvatarStorage
 import com.miniichatNext.carter.data.mcp.McpServerConfig
 import com.miniichatNext.carter.data.mcp.McpStore
 import com.miniichatNext.carter.data.mcp.McpTool
 import com.miniichatNext.carter.data.mcp.McpToolPermission
+import com.miniichatNext.carter.data.model.Assistant
+import com.miniichatNext.carter.data.model.Conversation
+import com.miniichatNext.carter.data.model.MessageSegment
+import com.miniichatNext.carter.data.model.ProviderConfig
+import com.miniichatNext.carter.data.model.ToolInvocationState
+import com.miniichatNext.carter.data.model.UserProfile
+import com.miniichatNext.carter.data.model.UserProfileStore
+import com.miniichatNext.carter.data.skills.Skill
+import com.miniichatNext.carter.data.skills.SkillStore
+import com.miniichatNext.carter.data.store.AppSettings
+import com.miniichatNext.carter.data.store.AssistantStore
+import com.miniichatNext.carter.data.store.ConversationStore
+import com.miniichatNext.carter.data.store.ProviderStore
+import com.miniichatNext.carter.data.store.SettingsRepository
+import com.miniichatNext.carter.data.tools.BuiltInFileTools
 import com.miniichatNext.carter.data.workspace.WorkspaceEntity
 import com.miniichatNext.carter.data.workspace.WorkspaceRepository
 import com.miniichatNext.carter.data.workspace.WorkspaceStore
+import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -39,19 +41,20 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import com.miniichatNext.carter.data.avatar.Avatar
-import com.miniichatNext.carter.data.avatar.AvatarStorage
-import com.miniichatNext.carter.debug.DebugLog
 
 class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
+    internal var startupApplied = false
     internal val store = ConversationStore(app)
     val settingsRepo = SettingsRepository(app)
     val providerStore = ProviderStore(app)
     val assistantStore = AssistantStore(app)
     internal val skillStore = SkillStore(app)
     internal val userProfileStore = UserProfileStore(app)
-    internal val client = LlmClient()
+    internal val client = LlmClient { usage ->
+        runCatching { settingsRepo.addTokenUsage(usage) }
+            .onFailure { DebugLog.e("UsageRecorder", "record usage failed", it) }
+    }
 
     /** MCP服务器/工具/权限（纯JDK JSON-RPC客户端，不再依赖MCP SDK与Ktor） */
     internal val mcpStore = McpStore(app)
@@ -94,6 +97,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     val workspaces: StateFlow<List<WorkspaceEntity>> = workspaceRepository.workspacesFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    internal val mcpSyncJobs = mutableMapOf<String, Job>()
+    internal val _syncingMcpIds = MutableStateFlow<Set<String>>(emptySet())
+    val syncingMcpIds: StateFlow<Set<String>> = _syncingMcpIds.asStateFlow()
 
     val mcpServers: StateFlow<List<McpServerConfig>> = mcpStore.serversFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -324,4 +331,9 @@ data class StreamOverlay(
     val content: String,
     val reasoning: String,
     val parts: List<MessageSegment>,
+    val usage: com.miniichatNext.carter.data.model.TokenUsage? = null,
+    val generationTimeMs: Long? = null,
+    val lastUsage: com.miniichatNext.carter.data.model.TokenUsage? = null,
+    val stepCount: Int? = null,
+    val finishedAt: Long? = null,
 )

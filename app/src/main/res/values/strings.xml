@@ -74,6 +74,8 @@
     <string name="about_subtitle">Version, licenses and third-party notices</string>
     <string name="about_version_label">Version</string>
     <string name="about_build_label">Build</string>
+    <string name="about_launch_count">App launches</string>
+    <string name="about_launch_count_value">%1$d launches</string>
     <string name="about_issue_title">Open a GitHub issue</string>
     <string name="about_open_link_failed">Couldn\'t open the link</string>
     <string name="about_mail_subject">MiniiChat Next feedback</string>
@@ -154,7 +156,7 @@
     <string name="skills_import_url">Import from URL</string>
     <string name="skills_import_file">Import from local file</string>
     <string name="skills_create_manual">Create manually</string>
-    <string name="skills_url_hint">Paste a direct link to a .md skill file (e.g. raw.githubusercontent.com).</string>
+    <string name="skills_url_hint">Paste a direct link to a .md skill file</string>
     <string name="skills_url_loading">Downloading…</string>
     <string name="skill_edit_title">Edit skill</string>
     <string name="skill_new_title">New skill</string>
@@ -168,7 +170,7 @@
     <string name="skill_no_skills_for_assistant">No skills available. Import some in Settings → Skills.</string>
     <string name="skill_auto_name">Parsed name: %1$s</string>
     <string name="skill_name_required">Please use a proper SKILL file</string>
-    <string name="skill_delete_confirm">Delete skill \"%1$s\"? Assistants linked to it will be unlinked.</string>
+    <string name="skill_delete_confirm">Delete skill \"%1$s\"?</string>
 
     <!-- Avatar picker -->
     <string name="avatar_picker_title">Avatar</string>
@@ -287,7 +289,7 @@
     <string name="debug_theme_reset_confirm_msg">The app colors will be restored to their original appearance.</string>
     <string name="debug_theme_sub">Preview and modify app colors</string>
     <string name="debug_theme_preview">Preview</string>
-    <string name="debug_theme_preview_sample">onSurfaceVariant sample text</string>
+    <string name="debug_theme_preview_sample">Secondary sample text</string>
     <string name="debug_theme_edit">Overrides (light / dark, #RRGGBB or #AARRGGBB)</string>
     <string name="debug_theme_saved">Saved and applied</string>
     <string name="debug_theme_reset">Overrides cleared</string>
@@ -304,7 +306,7 @@
     <string name="debug_level_label">Log level (DEBUG_[%1$s].log)</string>
     <string name="debug_clear">Clear</string>
     <string name="debug_cleared">Logs cleared</string>
-    <string name="debug_log_ball">Debugging the floating ball</string>
+    <string name="debug_log_ball">Debug floating ball</string>
     <string name="debug_log_ball_permission">Please grant MiniiChat Next the permission to display on top of other applications and turn the switch back on.</string>
     <string name="debug_ball_title">Debug</string>
     <string name="debug_ball_log_level">Log level</string>
@@ -393,7 +395,7 @@
 
     <!-- Workspace management and terminal -->
     <string name="workspace_title">Workspaces</string>
-    <string name="workspace_env_section">Linux environment (rootfs)</string>
+    <string name="workspace_env_section">Linux environment</string>
     <string name="workspace_env_installed">Installed</string>
     <string name="workspace_rootfs_url">rootfs download URL</string>
     <string name="workspace_reinstall">Reinstall rootfs</string>
@@ -408,7 +410,7 @@
     <string name="workspace_terminal_close">Close</string>
     <string name="workspace_terminal_not_installed">Rootfs is not installed yet</string>
     <string name="workspace_terminal_menu">Terminal</string>
-    <string name="workspace_terminal_unbound">No workspace available. Create one in Settings - Workspace first.</string>
+    <string name="workspace_terminal_unbound">No workspace available. Create one in Settings → Workspace first.</string>
     <string name="workspace_terminal_tab">Terminal %1$d</string>
     <string name="workspace_cat_read">Read files</string>
     <string name="workspace_cat_read_desc">Read, list and search files. No approval by default.</string>
@@ -416,7 +418,7 @@
     <string name="workspace_cat_write_desc">Write, edit, delete, move, copy files. No approval by default.</string>
     <string name="workspace_cat_execute">Execute shell commands</string>
     <string name="workspace_cat_execute_desc">Run shell commands in the workspace. Approval required by default.</string>
-    <string name="workspace_terminal_unbound_reason">This conversation has no workspace bound. Bind one in + menu - Workspace first.</string>
+    <string name="workspace_terminal_unbound_reason">This conversation has no workspace bound. Bind one in + menu → Workspace first.</string>
     <string name="workspace_terminal_not_installed_reason">This workspace is not installed or is broken. Install or repair it first.</string>
     <string name="workspace_shell_compat_mode">Compatibility mode (only if issues occur)</string>
     <string name="workspace_run">Run</string>
@@ -424,14 +426,14 @@
 
     <!-- MCP server management -->
     <string name="section_advanced">Advanced</string>
-    <string name="mcp_title">MCP service</string>
+    <string name="mcp_title">MCP services</string>
     <string name="mcp_hint">Manage MCP services</string>
     <string name="mcp_servers_section">Servers</string>
-    <string name="mcp_add">Add server</string>
-    <string name="mcp_edit">Edit server</string>
+    <string name="mcp_add">Add MCP service</string>
+    <string name="mcp_edit">Edit MCP service</string>
     <string name="mcp_name">Name</string>
     <string name="mcp_url">URL (HTTP endpoint)</string>
-    <string name="mcp_none_configured">(nothing configured yet — add one in Settings → Advanced → MCP servers)</string>
+    <string name="mcp_none_configured">(nothing configured yet — add one in Settings → MCP services)</string>
     <string name="mcp_transport">Transport protocol</string>
     <string name="mcp_headers">Custom headers</string>
     <string name="mcp_header_name">Header name</string>
@@ -441,8 +443,8 @@
     <string name="mcp_tool_approval">Require approval</string>
 
     <!-- MCP permissions and status -->
-    <string name="setting_open_private_dir">Open app data folder</string>
-    <string name="setting_open_private_dir_hint">Browse the app\'s private directory with a file manager</string>
+    <string name="setting_open_private_dir">Open private directory</string>
+    <string name="setting_open_private_dir_hint">Browse this app\'s private directory with a file manager; available only while the app is running</string>
     <string name="setting_open_private_dir_failed">No file manager available to open the folder</string>
     <string name="model_picker_no_providers">No providers yet — add one in Settings.</string>
     <string name="model_picker_no_models">(no models — fetch them in provider settings)</string>
@@ -457,7 +459,7 @@
     <string name="mcp_builtin_title">Built-in tool management</string>
     <string name="mcp_builtin_subtitle">Manage built-in tools for files, web, workspace and device features</string>
     <string name="mcp_empty_title">No MCP servers yet</string>
-    <string name="mcp_empty_hint">Supports the Streamable HTTP and legacy SSE standards. Add an MCP server to give the AI access to databases, web search or external APIs.</string>
+    <string name="mcp_empty_hint">Supports the Streamable HTTP and legacy SSE standard protocols</string>
 
     <!-- Built-in tool groups -->
     <string name="mcp_tools_count">%1$d tools</string>
@@ -599,7 +601,7 @@
     <string name="clarify_submit">Submit and continue</string>
     <string name="clarify_card_title">Requirements clarified</string>
     <string name="clarify_questions_count">%1$d questions</string>
-    <string name="clarify_answered_count">%1$d questions · Confirmed</string>
+    <string name="clarify_answered_count">Answered %1$d questions</string>
     <string name="clarify_summary_question">Question %1$d: %2$s</string>
     <string name="clarify_expand">Expand details</string>
     <string name="clarify_collapse">Collapse</string>
@@ -611,7 +613,7 @@
     <!-- Attachment output messages -->
     <string name="attachment_block_head">===== Attachment: %1$s (%2$s) =====</string>
     <string name="attachment_truncated_note">\n…(truncated: the file is %1$s in total, only the first %2$d KB inlined)</string>
-    <string name="attachment_block_end">\n===== End of attachment: %1$s =====</string>
+    <string name="attachment_block_end">\nEnd of attachment: %1$s</string>
     <string name="attachment_not_inlined">%1$s %2$s\n(%3$s, content not inlined)</string>
     <string name="attachment_read_failed">%1$s\n(read failed, file info only)</string>
     <string name="attachment_list_truncated">Truncated: %1$s</string>
@@ -815,12 +817,10 @@
     <string name="builtin_tool_calendar_create_desc">Create a calendar event. This action requires approval.</string>
     <string name="builtin_tool_calendar_create_schema">{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;title&quot;:{&quot;type&quot;:&quot;string&quot;},&quot;begin_ms&quot;:{&quot;type&quot;:&quot;integer&quot;},&quot;end_ms&quot;:{&quot;type&quot;:&quot;integer&quot;},&quot;description&quot;:{&quot;type&quot;:&quot;string&quot;},&quot;location&quot;:{&quot;type&quot;:&quot;string&quot;}},&quot;required&quot;:[&quot;title&quot;,&quot;begin_ms&quot;]}</string>
 
-    <!-- Easter menu -->
-
     <!-- First-run introduction -->
     <string name="onboarding_welcome">Welcome to MiniiChat Next</string>
     <string name="onboarding_step">Step %1$d of %2$d</string>
-    <string name="onboarding_intro_title">A private, flexible AI chat workspace</string>
+    <string name="onboarding_intro_title">A private and flexible AI Agents client</string>
     <string name="onboarding_intro_body">Before you begin, take a moment to configure the basics. You can skip optional steps and change everything later in Settings.</string>
     <string name="onboarding_intro_provider">Connect OpenAI-compatible or Anthropic providers</string>
     <string name="onboarding_intro_workspace">Use conversations, assistants and Linux workspaces</string>
@@ -836,13 +836,13 @@
 
     <!-- First-run provider setup -->
     <string name="onboarding_provider_title">Add a provider</string>
-    <string name="onboarding_provider_hint">Add a provider now, or skip and configure one later.</string>
+    <string name="onboarding_provider_hint">Add a provider now, or skip and configure one later in Settings → Providers</string>
     <string name="onboarding_provider_name">Provider name</string>
-    <string name="onboarding_provider_name_hint">My provider</string>
+    <string name="onboarding_provider_name_hint">Provider name</string>
     <string name="onboarding_provider_base_url">BaseUrl</string>
     <string name="onboarding_provider_api_key">API Key</string>
-    <string name="onboarding_provider_api_key_hint">Optional for local services</string>
-    <string name="onboarding_provider_error">Enter a provider name and Base URL</string>
+    <string name="onboarding_provider_api_key_hint">Enter your API Key</string>
+    <string name="onboarding_provider_error">Enter a provider name and BaseUrl, or skip this step in the top right</string>
 
     <!-- First-run permission setup -->
     <string name="onboarding_permission_title">Permissions</string>
@@ -856,8 +856,8 @@
     <string name="onboarding_permission_overlay_desc">Only used for the optional floating debug ball or keep-alive control</string>
     <string name="onboarding_permission_media">Photos and media permission</string>
     <string name="onboarding_permission_media_desc">Allows direct access to selected image, video and audio attachments.</string>
-    <string name="onboarding_permission_install">Install updates</string>
-    <string name="onboarding_permission_install_desc">Allows the app to open the system installer for downloaded updates.</string>
+    <string name="onboarding_permission_install">Install unknown apps</string>
+    <string name="onboarding_permission_install_desc">Used to install update packages downloaded by the app</string>
 
     <!-- First-run navigation -->
     <string name="onboarding_previous">Previous</string>
@@ -865,4 +865,138 @@
     <string name="onboarding_skip">Skip</string>
     <string name="onboarding_enter">Enter app</string>
 
+
+
+
+    <!-- Preferences, data backup and log viewer -->
+
+    <!-- Model selection and message statistics -->
+    <string name="model_selection">Model selection</string>
+    <string name="message_usage_live_stats">↑ %1$s tokens   ↓ %2$s tokens   Speed %3$s tokens/s   Time %4$.1fs</string>
+    <string name="message_usage_live_context">Context %1$s tokens · %2$d requests</string>
+    <string name="message_usage_estimate_hint">≈ marks a local text estimate; actual usage depends on the provider.</string>
+    <string name="message_usage_stats">↑ %1$d tokens   ↓ %2$d tokens   Speed %3$.1f tokens/s   Time %4$.1fs</string>
+    <string name="message_usage_estimated">Estimated token counts</string>
+
+    <!-- Conversation and display preferences -->
+    <string name="pref_conversations">Conversations</string>
+    <string name="pref_auto_new_chat">New chat on launch</string>
+    <string name="pref_auto_new_chat_desc">Turn off to return to the previous chat</string>
+    <string name="pref_display">Display and text size</string>
+    <string name="pref_font_size">Message text size: %1$d sp</string>
+    <string name="pref_font_preview">Preview text</string>
+    <string name="pref_reasoning">Show reasoning cards</string>
+    <string name="pref_reasoning_desc">Show model reasoning without changing request settings</string>
+    <string name="pref_usage">Show tokens, speed and time</string>
+    <string name="pref_usage_desc">Display generation statistics below each reply</string>
+
+    <!-- Input preferences -->
+    <string name="pref_interaction">Interaction</string>
+    <string name="pref_enter">Send with Enter</string>
+    <string name="pref_enter_desc">Shift+Enter still inserts a new line</string>
+    <string name="pref_paste">Convert long pasted text to an attachment</string>
+    <string name="pref_paste_desc">Convert pasted text over 4000 characters to a text file</string>
+
+    <!-- Data backup and restore -->
+    <string name="backup_title">Data import and backup</string>
+    <string name="backup_subtitle">Export ZIP backups or restore application data</string>
+    <string name="backup_warning">Encrypted backup encrypts all data and cannot be recovered if the password is lost! Quick backup does not encrypt data. API Key fields are always backed up in ciphertext</string>
+    <string name="backup_scope">Includes settings, providers, assistants, chats, MCP, Skills, avatars, backgrounds and readable attachments. Excludes workspaces and Linux rootfs.</string>
+    <string name="backup_export">Export backup</string>
+    <string name="backup_import">Import backup</string>
+    <string name="backup_done">Data restored. Restarting the app…</string>
+    <string name="backup_saved">Backup saved</string>
+    <string name="backup_missing">Some linked files were not readable or excluded. Their original references were retained. Count</string>
+    <string name="backup_restore_confirm">Choose a restore mode. Replace overwrites existing application data. Merge keeps existing items with the same ID and imports new items. Settings and profile remain unchanged during merge. The app will restart after restoring.</string>
+    <string name="backup_replace_warning">Replace will overwrite all existing application configuration and conversations. Continue?</string>
+    <string name="backup_replace">Replace existing data</string>
+    <string name="backup_merge">Merge with existing data</string>
+
+    <!-- Log file browser -->
+    <string name="log_viewer_title">Log viewer</string>
+    <string name="log_search">Search current log</string>
+    <string name="log_previous">Previous match</string>
+    <string name="log_next">Next match</string>
+    <string name="log_refresh">Refresh</string>
+    <string name="log_share">Share</string>
+    <string name="log_export">Export</string>
+    <string name="log_empty">No log files yet</string>
+    <string name="log_delete_title">Delete this log file?</string>
+
+
+
+    <!-- Message navigation and encrypted backup -->
+    <string name="jump_first">First message</string>
+    <string name="jump_previous">Previous message</string>
+    <string name="jump_next">Next message</string>
+    <string name="jump_last">Last message</string>
+    <string name="backup_password_title">Set backup password</string>
+    <string name="backup_password">Backup password</string>
+    <string name="backup_password_confirm">Confirm password</string>
+    <string name="backup_password_import">Backup password</string>
+    <string name="backup_password_error">Incorrect password or damaged encrypted data</string>
+    <string name="message_usage_context">Context %1$d tokens · %2$d requests</string>
+
+
+
+    <!-- MCP save and synchronization status -->
+    <string name="mcp_saved">MCP configuration saved</string>
+    <string name="mcp_save_failed">MCP configuration was not saved: %1$s</string>
+    <string name="mcp_saved_sync_failed">Configuration saved; tool synchronization failed: %1$s. Retry from this server’s details; do not add it again.</string>
+    <string name="mcp_syncing">Configuration saved · synchronizing tools…</string>
+    <string name="mcp_status_saved_error">Saved · tool synchronization failed</string>
+    <string name="mcp_status_synced">Saved · tools synchronized</string>
+    <string name="mcp_status_saved">Saved · tools not synchronized</string>
+    <string name="mcp_retry_sync">Retry tool synchronization</string>
+
+
+
+    <!-- Message usage and jump controls -->
+    <string name="chat_message_usage_title">Usage details</string>
+    <string name="chat_message_usage_steps">%1$d tool requests</string>
+    <string name="chat_message_usage_context_short">%1$s context</string>
+    <string name="chat_message_usage_cached_short">(%1$s cached)</string>
+    <string name="chat_message_usage_context">Context</string>
+    <string name="chat_message_usage_step_count">Tool requests</string>
+    <string name="chat_message_usage_input">Input</string>
+    <string name="chat_message_usage_cached">Cache hit</string>
+    <string name="chat_message_usage_output">Output</string>
+    <string name="chat_message_usage_total_input">Total input</string>
+    <string name="chat_message_usage_total_cached">Total cache hit</string>
+    <string name="chat_message_usage_total_output">Total output</string>
+    <string name="chat_message_usage_speed">Speed</string>
+    <string name="chat_message_usage_duration">Generation time</string>
+    <string name="debug_message_jumper_background">Message jump background (with alpha)</string>
+    <string name="debug_message_jumper_content">Message jump icon</string>
+
+
+
+    <!-- Backup modes -->
+    <string name="backup_quick">Quick backup</string>
+    <string name="backup_encrypted">Encrypted backup</string>
+    <string name="backup_quick_hint">Quick backup without data encryption. API Keys and request headers are still saved as ciphertext, but the recovery key is stored in manifest.json so anyone holding the ZIP can decrypt them, making it insecure</string>
+    <string name="backup_encrypted_hint">Encrypted backup; data is encrypted and requires a password. Chat data, avatars, attachments, Skills and all other data files are encrypted with only the index readable. Data cannot be recovered if the password is lost, so keep your password safe</string>
+    <string name="backup_detected_encrypted">Encrypted backup file; enter the backup password to restore</string>
+    <string name="backup_detected_quick">Quick backup file</string>
+
+
+
+    <!-- Color role descriptions -->
+    <string name="debug_role_primary">Primary color</string>
+    <string name="debug_role_on_primary">On primary</string>
+    <string name="debug_role_primary_container">Primary container</string>
+    <string name="debug_role_on_primary_container">On primary container</string>
+    <string name="debug_role_background">Background</string>
+    <string name="debug_role_on_background">On background</string>
+    <string name="debug_role_surface">Surface</string>
+    <string name="debug_role_on_surface">On surface</string>
+    <string name="debug_role_surface_variant">Surface variant</string>
+    <string name="debug_role_on_surface_variant">On surface variant</string>
+    <string name="debug_role_outline">Outline</string>
+    <string name="debug_role_outline_variant">Outline variant</string>
+    <string name="debug_role_error">Error</string>
+    <string name="debug_role_on_error">On error</string>
+    <string name="debug_role_workspace_warning">Workspace warning</string>
+    <string name="debug_role_workspace_danger">Workspace danger</string>
+    <string name="debug_role_toast_warning_action">Toast warning action</string>
 </resources>

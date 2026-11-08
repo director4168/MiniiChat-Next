@@ -119,7 +119,7 @@ class ResponsesApiTests {
         ).flatMap(parser::accept)
         assertTrue(events.any { it.text == "hello" })
         assertTrue(events.any { it.reasoning == "thinking" })
-        assertTrue(events.any { it.usage?.totalTokens == 10 })
+        assertTrue(events.any { it.usage?.let { usage -> usage.promptTokens + usage.completionTokens == 10 } == true })
         val call = parser.finish().single().toolCalls.single()
         assertEquals("call-2", call.id)
         assertEquals("fixture_tool", call.name)
@@ -145,7 +145,7 @@ class ResponsesApiTests {
         val deltas = parseResponsesApiBody("""{"usage":{"input_tokens":4,"output_tokens":6},"output":[{"type":"message","content":[{"type":"output_text","text":"answer"}]},{"type":"reasoning","summary":[{"text":"reason"}]},{"type":"function_call","call_id":"call","name":"fixture_tool","arguments":"{}"}]}""")
         assertTrue(deltas.any { it.text == "answer" })
         assertTrue(deltas.any { it.reasoning == "reason" })
-        assertTrue(deltas.any { it.usage?.totalTokens == 10 })
+        assertTrue(deltas.any { it.usage?.let { usage -> usage.promptTokens + usage.completionTokens == 10 } == true })
         assertEquals("call", deltas.single { it.toolCalls.isNotEmpty() }.toolCalls.single().id)
     }
 
@@ -154,7 +154,7 @@ class ResponsesApiTests {
         val parser = ResponsesApiStreamParser()
         val deltas = parser.accept("""{"type":"response.incomplete","response":{"status":"incomplete","usage":{"input_tokens":2,"output_tokens":1},"output":[{"type":"message","content":[{"type":"output_text","text":"partial"}]}]}}""")
         assertTrue(deltas.any { it.text == "partial" })
-        assertTrue(deltas.any { it.usage?.totalTokens == 3 })
+        assertTrue(deltas.any { it.usage?.let { usage -> usage.promptTokens + usage.completionTokens == 3 } == true })
     }
 
     @Test

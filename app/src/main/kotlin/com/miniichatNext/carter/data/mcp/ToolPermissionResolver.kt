@@ -12,6 +12,6 @@ internal fun resolveToolPermission(
     val permission = permissions.firstOrNull { it.toolName == toolName && it.serverId == serverId }
     return EffectiveToolPermission(
         enabled = permission?.enabled ?: true,
-        requireApproval = categoryApproval ?: permission?.requireApproval ?: defaultApproval,
+        requireApproval = categoryApproval ?: permission?.takeUnless { it.inheritApproval }?.requireApproval ?: defaultApproval,
     )
 }

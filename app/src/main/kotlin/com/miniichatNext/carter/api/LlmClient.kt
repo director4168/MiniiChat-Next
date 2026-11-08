@@ -1,15 +1,15 @@
 package com.miniichatNext.carter.api
 
-import com.miniichatNext.carter.util.AppJson
-import com.miniichatNext.carter.data.model.ProviderConfig
-import com.miniichatNext.carter.data.model.ProviderType
-import kotlinx.serialization.json.JsonObjectBuilder
-import com.miniichatNext.carter.data.model.ProviderOverride
 import com.miniichatNext.carter.data.model.PromptCacheTtl
+import com.miniichatNext.carter.data.model.ProviderConfig
+import com.miniichatNext.carter.data.model.ProviderOverride
+import com.miniichatNext.carter.data.model.ProviderType
 import com.miniichatNext.carter.data.model.ThinkingLevel
 import com.miniichatNext.carter.data.model.TokenUsage
+import com.miniichatNext.carter.data.model.recordUsage
 import com.miniichatNext.carter.data.store.AppSettings
 import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.util.AppJson
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
@@ -29,10 +29,12 @@ import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -43,7 +45,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
-class LlmClient {
+class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
     private val json get() = AppJson.jsonCompact
 
     private val client by lazy {
@@ -122,6 +124,7 @@ class LlmClient {
                 "bodyChars=${bodyText.length}"
         )
         suspend fun doPost(target: String) {
+            flow<StreamDelta> {
             DebugLog.i("Llm", "POST $target")
             client.preparePost(target) {
                 contentType(ContentType.Application.Json)
@@ -174,6 +177,7 @@ class LlmClient {
                     }
                 }
             }
+            }.recordUsage(onUsage).collect { emit(it) }
         }
         if (fallbackEndpoint != null) {
             try {
@@ -247,6 +251,9 @@ class LlmClient {
         val obj = buildJsonObject {
             put("model", modelId)
             put("stream", stream)
+            if (stream) {
+                putJsonObject("stream_options") { put("include_usage", true) }
+            }
             // 开了推理就别带temperature：o系列/DeepSeek等会直接报错
             if (effThinking == ThinkingLevel.OFF) put("temperature", effTemp)
             put("messages", msgsJson)
@@ -321,9 +328,16 @@ class LlmClient {
         var textEvents = 0
         var thinkEvents = 0
         var toolCallCount = 0
+        var finished = false
+        var finishAt = 0L
         val pendingTools = mutableMapOf<Int, PendingToolCall>()
         while (true) {
-            val line = channel.readUTF8Line() ?: break
+            val line = if (finished) {
+                val remaining = 1000L - (android.os.SystemClock.elapsedRealtime() - finishAt)
+                if (remaining <= 0) break
+                kotlinx.coroutines.withTimeoutOrNull(remaining) { channel.readUTF8Line() }
+            } else channel.readUTF8Line()
+            if (line == null) break
             if (line.isEmpty()) continue
             if (!line.startsWith("data:")) continue
             val payload = line.removePrefix("data:").trim()
@@ -332,13 +346,14 @@ class LlmClient {
             // 有些网关200里塞{"error":{...}}，解析后看有没有顶层error字段
             // 不要用字符串匹配，否则模型正文里出现error字样会被误判
             val element = runCatching { json.parseToJsonElement(payload) }.getOrNull() ?: continue
-            (element as? JsonObject)?.get("error")?.let { errEl ->
+            (element as? JsonObject)?.get("error")?.takeUnless { it is kotlinx.serialization.json.JsonNull }?.let { errEl ->
                 val errMsg = (errEl as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull
                 throw RuntimeException((errMsg ?: errEl.toString()).take(500))
             }
             val chunk = runCatching {
                 json.decodeFromJsonElement(ChatChunk.serializer(), element)
             }.getOrNull() ?: continue
+            emit(StreamDelta(eventReceived = true))
             val delta = chunk.choices.firstOrNull()?.delta
             val text = delta?.content.orEmpty()
             val reasoning = delta?.reasoningContent.orEmpty()
@@ -353,19 +368,17 @@ class LlmClient {
                 if (tc.function?.name != null) p.name = tc.function.name
                 if (tc.function != null) p.args.append(tc.function.arguments)
             }
-            chunk.usage?.let {
-                emit(StreamDelta(usage = TokenUsage(
-                    promptTokens = it.promptTokens,
-                    completionTokens = it.completionTokens,
-                    totalTokens = it.totalTokens
-                )))
-            }
+            val usageObject = (element as? JsonObject)?.get("usage") as? JsonObject
+                ?: (element as? JsonObject)?.get("usageMetadata") as? JsonObject
+            usageObject?.let { emit(StreamDelta(usage = parseTokenUsage(it))) }
+            if (finished && usageObject != null) break
             // finish_reason是权威结束信号：部分网关（如MiniMax）发完后不断开连接、
             // 也不发[DONE]，只靠EOF会一直卡在"回复中"
             val finishReason = chunk.choices.firstOrNull()?.finishReason
             if (finishReason != null) {
-                DebugLog.i("Llm", "openai stream finish_reason=" + finishReason + ", break")
-                break
+                DebugLog.i("Llm", "openai stream finish_reason=" + finishReason)
+                if (!finished) finishAt = android.os.SystemClock.elapsedRealtime()
+                finished = true
             }
         }
         DebugLog.i(
@@ -387,7 +400,8 @@ class LlmClient {
     private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamDelta>.readOpenAiNonStream(
         response: io.ktor.client.statement.HttpResponse
     ) {
-        val parsed = runCatching { json.decodeFromString(ChatResponse.serializer(), response.bodyAsText()) }
+        val raw = response.bodyAsText()
+        val parsed = runCatching { json.decodeFromString(ChatResponse.serializer(), raw) }
             .getOrElse { throw IllegalStateException("Invalid Chat Completions response", it) }
         val message = parsed.choices.firstOrNull()?.message
             ?: throw IllegalStateException("Chat Completions response has no choice")
@@ -398,7 +412,9 @@ class LlmClient {
             val name = call.function?.name?.takeIf { it.isNotBlank() } ?: return@forEachIndexed
             emit(StreamDelta(toolCalls = listOf(ToolCallDelta(id, name, call.function?.arguments ?: "{}"))))
         }
-        parsed.usage?.let { emit(StreamDelta(usage = TokenUsage(it.promptTokens, it.completionTokens, it.totalTokens))) }
+        val element = json.parseToJsonElement(raw) as? JsonObject
+        val usageObject = (element?.get("usage") ?: element?.get("usageMetadata")) as? JsonObject
+        usageObject?.let { emit(StreamDelta(usage = parseTokenUsage(it))) }
     }
 
     private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamDelta>.readResponsesStream(channel: ByteReadChannel) {
@@ -408,6 +424,7 @@ class LlmClient {
             if (!line.startsWith("data:")) continue
             val data = line.removePrefix("data:").trim()
             if (data.isEmpty() || data == "[DONE]") continue
+            emit(StreamDelta(eventReceived = true))
             parser.accept(data).forEach { emit(it) }
             val type = runCatching { json.parseToJsonElement(data).jsonObject["type"]?.jsonPrimitive?.contentOrNull }.getOrNull()
             if (type == "response.completed" || type == "response.incomplete") break
@@ -727,8 +744,6 @@ class LlmClient {
         channel: ByteReadChannel
     ) {
         DebugLog.i("Llm", "claude stream reading...")
-        var usageInput = 0
-        var usageOutput = 0
         val pendingTools = mutableMapOf<Int, PendingToolCall>()
         // 诊断计数：流式无输出时定位是哪类块没解析到
         var textEvents = 0
@@ -743,6 +758,7 @@ class LlmClient {
             val data = raw.substring(colon + 1).trim()
             if (field != "data" || data.isEmpty() || data == "[DONE]") continue
             val obj = runCatching { json.parseToJsonElement(data).jsonObject }.getOrNull() ?: continue
+            emit(StreamDelta(eventReceived = true))
             when (obj["type"]?.jsonPrimitive?.contentOrNull) {
                 "content_block_start" -> {
                     val start = obj["content_block"]?.jsonObject ?: continue
@@ -776,26 +792,10 @@ class LlmClient {
                 }
                 // 流结束信号：主动退出循环，不等服务器断开连接（否则"已完成仍显示回复中"）
                 "message_stop" -> break
-                "message_delta" -> {
-                    val u = obj["usage"]?.jsonObject
-                    if (u != null) {
-                        usageOutput = u["output_tokens"]?.jsonPrimitive?.intOrNull ?: usageOutput
-                        if (usageInput > 0 || usageOutput > 0) {
-                            emit(StreamDelta(usage = TokenUsage(
-                                promptTokens = usageInput,
-                                completionTokens = usageOutput,
-                                totalTokens = usageInput + usageOutput
-                            )))
-                        }
-                    }
-                }
-                "message_start" -> {
-                    val msg = obj["message"]?.jsonObject
-                    val u = msg?.get("usage")?.jsonObject
-                    if (u != null) {
-                        usageInput = u["input_tokens"]?.jsonPrimitive?.intOrNull ?: usageInput
-                        usageOutput = u["output_tokens"]?.jsonPrimitive?.intOrNull ?: usageOutput
-                    }
+                "message_delta", "message_start" -> {
+                    val bodyUsage = (obj["usage"] as? JsonObject)
+                        ?: ((obj["message"] as? JsonObject)?.get("usage") as? JsonObject)
+                    bodyUsage?.let { emit(StreamDelta(usage = parseClaudeTokenUsage(it))) }
                 }
                 "error" -> {
                     val err = obj["error"]?.jsonObject
@@ -843,16 +843,8 @@ class LlmClient {
                 }
             }
         }
-        val usage = obj["usage"]?.jsonObject
-        if (usage != null) {
-            val input = usage["input_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-            val output = usage["output_tokens"]?.jsonPrimitive?.intOrNull ?: 0
-            emit(StreamDelta(usage = TokenUsage(
-                promptTokens = input,
-                completionTokens = output,
-                totalTokens = input + output
-            )))
-        }
+        val usage = obj["usage"] as? JsonObject
+        usage?.let { emit(StreamDelta(usage = parseClaudeTokenUsage(it))) }
     }
 }
 

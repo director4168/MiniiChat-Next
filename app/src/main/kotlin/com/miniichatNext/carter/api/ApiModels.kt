@@ -99,6 +99,7 @@ internal fun normalizeFunctionParameters(raw: String): JsonObject {
 }
 
 data class StreamDelta(
+    val eventReceived: Boolean = false,
     val text: String = "",
     val reasoning: String = "",
     val usage: TokenUsage? = null,
@@ -166,6 +167,8 @@ internal data class ChatChunk(
         @SerialName("prompt_tokens") val promptTokens: Int = 0,
         @SerialName("completion_tokens") val completionTokens: Int = 0,
         @SerialName("total_tokens") val totalTokens: Int = 0,
+        @SerialName("prompt_tokens_details") val promptTokensDetails: JsonObject? = null,
+        @SerialName("prompt_cache_hit_tokens") val promptCacheHitTokens: Int = 0,
     )
 }
 

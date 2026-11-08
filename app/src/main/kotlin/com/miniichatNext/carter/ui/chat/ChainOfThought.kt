@@ -27,11 +27,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Psychology
@@ -69,16 +69,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
-import com.miniichatNext.carter.data.tools.ClarificationParser
-import com.miniichatNext.carter.data.tools.ClarificationQuestion
 import com.miniichatNext.carter.data.model.ToolInvocation
 import com.miniichatNext.carter.data.model.ToolInvocationState
+import com.miniichatNext.carter.data.tools.ClarificationParser
+import com.miniichatNext.carter.data.tools.ClarificationQuestion
 
 /** 一条思考步骤：模型推理或一次工具调用 */
 sealed interface ThoughtStep {
@@ -101,10 +101,12 @@ fun ChainOfThought(
     onApprove: ((ToolInvocation, String?) -> Unit)? = null,
     onReject: ((ToolInvocation) -> Unit)? = null,
 ) {
-    if (steps.isEmpty()) return
+    val showReasoning = com.miniichatNext.carter.ui.settings.LocalAppPreferences.current.showReasoningCard
+    val displayedSteps = if (showReasoning) steps else steps.filterNot { it is ThoughtStep.Reasoning }
+    if (displayedSteps.isEmpty()) return
     var expanded by remember { mutableStateOf(false) }
-    val canCollapse = steps.size > collapsedVisibleCount
-    val visibleSteps = if (expanded || !canCollapse) steps else steps.takeLast(collapsedVisibleCount)
+    val canCollapse = displayedSteps.size > collapsedVisibleCount
+    val visibleSteps = if (expanded || !canCollapse) displayedSteps else displayedSteps.takeLast(collapsedVisibleCount)
     val lineColor = MaterialTheme.colorScheme.outlineVariant
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -139,7 +141,7 @@ fun ChainOfThought(
                     Text(
                         modifier = Modifier.padding(start = 8.dp),
                         text = if (expanded) stringResource(R.string.tool_collapse)
-                        else stringResource(R.string.tool_expand_more, steps.size - collapsedVisibleCount),
+                        else stringResource(R.string.tool_expand_more, displayedSteps.size - collapsedVisibleCount),
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -161,7 +163,7 @@ fun ChainOfThought(
                 }
             ) {
                 Column {
-                    val startIndex = steps.size - visibleSteps.size
+                    val startIndex = displayedSteps.size - visibleSteps.size
                     visibleSteps.forEachIndexed { offset, step ->
                         val stepKey = when (step) {
                             is ThoughtStep.Reasoning -> "reasoning:${startIndex + offset}"
@@ -580,9 +582,7 @@ fun InteractiveClarificationCard(
             if (!answered) {
                 Column(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 420.dp)
-                        .verticalScroll(rememberScrollState()),
+                        .fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     questions.forEachIndexed { index, question ->

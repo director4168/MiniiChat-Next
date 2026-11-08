@@ -3,6 +3,8 @@ package com.miniichatNext.carter.ui.provider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -42,14 +47,23 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -79,8 +93,47 @@ fun ProvidersScreen(
     onFetchModels: (String) -> Unit,
     onAddManualModel: (String, String) -> Unit,
     onRemoveModel: (String, String) -> Unit,
-    onSelectModel: (String, String) -> Unit
+    onSelectModel: (String, String) -> Unit,
+    onReorder: (List<String>) -> Unit = {},
 ) {
+    var orderedIds by remember { mutableStateOf(providers.map { it.id }) }
+    val bounds = remember { mutableStateMapOf<String, Rect>() }
+    val scroll = rememberLazyListState()
+    val density = LocalDensity.current.density
+    var draggedId by remember { mutableStateOf<String?>(null) }
+    val currentProviders by rememberUpdatedState(providers)
+    val currentReorder by rememberUpdatedState(onReorder)
+    LaunchedEffect(providers.map { it.id }) {
+        if (draggedId == null) orderedIds = providers.map { it.id }
+    }
+    var dragY by remember { mutableStateOf(0f) }
+    val nameBounds = remember { mutableStateMapOf<String, Rect>() }
+    var listBounds by remember { mutableStateOf(Rect.Zero) }
+    LaunchedEffect(draggedId) {
+        while (draggedId != null) {
+            val edge = 56f * density
+            val direction = when {
+                dragY < listBounds.top + edge -> -1
+                dragY > listBounds.bottom - edge -> 1
+                else -> 0
+            }
+            if (direction != 0) {
+                scroll.scroll { scrollBy(direction * 18f) }
+                val dragging = draggedId
+                val target = orderedIds.firstOrNull { id ->
+                    id != dragging && bounds[id]?.let { dragY >= it.top && dragY <= it.bottom } == true
+                }
+                if (dragging != null && target != null) {
+                    val next = orderedIds.toMutableList()
+                    val from = next.indexOf(dragging)
+                    val to = next.indexOf(target)
+                    if (from >= 0 && to >= 0) { next.removeAt(from); next.add(to, dragging); orderedIds = next }
+                }
+            }
+            kotlinx.coroutines.delay(16L)
+        }
+    }
+    val ordered = orderedIds.mapNotNull { id -> providers.firstOrNull { it.id == id } }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -89,16 +142,17 @@ fun ProvidersScreen(
     ) {
         SettingsTopBar(stringResource(R.string.providers), onBack)
 
-        Column(
+        LazyColumn(
+            state = scroll,
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
+                .onGloballyPositioned { listBounds = it.boundsInWindow() }
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Spacer(Modifier.height(4.dp))
+            item { Spacer(Modifier.height(4.dp)) }
 
-            Box(
+            item { Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
@@ -116,8 +170,9 @@ fun ProvidersScreen(
                 }
             }
 
+            }
             if (providers.isEmpty()) {
-                SectionCard {
+                item { SectionCard {
                     Column(
                         modifier = Modifier.fillMaxWidth().padding(24.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
@@ -135,22 +190,70 @@ fun ProvidersScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
+                }
             } else {
-                providers.forEach { p ->
-                    ProviderCard(
-                        provider = p,
-                        fetching = fetchingId == p.id,
-                        activeModel = if (activeProviderId == p.id) activeModel else "",
-                        onEdit = { onEdit(p) },
-                        onDelete = { onDelete(p.id) },
-                        onFetch = { onFetchModels(p.id) },
-                        onAddManual = { m -> onAddManualModel(p.id, m) },
-                        onRemoveModel = { m -> onRemoveModel(p.id, m) },
-                        onSelectModel = { m -> onSelectModel(p.id, m) }
-                    )
+                items(ordered, key = { it.id }) { p ->
+                        ProviderCard(
+                            provider = p,
+                            cardModifier = Modifier.animateItem().onGloballyPositioned { bounds[p.id] = it.boundsInWindow() }
+                                .background(if (draggedId == p.id) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent),
+                            nameModifier = Modifier.onGloballyPositioned { nameBounds[p.id] = it.boundsInWindow() }.pointerInput(p.id) {
+                                awaitEachGesture {
+                                    val down = awaitFirstDown(requireUnconsumed = false)
+                                    val early = withTimeoutOrNull(250L) {
+                                        var released = false
+                                        while (!released) {
+                                            val e = awaitPointerEvent()
+                                            released = e.changes.none { it.pressed } || e.changes.any { it.isConsumed || (it.position - down.position).getDistance() > viewConfiguration.touchSlop }
+                                        }
+                                        true
+                                    }
+                                    if (early != true) {
+                                        draggedId = p.id
+                                        var pointerY = (nameBounds[p.id]?.top ?: 0f) + down.position.y
+                                        dragY = pointerY
+                                        var dropped = false
+                                        try {
+                                            var pressed = true
+                                            while (pressed) {
+                                                val e = awaitPointerEvent()
+                                                val change = e.changes.firstOrNull { it.id == down.id } ?: break
+                                                pressed = change.pressed
+                                                pointerY = (nameBounds[p.id]?.top ?: 0f) + change.position.y
+                                                dragY = pointerY
+                                                change.consume()
+                                                if (!pressed) dropped = true
+                                                val target = orderedIds.firstOrNull { id ->
+                                                    id != p.id && bounds[id]?.let { pointerY >= it.top && pointerY <= it.bottom } == true
+                                                }
+                                                if (target != null) {
+                                                    val next = orderedIds.toMutableList()
+                                                    val from = next.indexOf(p.id)
+                                                    val to = next.indexOf(target)
+                                                    next.removeAt(from); next.add(to, p.id)
+                                                    orderedIds = next
+                                                }
+                                            }
+                                        } finally {
+                                            draggedId = null
+                                            if (dropped) currentReorder(orderedIds)
+                                            else orderedIds = currentProviders.map { it.id }
+                                        }
+                                    }
+                                }
+                            },
+                            fetching = fetchingId == p.id,
+                            activeModel = if (activeProviderId == p.id) activeModel else "",
+                            onEdit = { onEdit(p) },
+                            onDelete = { onDelete(p.id) },
+                            onFetch = { onFetchModels(p.id) },
+                            onAddManual = { m -> onAddManualModel(p.id, m) },
+                            onRemoveModel = { m -> onRemoveModel(p.id, m) },
+                            onSelectModel = { m -> onSelectModel(p.id, m) }
+                        )
                 }
             }
-            Spacer(Modifier.height(40.dp))
+            item { Spacer(Modifier.height(40.dp)) }
         }
     }
 }
@@ -159,6 +262,8 @@ fun ProvidersScreen(
 @Composable
 private fun ProviderCard(
     provider: ProviderConfig,
+    cardModifier: Modifier = Modifier,
+    nameModifier: Modifier = Modifier,
     fetching: Boolean,
     activeModel: String,
     onEdit: () -> Unit,
@@ -172,11 +277,12 @@ private fun ProviderCard(
     var deleteOpen by remember { mutableStateOf(false) }
     var modelsExpanded by remember(provider.id) { mutableStateOf(false) }
 
-    SectionCard {
+    SectionCard(modifier = cardModifier) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(modifier = Modifier.weight(1f).clickable(onClick = onEdit)) {
                     Text(provider.name,
+                        modifier = nameModifier,
                         style = MaterialTheme.typography.titleMedium,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1, overflow = TextOverflow.Ellipsis)

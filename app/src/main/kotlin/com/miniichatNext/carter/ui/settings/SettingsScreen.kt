@@ -22,11 +22,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
@@ -34,16 +34,15 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -59,16 +58,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
-import com.miniichatNext.carter.data.store.AppSettings
 import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.model.ProviderConfig
-import com.miniichatNext.carter.data.skills.Skill
 import com.miniichatNext.carter.data.model.UserProfile
+import com.miniichatNext.carter.data.skills.Skill
+import com.miniichatNext.carter.data.store.AppSettings
+import com.miniichatNext.carter.ui.components.AvatarView
 import com.miniichatNext.carter.ui.components.OutlinedFieldBox
 import com.miniichatNext.carter.ui.components.SectionCard
 import com.miniichatNext.carter.ui.components.SectionHeader
 import com.miniichatNext.carter.ui.components.SettingsTopBar
-import com.miniichatNext.carter.ui.components.AvatarView
 import java.util.Locale
 
 @Composable
@@ -91,6 +90,7 @@ fun SettingsScreen(
     onOpenWorkspace: () -> Unit = {},
     onOpenMcp: () -> Unit = {},
     onOpenBuiltInTools: () -> Unit = {},
+    onOpenBackup: () -> Unit = {},
     // 外部传入的滚动状态（AppRoot用rememberSaveable持有，跳转到关于再返回时保留位置）
     scrollState: ScrollState? = null,
     // 非空时滚到对应配置区（如"aux"=辅助模型区，从错误toast的"管理"按钮进入）
@@ -332,7 +332,8 @@ fun SettingsScreen(
                         label = stringResource(R.string.aux_model_title),
                         ref = settings.titleModel,
                         providers = providers,
-                        onPick = { ref -> onChange { it.copy(titleModel = ref) } }
+                        onPick = { ref -> onChange { it.copy(titleModel = ref) } },
+                        showConversationModel = true,
                     )
                     Spacer(Modifier.height(8.dp))
                     AuxModelRow(
@@ -347,7 +348,8 @@ fun SettingsScreen(
                         label = stringResource(R.string.aux_model_suggestion),
                         ref = settings.suggestionModel,
                         providers = providers,
-                        onPick = { ref -> onChange { it.copy(suggestionModel = ref) } }
+                        onPick = { ref -> onChange { it.copy(suggestionModel = ref) } },
+                        showConversationModel = true,
                     )
                     Spacer(Modifier.height(8.dp))
                     AuxModelRow(
@@ -447,6 +449,13 @@ fun SettingsScreen(
                         title = stringResource(R.string.skills),
                         subtitle = stringResource(R.string.skills_subtitle),
                         onClick = onOpenSkills,
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    SettingsNavRow(
+                        icon = Icons.Default.Storage,
+                        title = stringResource(R.string.backup_title),
+                        subtitle = stringResource(R.string.backup_subtitle),
+                        onClick = onOpenBackup,
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                     // 用系统文件管理器直接打开应用私有目录（走本应用的DocumentsProvider）
@@ -571,6 +580,8 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {
                     TokenStatRow(stringResource(R.string.token_usage_input), settings.totalPromptTokens)
                     Spacer(Modifier.height(8.dp))
+                    TokenStatRow(stringResource(R.string.chat_message_usage_total_cached), settings.totalCachedTokens)
+                    Spacer(Modifier.height(8.dp))
                     TokenStatRow(stringResource(R.string.token_usage_output), settings.totalCompletionTokens)
                     Spacer(Modifier.height(8.dp))
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
@@ -616,7 +627,7 @@ fun SettingsScreen(
 @Composable
 private fun TokenStatRow(
     label: String,
-    value: Int,
+    value: Long,
     emphasize: Boolean = false
 ) {
     Row(
@@ -637,6 +648,17 @@ private fun TokenStatRow(
             fontWeight = if (emphasize) FontWeight.Bold else FontWeight.Normal
         )
     }
+}
+
+internal fun formatTokenCount(value: Long): String {
+    val count = value.coerceAtLeast(0L)
+    val unit = when {
+        count >= 1_000_000_000L -> 1_000_000_000L to "B"
+        count >= 1_000_000L -> 1_000_000L to "M"
+        else -> return "%,d".format(Locale.getDefault(), count)
+    }
+    val scaled = count / (unit.first / 10)
+    return if (scaled % 10L == 0L) "${scaled / 10}${unit.second}" else "${scaled / 10}.${scaled % 10}${unit.second}"
 }
 
 internal fun formatTokenCount(value: Int): String {

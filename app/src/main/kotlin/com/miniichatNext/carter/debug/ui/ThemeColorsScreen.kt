@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
@@ -22,11 +23,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Save
-import androidx.compose.material.icons.filled.Build
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -43,15 +44,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.miniichatNext.carter.R
-import com.miniichatNext.carter.ui.components.SettingsTopBar
 import com.miniichatNext.carter.ui.components.SectionCard
+import com.miniichatNext.carter.ui.components.SettingsTopBar
 import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.util.AppThemeOverrides
+import kotlin.math.ceil
+import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
 
 /**
@@ -276,7 +284,7 @@ fun ThemeColorsScreen(onBack: () -> Unit) {
     }
 }
 
-/** 单行角色编辑：角色名+浅色hex输入+色块+深色hex输入+色块 */
+/** 单行角色编辑：左侧上ID下说明，右侧浅色/深色hex输入+色块 */
 @Composable
 private fun RoleEditRow(
     role: String,
@@ -290,11 +298,25 @@ private fun RoleEditRow(
         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(
-            role,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier.width(120.dp)
-        )
+        Column(
+            modifier = Modifier
+                .width(116.dp)
+                .heightIn(max = 48.dp)
+                .verticalScroll(rememberScrollState())
+        ) {
+            Text(
+                role,
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            )
+            roleDescriptionRes(role)?.let { res ->
+                Text(
+                    stringResource(res),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Spacer(Modifier.width(4.dp))
         OutlinedTextField(
             value = lightHex,
             onValueChange = onLightChange,
@@ -303,14 +325,7 @@ private fun RoleEditRow(
             textStyle = MaterialTheme.typography.bodySmall,
             singleLine = true,
             leadingIcon = {
-                Box(
-                    modifier = Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .background(AppThemeOverrides.parseHex(lightHex) ?: MaterialTheme.colorScheme.surfaceVariant)
-                        .border(0.5.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                        .clickable { pickerMode = "light" }
-                )
+                AlphaSwatch(AppThemeOverrides.parseHex(lightHex)) { pickerMode = "light" }
             }
         )
         Spacer(Modifier.width(8.dp))
@@ -322,14 +337,7 @@ private fun RoleEditRow(
             textStyle = MaterialTheme.typography.bodySmall,
             singleLine = true,
             leadingIcon = {
-                Box(
-                    modifier = Modifier
-                        .size(18.dp)
-                        .clip(CircleShape)
-                        .background(AppThemeOverrides.parseHex(darkHex) ?: MaterialTheme.colorScheme.surfaceVariant)
-                        .border(0.5.dp, MaterialTheme.colorScheme.outline, CircleShape)
-                        .clickable { pickerMode = "dark" }
-                )
+                AlphaSwatch(AppThemeOverrides.parseHex(darkHex)) { pickerMode = "dark" }
             }
         )
     }
@@ -349,9 +357,64 @@ private fun RoleEditRow(
     }
 }
 
+/** 角色说明走资源，左侧显示ID为主，说明作为副标题 */
+private fun roleDescriptionRes(role: String): Int? = when (role) {
+    "primary" -> R.string.debug_role_primary
+    "onPrimary" -> R.string.debug_role_on_primary
+    "primaryContainer" -> R.string.debug_role_primary_container
+    "onPrimaryContainer" -> R.string.debug_role_on_primary_container
+    "background" -> R.string.debug_role_background
+    "onBackground" -> R.string.debug_role_on_background
+    "surface" -> R.string.debug_role_surface
+    "onSurface" -> R.string.debug_role_on_surface
+    "surfaceVariant" -> R.string.debug_role_surface_variant
+    "onSurfaceVariant" -> R.string.debug_role_on_surface_variant
+    "outline" -> R.string.debug_role_outline
+    "outlineVariant" -> R.string.debug_role_outline_variant
+    "error" -> R.string.debug_role_error
+    "onError" -> R.string.debug_role_on_error
+    "workspaceWarning" -> R.string.debug_role_workspace_warning
+    "workspaceDanger" -> R.string.debug_role_workspace_danger
+    "toastWarningAction" -> R.string.debug_role_toast_warning_action
+    "messageJumperBackground" -> R.string.debug_message_jumper_background
+    "messageJumperContent" -> R.string.debug_message_jumper_content
+    else -> null
+}
+
+/** 带透明度预览的色块：棋盘衬底，半透明色才看得出来 */
+@Composable
+private fun AlphaSwatch(color: Color?, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(18.dp)
+            .clip(CircleShape)
+            .checkerboard(5.dp)
+            .border(0.5.dp, MaterialTheme.colorScheme.outline, CircleShape)
+            .clickable(onClick = onClick)
+    ) {
+        Box(Modifier.fillMaxSize().background(color ?: MaterialTheme.colorScheme.surfaceVariant))
+    }
+}
+
+/** 透明色预览底纹 */
+private fun Modifier.checkerboard(cell: Dp = 8.dp): Modifier = drawBehind {
+    val step = cell.toPx()
+    val columns = ceil(size.width / step).toInt()
+    val rows = ceil(size.height / step).toInt()
+    for (row in 0 until rows) {
+        for (column in 0 until columns) {
+            drawRect(
+                color = if ((row + column) % 2 == 0) Color(0xFFE8E8E8) else Color(0xFFC9C9C9),
+                topLeft = Offset(column * step, row * step),
+                size = Size(step, step),
+            )
+        }
+    }
+}
+
 /**
- * RGB调色盘对话框：R/G/B三滑条+实时预览+hex只读显示。
- * 初始值来自当前hex（非法则黑）；确认时以#RRGGBB写回。
+ * RGBa调色盘对话框：R/G/B/A四滑条+实时预览+hex只读显示。
+ * 初始值来自当前hex（非法则黑）；确认时以#RRGGBB或#AARRGGBB写回。
  */
 @Composable
 private fun ColorPickerDialog(
@@ -361,10 +424,13 @@ private fun ColorPickerDialog(
     onDismiss: () -> Unit,
 ) {
     val initial = AppThemeOverrides.parseHex(initialHex) ?: Color.Black
+    var a by remember { mutableStateOf((initial.alpha * 255f).roundToInt()) }
     var r by remember { mutableStateOf(((initial.red * 255).toInt())) }
     var g by remember { mutableStateOf(((initial.green * 255).toInt())) }
     var b by remember { mutableStateOf(((initial.blue * 255).toInt())) }
-    val current = Color(r, g, b)
+    val current = Color(r, g, b, a)
+    val hex = if (a >= 255) "#%02X%02X%02X".format(r, g, b)
+    else "#%02X%02X%02X%02X".format(a, r, g, b)
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
@@ -375,12 +441,14 @@ private fun ColorPickerDialog(
                         .fillMaxWidth()
                         .height(56.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(current)
+                        .checkerboard(10.dp)
                         .border(0.5.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(10.dp))
-                )
+                ) {
+                    Box(Modifier.fillMaxSize().background(current))
+                }
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "#%02X%02X%02X".format(r, g, b),
+                    hex,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -388,15 +456,18 @@ private fun ColorPickerDialog(
                 SliderRow("R", r, android.graphics.Color.RED) { r = it }
                 SliderRow("G", g, android.graphics.Color.GREEN) { g = it }
                 SliderRow("B", b, android.graphics.Color.BLUE) { b = it }
+                SliderRow("A", a, android.graphics.Color.GRAY) { a = it }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm("#%02X%02X%02X".format(r, g, b)) }) {
+            TextButton(onClick = { onConfirm(hex) }) {
                 Text(stringResource(R.string.action_save))
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) }
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.action_cancel))
+            }
         }
     )
 }

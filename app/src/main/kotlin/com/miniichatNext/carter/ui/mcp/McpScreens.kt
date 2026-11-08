@@ -63,13 +63,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import com.miniichatNext.carter.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.mcp.McpClient
 import com.miniichatNext.carter.data.mcp.McpServerConfig
 import com.miniichatNext.carter.data.mcp.McpStore
@@ -78,14 +78,16 @@ import com.miniichatNext.carter.data.mcp.McpToolPermission
 import com.miniichatNext.carter.data.mcp.McpTransport
 import com.miniichatNext.carter.ui.components.SettingsTopBar
 import com.miniichatNext.carter.ui.components.ToolPermissionCard
+import com.miniichatNext.carter.ui.markdown.MarkdownText
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.launch
-import com.miniichatNext.carter.ui.markdown.MarkdownText
 
 /** MCP服务器列表 */
 @Composable
 fun McpServersScreen(
     mcpStore: McpStore,
+    syncingIds: Set<String> = emptySet(),
+    onRetry: (String) -> Unit = {},
     onBack: () -> Unit,
     onAdd: () -> Unit,
     onOpenServerDetail: (String) -> Unit,
@@ -140,9 +142,11 @@ fun McpServersScreen(
                         McpServerItemCard(
                             server = server,
                             toolCount = tools.count { it.serverId == server.id },
+                            syncing = server.id in syncingIds,
+                            onRetry = { onRetry(server.id) },
                             onClick = { onOpenServerDetail(server.id) },
                             onToggleEnabled = { enabled ->
-                                scope.launch { mcpStore.upsertServer(server.copy(enabled = enabled)) }
+                                scope.launch { mcpStore.setServerEnabled(server.id, enabled) }
                             },
                             onDelete = { pendingDelete = server }
                         )
@@ -220,6 +224,8 @@ private fun EmptyMcpServersCard(onAdd: () -> Unit) {
 private fun McpServerItemCard(
     server: McpServerConfig,
     toolCount: Int,
+    syncing: Boolean = false,
+    onRetry: () -> Unit = {},
     onClick: () -> Unit,
     onToggleEnabled: (Boolean) -> Unit,
     onDelete: () -> Unit
@@ -265,6 +271,17 @@ private fun McpServerItemCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                Text(
+                    stringResource(when {
+                        syncing -> R.string.mcp_syncing
+                        server.syncError != null -> R.string.mcp_status_saved_error
+                        server.toolsFetched -> R.string.mcp_status_synced
+                        else -> R.string.mcp_status_saved
+                    }),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (server.syncError != null && !syncing) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (server.syncError != null && !syncing) TextButton(onClick = onRetry) { Text(stringResource(R.string.mcp_retry_sync)) }
             }
             Switch(checked = server.enabled, onCheckedChange = onToggleEnabled)
             IconButton(onClick = onDelete) {
@@ -282,6 +299,8 @@ fun McpServerDetailScreen(
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onDeleted: () -> Unit,
+    onSync: () -> Unit = {},
+    syncing: Boolean = false,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -289,7 +308,6 @@ fun McpServerDetailScreen(
     val tools by mcpStore.toolsFlow.collectAsState(initial = emptyList())
     val perms by mcpStore.permsFlow.collectAsState(initial = emptyList())
     val server = servers.firstOrNull { it.id == serverId }
-    var refreshing by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf(false) }
     var showHeaders by remember { mutableStateOf(false) }
 
@@ -307,21 +325,8 @@ fun McpServerDetailScreen(
                     Icon(Icons.Default.Edit, contentDescription = stringResource(R.string.edit))
                 }
                 IconButton(
-                    onClick = {
-                        val srv = server ?: return@IconButton
-                        refreshing = true
-                        scope.launch {
-                            runCatching {
-                                val fetched = McpClient().listTools(srv)
-                                mcpStore.replaceToolsForServer(srv.id, fetched)
-                                mcpStore.upsertServer(srv.copy(toolsFetched = true))
-                                Toast.makeText(context, context.getString(R.string.mcp_synced, fetched.size), Toast.LENGTH_SHORT).show()
-                            }.onFailure {
-                                Toast.makeText(context, context.getString(R.string.mcp_sync_failed, it.message ?: ""), Toast.LENGTH_LONG).show()
-                            }
-                            refreshing = false
-                        }
-                    }
+                    onClick = { onSync() },
+                    enabled = server != null && !syncing
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = stringResource(R.string.mcp_refresh_tools))
                 }
@@ -404,6 +409,11 @@ fun McpServerDetailScreen(
             )
             Spacer(modifier = Modifier.height(8.dp))
 
+            if (syncing) Text(stringResource(R.string.mcp_syncing), color = MaterialTheme.colorScheme.primary)
+            server?.syncError?.let { message ->
+                Text(stringResource(R.string.mcp_saved_sync_failed, message), color = MaterialTheme.colorScheme.error)
+                TextButton(onClick = onSync, enabled = !syncing) { Text(stringResource(R.string.mcp_retry_sync)) }
+            }
             val serverTools = tools.filter { it.serverId == serverId }
             if (serverTools.isEmpty()) {
                 Text(
@@ -420,7 +430,7 @@ fun McpServerDetailScreen(
                         onToggleEnabled = { enabled ->
                             val cur = perms.firstOrNull { it.toolName == tool.name && it.serverId == serverId }
                             scope.launch {
-                                mcpStore.setToolPermission(serverId, tool.name, enabled, cur?.requireApproval ?: server?.requireApproval ?: false)
+                                mcpStore.setToolPermission(serverId, tool.name, enabled, cur?.requireApproval ?: server?.requireApproval ?: false, inheritApproval = cur?.inheritApproval ?: true)
                             }
                         },
                         onToggleApproval = { approval ->
@@ -464,21 +474,21 @@ fun McpServerDetailScreen(
 fun McpServerEditorScreen(
     initial: McpServerConfig?,
     onBack: () -> Unit,
-    onSaved: (McpServerConfig) -> Unit,
-    onSyncNow: suspend (McpServerConfig) -> Result<Int>,
+    onSaved: (McpServerConfig, () -> Unit) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var name by remember(initial?.id) { mutableStateOf(initial?.name ?: "") }
-    var url by remember(initial?.id) { mutableStateOf(initial?.url ?: "") }
-    var transport by remember(initial?.id) {
+    val editorKey = androidx.compose.runtime.saveable.rememberSaveable { initial?.id ?: newId() }
+    var name by remember(editorKey) { mutableStateOf(initial?.name ?: "") }
+    var url by remember(editorKey) { mutableStateOf(initial?.url ?: "") }
+    var transport by remember(editorKey) {
         mutableStateOf(initial?.tp() ?: McpTransport.STREAMABLE_HTTP)
     }
-    var enabled by remember(initial?.id) { mutableStateOf(initial?.enabled ?: true) }
-    var requireApproval by remember(initial?.id) { mutableStateOf(initial?.requireApproval ?: false) }
+    var enabled by remember(editorKey) { mutableStateOf(initial?.enabled ?: true) }
+    var requireApproval by remember(editorKey) { mutableStateOf(initial?.requireApproval ?: false) }
     // 请求头按行编辑：保持顺序，保存时再折成map
-    val headerRows = remember(initial?.id) {
+    val headerRows = remember(editorKey) {
         mutableStateListOf<Pair<String, String>>().apply {
             addAll(initial?.headers.orEmpty().entries.map { it.key to it.value })
         }
@@ -503,7 +513,7 @@ fun McpServerEditorScreen(
                         val merged = linkedMapOf<String, String>()
                         headerRows.forEach { (k, v) -> if (k.isNotBlank()) merged[k.trim()] = v.trim() }
                         val entity = (initial ?: McpServerConfig(
-                            id = newId(),
+                            id = editorKey,
                             name = "",
                             url = "",
                         )).copy(
@@ -514,18 +524,10 @@ fun McpServerEditorScreen(
                             requireApproval = requireApproval,
                             headers = merged,
                         )
+                        if (saving) return@TextButton
                         saving = true
-                        onSaved(entity)
-                        scope.launch {
-                            onSyncNow(entity)
-                                .onSuccess { count ->
-                                    Toast.makeText(context, context.getString(R.string.mcp_synced, count), Toast.LENGTH_SHORT).show()
-                                }
-                                .onFailure {
-                                    Toast.makeText(context, context.getString(R.string.mcp_sync_failed, it.message ?: ""), Toast.LENGTH_LONG).show()
-                                }
-                            saving = false
-                        }
+                        onSaved(entity) { saving = false }
+
                     }
                 ) { Text(stringResource(R.string.save)) }
             }

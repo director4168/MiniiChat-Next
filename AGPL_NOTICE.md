@@ -227,6 +227,94 @@ Adaptations made in this fork:
 The math typesetter is **JLaTeXMath** (see §4 / §5.4) and the HTML preprocessing uses **jsoup**
 (see §4) — both consumed unmodified.
 
+### 3.8 v1.7.0-beta — derivative UI and data-management adaptations
+
+The message statistics layout (input/output tokens, tokens per second and
+elapsed time), preference groups (startup conversation behavior, message
+font size, reasoning visibility, statistics visibility and input behavior),
+and log-preview interaction were adapted with reference to the public
+**久违¹/MiniiChat-Next-Flutter** derivative, published at
+<https://github.com/jiuweiby/MiniiChat-Next> (AGPL-3.0).
+
+The principal reference files are `ui/chat/AssistantRow.kt`,
+`ui/settings/PreferenceScreen.kt`, `debug/ui/LogPreviewScreen.kt` and
+`data/backup/BackupManager.kt`. Adaptations in this tree use the existing
+Compose navigation, DataStore stores, atomic conversation writes,
+multilingual resources, theme roles and per-conversation model resolution.
+
+The ZIP backup implementation in `data/backup/` is a new implementation
+using the existing app stores: portable avatar/attachment references,
+`data/` payloads, a `manifest.json` file index with MD5 integrity checks,
+overwrite/merge import and pre-restore validation. It does not copy the
+reference derivative's XOR-based `.mnbk` format. Workspace data and Linux
+rootfs are excluded. MD5 checks detect accidental corruption, not the
+identity or trustworthiness of a backup's origin.
+
+No new third-party runtime library is introduced for these additions.
+uCrop remains the crop engine; the new `ThemedCropActivity` adapts its
+native toolbar and bottom controls to the app's resolved theme. Existing
+upstream license and copyright notices remain applicable.
+
+#### Follow-up: message metrics and navigation
+
+The per-request usage-snapshot merge and cross-request accumulation rules
+follow `ai/core/Usage.kt` and `ai/agent/AgentLoop.kt` from RikkaHub.
+Generation duration starts at the first response chunk and excludes time
+spent executing tools; the last-request context is kept separate from
+multi-step totals. The message jump overlay is adapted from RikkaHub's
+`ui/pages/chat/ChatListOverlays.kt` (`MessageJumper`), using this project's
+Material icons and navigation. Code-layout and list-reordering behavior
+were reviewed against `HighlightCodeBlock.kt` and `SettingProviderPage.kt`;
+the implementation keeps this project's highlighter and Compose versions.
+
+Backup configuration now uses password-derived AES-256-GCM encryption
+(PBKDF2-HMAC-SHA256 with per-backup random salt and IV), rather than
+exporting plaintext credentials. This is a local JCA implementation and
+adds no third-party cryptography dependency. Older ZIP backups remain
+readable. Media and Skills files outside the encrypted configuration
+remain ordinary ZIP payloads.
+
+#### Source port: RikkaHub message usage components
+
+`ui/chat/ChatMessageNerdLine.kt` is source-ported from RikkaHub's
+`ui/components/message/ChatMessageNerdLine.kt`, including the usage tooltip,
+context-occupancy bar, cached-token segments, inline statistics and detail
+rows. `NerdStats.kt` contains the extracted upstream `nerdStats` calculation;
+`UsageNumberFormat.kt` contains its `formatNumber` / `toFixed` helpers.
+
+`data/model/Usage.kt` copies RikkaHub `ai/core/Usage.kt` merge/sum functions;
+`MessageStepStats.kt` copies `AgentLoop.withStepStats`. The request recorder
+is adapted from `data/ai/UsageRecorder.kt` to the app's Flow-based LLM client
+and DataStore counters. OpenAI, Responses and Claude usage field mappings
+are ported from the corresponding upstream provider decoders. Local text
+estimation has been removed from the active statistics path.
+
+Adaptations are limited to this project's Message/Provider models, epoch
+millisecond timestamps, persisted legacy-field compatibility, Material
+icons, local settings access, and the Compose 1.7 tooltip positioning API.
+The upstream message timing fields (`generationTimeMs`, `lastUsage`,
+`stepCount`, `finishedAt`) are now persisted and passed through live overlays.
+The context-window size is optional model metadata, never inferred from
+an output-token limit. Existing per-file notices and AGPL-3.0 terms apply.
+
+#### Backup format v3: quick and fully encrypted modes
+
+Backup format v3 explicitly records `backupMode` and `encrypted` in the
+outer `manifest.json`. Quick mode keeps ordinary data readable but encrypts
+provider/model API keys and provider/model/MCP request-header values using
+an independent random AES-256-GCM key. At the user's request, that recovery
+key is included in the same readable index. This is field obfuscation,
+not confidentiality against a party holding the backup archive.
+
+Encrypted mode password-encrypts a complete inner ZIP (including media,
+attachments, Skills, configuration and the credential recovery key) using
+the existing PBKDF2-HMAC-SHA256 / AES-256-GCM implementation. Its readable
+outer index lists only the encrypted payload and contains no recovery key.
+Restore validates the outer archive, authenticates/decrypts the payload,
+validates the inner archive and decrypts credentials before applying data.
+Formats v1 and v2 remain supported. These changes use JCA and ZIP APIs and
+introduce no additional third-party runtime dependency.
+
 ## 4. Runtime dependencies with their own notices (AGPL §5(a) source + §5(b) license)
 
 The following artifacts are linked into the shipped APK and are

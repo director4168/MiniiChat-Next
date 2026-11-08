@@ -35,6 +35,7 @@ data class ModelConfig(
     val extraBody: Map<String, String> = emptyMap(),
     val temperature: Float? = null,
     val maxTokens: Int? = null,
+    val contextLength: Int? = null,
     /** null=跟随服务商。之前默认OFF导致服务商级设置永远不生效 */
     val thinkingLevel: String? = null,
     /**

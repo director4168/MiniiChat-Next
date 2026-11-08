@@ -3,12 +3,11 @@ package com.miniichatNext.carter.ui.chat
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,19 +20,21 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
@@ -49,7 +50,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.border
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.rotate
@@ -62,11 +62,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.data.avatar.Avatar
 import com.miniichatNext.carter.data.model.Message
+import com.miniichatNext.carter.ui.components.AvatarView
 import com.miniichatNext.carter.ui.components.clipDrawing
 import com.miniichatNext.carter.ui.markdown.MarkdownText
-import com.miniichatNext.carter.data.avatar.Avatar
-import com.miniichatNext.carter.ui.components.AvatarView
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -85,6 +85,7 @@ internal fun AssistantRow(
     onFullscreen: ((String, Boolean) -> Unit)? = null,
     onRejectTool: ((com.miniichatNext.carter.data.model.ToolInvocation) -> Unit)? = null
 ) {
+    val preferences = com.miniichatNext.carter.ui.settings.LocalAppPreferences.current
     val clipboard = LocalClipboardManager.current
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -154,7 +155,7 @@ internal fun AssistantRow(
                             cluster.forEach { s ->
                                 when (s) {
                                     is com.miniichatNext.carter.data.model.MessageSegment.Reasoning -> {
-                                        if (s.text.isNotBlank()) add(ThoughtStep.Reasoning(s.text))
+                                        if (preferences.showReasoningCard && s.text.isNotBlank()) add(ThoughtStep.Reasoning(s.text))
                                     }
                                     is com.miniichatNext.carter.data.model.MessageSegment.Tool -> {
                                         if (s.callId in seenCallIds) return@buildList
@@ -197,7 +198,7 @@ internal fun AssistantRow(
                 // Legacy布局（历史消息）：思考+全部工具调用在上，content在下
                 val clarifications = message.toolInvocations.filter { isClarificationTool(it.toolName) }
                 val steps = buildList {
-                    message.reasoningContent?.takeIf { it.isNotBlank() }
+                    message.reasoningContent?.takeIf { preferences.showReasoningCard && it.isNotBlank() }
                         ?.let { add(ThoughtStep.Reasoning(it)) }
                     message.toolInvocations
                         .filterNot { isClarificationTool(it.toolName) }
@@ -232,6 +233,15 @@ internal fun AssistantRow(
                 TypingDots()
             }
         }
+        val providers = com.miniichatNext.carter.ui.settings.LocalUsageProviders.current
+        val contextLength = providers.firstOrNull { it.id == message.providerId }?.model(message.model.orEmpty())
+            ?.contextLength?.takeIf { it > 0 }
+        ChatMessageNerdLine(
+            message = message,
+            contextLength = contextLength,
+            generating = isLastAssistant && isStreaming,
+            modifier = Modifier.padding(top = 4.dp),
+        )
         // 只有最后一条助手的消息会显示继续和编辑按钮
         if (message.content.isNotEmpty() && !isStreaming) {
             Spacer(Modifier.height(8.dp))
@@ -328,7 +338,7 @@ private fun TextBubble(
     onFullscreen: ((String, Boolean) -> Unit)? = null,
     // 流式生成期间关闭文本选择：内容高频重排，选择器会频繁注册/注销拖慢渲染
     selectable: Boolean = true,
-    // 流式期间也走Markdown，解析器使用conflate丢弃过时快照。
+    // 流式期间走增量解析，只重解析末尾变化的块
 ) {
     Box(
         modifier = Modifier

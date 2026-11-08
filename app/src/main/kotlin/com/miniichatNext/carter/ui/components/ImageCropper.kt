@@ -1,19 +1,21 @@
 package com.miniichatNext.carter.ui.components
 
 import android.app.Activity
-import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.ui.theme.LocalDarkMode
 import com.yalantis.ucrop.UCrop
 import com.yalantis.ucrop.UCropActivity
 import java.io.File
@@ -31,9 +33,15 @@ fun rememberImageCropLauncher(
     maxResultSize: Int = 0
 ): (Uri) -> Unit {
     val context = LocalContext.current
-    var lastOutputPath by rememberSaveable { mutableStateOf("") }
-    var pendingFile by remember { mutableStateOf<File?>(null) }
-    var pendingSourceFile by remember { mutableStateOf<File?>(null) }
+    val colors = MaterialTheme.colorScheme
+    val cropBackground = colors.background.toArgb()
+    val cropSurface = colors.surface.toArgb()
+    val cropContent = colors.onSurface.toArgb()
+    val cropActive = colors.primary.toArgb()
+    val dark = LocalDarkMode.current
+    var pendingPath by rememberSaveable { mutableStateOf<String?>(null) }
+    var sourcePath by rememberSaveable { mutableStateOf<String?>(null) }
+
 
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -41,10 +49,10 @@ fun rememberImageCropLauncher(
         // rikkahub同款简单三态：RESULT_OK→信任本次输出文件；CANCEL→取消；其它→失败。
         // 不做decodeFile主线程校验（大图解码慢/OOM会把正确结果误判"不可用"）；
         // 不用newestCropOutput/lastOutputPath兜底（旧图正是"显示原图"的元凶）。
-        val outFile = pendingFile
-        val sourceFile = pendingSourceFile
-        pendingFile = null
-        pendingSourceFile = null
+        val outFile = pendingPath?.let(::File)
+        val sourceFile = sourcePath?.let(::File)
+        pendingPath = null
+        sourcePath = null
 
         when {
             result.resultCode == Activity.RESULT_OK && outFile != null &&
@@ -73,20 +81,19 @@ fun rememberImageCropLauncher(
         }
     }
 
-    return remember(context, aspectRatio, launcher, outputDir, outputPrefix, maxResultSize) {
+    return remember(context, aspectRatio, launcher, outputDir, outputPrefix, maxResultSize, cropBackground, cropSurface, cropContent, cropActive, dark) {
         { sourceUri: Uri ->
             val dir = outputDir ?: context.cacheDir
             runCatching { if (!dir.exists()) dir.mkdirs() }
             val outFile = File(dir, outputPrefix + System.currentTimeMillis() + ".jpg")
-            lastOutputPath = outFile.absolutePath
-            pendingFile = outFile
+            pendingPath = outFile.absolutePath
             val outUri = Uri.fromFile(outFile)
 
             // 源也要file://（rikkahub同款）：content://源在部分设备上UCrop读取异常（直通原图/写不出）。
             // 先把content://复制到cache临时文件，再交给UCrop。
             val launchSource: Uri = if (sourceUri.scheme == "content") {
                 val tmp = File(context.cacheDir, "crop_src_${System.currentTimeMillis()}.jpg")
-                pendingSourceFile = tmp
+                sourcePath = tmp.absolutePath
                 runCatching {
                     context.contentResolver.openInputStream(sourceUri)?.use { input ->
                         tmp.outputStream().use { output -> input.copyTo(output) }
@@ -97,13 +104,19 @@ fun rememberImageCropLauncher(
                     sourceUri
                 }
             } else {
-                pendingSourceFile = null
+                sourcePath = null
                 sourceUri
             }
             DebugLog.d("ImageCropper", "crop src=$launchSource out=$outUri")
 
             var crop = UCrop.of(launchSource, outUri)
             val options = UCrop.Options().apply {
+                setToolbarColor(cropSurface)
+                setToolbarWidgetColor(cropContent)
+                setRootViewBackgroundColor(cropBackground)
+                setActiveControlsWidgetColor(cropActive)
+                setLogoColor(cropContent)
+                // uCrop滚轮容器不读取Compose主题，单独传入实际背景与文字颜色。
                 setFreeStyleCropEnabled(aspectRatio == null)
                 setAllowedGestures(
                     UCropActivity.SCALE,
@@ -121,21 +134,21 @@ fun rememberImageCropLauncher(
             if (maxResultSize > 0) {
                 crop = crop.withMaxResultSize(maxResultSize, maxResultSize)
             }
-            runCatching { launcher.launch(crop.getIntent(context)) }.onFailure { e ->
+            runCatching {
+                val intent = crop.getIntent(context).setClass(context, ThemedCropActivity::class.java)
+                    .putExtra(ThemedCropActivity.EXTRA_SURFACE, cropSurface)
+                    .putExtra(ThemedCropActivity.EXTRA_CONTENT, cropContent)
+                    .putExtra(ThemedCropActivity.EXTRA_DARK, dark)
+                launcher.launch(intent)
+            }.onFailure { e ->
                 DebugLog.e("ImageCropper", "cannot start crop activity: ${e.message}", e)
                 runCatching { outFile.delete() }
-                runCatching { pendingSourceFile?.delete() }
-                pendingFile = null
-                pendingSourceFile = null
+                runCatching { sourcePath?.let(::File)?.delete() }
+                pendingPath = null
+                sourcePath = null
                 onFailure()
             }
         }
     }
 }
 
-private fun newestCropOutput(context: Context, outputDir: File?, prefix: String): File? = runCatching {
-    val dir = outputDir ?: context.cacheDir
-    dir.listFiles { f -> f.isFile && f.name.startsWith(prefix) && f.length() > 0L }
-        ?.maxByOrNull { it.lastModified() }
-        ?.takeIf { System.currentTimeMillis() - it.lastModified() < 5 * 60 * 1000L }
-}.getOrNull()

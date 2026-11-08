@@ -15,12 +15,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.ui.AppRoot
 import com.miniichatNext.carter.ui.onboarding.WelcomeActivity
 import com.miniichatNext.carter.ui.theme.MiniiChatTheme
-import java.util.Locale
-import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.vm.ChatViewModel
+import java.util.Locale
 
 class MainActivity : ComponentActivity() {
 
@@ -58,6 +58,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        (application as MiniiChatApplication).recordAppLaunch()
         if (!com.miniichatNext.carter.ui.onboarding.OnboardingState.isDone(this)) {
             startActivity(Intent(this, WelcomeActivity::class.java))
             finish()

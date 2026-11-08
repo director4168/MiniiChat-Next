@@ -3,13 +3,10 @@ package com.miniichatNext.carter.vm
 import android.app.Application
 import android.os.SystemClock
 import androidx.lifecycle.viewModelScope
-import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.api.ChatMessage
 import com.miniichatNext.carter.api.ToolCall
 import com.miniichatNext.carter.api.ToolSpec
-import com.miniichatNext.carter.data.tools.BuiltInFileTools
-import com.miniichatNext.carter.data.tools.SpecialTools
 import com.miniichatNext.carter.data.mcp.EffectiveToolPermission
 import com.miniichatNext.carter.data.mcp.McpServerConfig
 import com.miniichatNext.carter.data.mcp.exposedMcpToolName
@@ -22,31 +19,40 @@ import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.model.TokenUsage
 import com.miniichatNext.carter.data.model.ToolInvocation
 import com.miniichatNext.carter.data.model.ToolInvocationState
+import com.miniichatNext.carter.data.model.merge
+import com.miniichatNext.carter.data.model.withStepStats
+import com.miniichatNext.carter.data.tools.BuiltInFileTools
+import com.miniichatNext.carter.data.tools.SpecialTools
+import com.miniichatNext.carter.data.util.AttachmentLoader
+import com.miniichatNext.carter.data.util.InlineAttachment
+import com.miniichatNext.carter.data.util.PromptVars
+import com.miniichatNext.carter.data.workspace.WORKSPACE_SERVER_ID
 import com.miniichatNext.carter.data.workspace.WorkspaceEntity
 import com.miniichatNext.carter.data.workspace.executeWorkspaceTool
 import com.miniichatNext.carter.data.workspace.isWorkspaceTool
 import com.miniichatNext.carter.data.workspace.resolveWorkspaceToolApprovalByCategory
-import com.miniichatNext.carter.data.workspace.WORKSPACE_SERVER_ID
 import com.miniichatNext.carter.data.workspace.workspaceToolSpecs
 import com.miniichatNext.carter.debug.DebugLog
-import com.miniichatNext.carter.data.util.AttachmentLoader
-import com.miniichatNext.carter.data.util.InlineAttachment
-import com.miniichatNext.carter.data.util.PromptVars
+import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.util.newId
-import kotlinx.coroutines.Dispatchers
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.contentOrNull
 
 internal fun ChatViewModel.sendMessage(
     text: String,
@@ -199,11 +205,20 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
     // 本轮新增的部分（用于流式覆盖层）；落库时和旧内容拼接
     val priorContent = existing?.content.orEmpty()
     val priorReasoning = existing?.reasoningContent.orEmpty()
+    // 旧消息保留字段仅用于读取；本步生成严格采用上游usage/lastUsage/time/step模型。
+    val stepBase = assistantMsg.copy(
+        usage = assistantMsg.usage?.takeUnless { it.estimated },
+        generationTimeMs = assistantMsg.generationTimeMs ?: assistantMsg.usage?.durationMs?.takeIf { it > 0 },
+        lastUsage = assistantMsg.lastUsage ?: assistantMsg.usage?.takeUnless { it.estimated }?.let { legacy ->
+            legacy.copy(promptTokens = legacy.lastPromptTokens ?: legacy.promptTokens,
+                completionTokens = legacy.lastCompletionTokens ?: legacy.completionTokens)
+        },
+        stepCount = assistantMsg.stepCount ?: assistantMsg.usage?.steps,
+    )
 
     val current = settings.value
     val temperature = assistant?.temperature ?: current.temperature
     val effectiveSettings = current.copy(temperature = temperature)
-    val startTime = SystemClock.elapsedRealtime()
     val text = StringBuilder()
     val reasoning = StringBuilder()
     // 节流落库：流式delta高频（DeepSeek思考每秒几十个），每delta全量写DataStore会打爆IO队列
@@ -211,6 +226,16 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
     // 必须带上之前几轮的调用，否则落库时会把它们覆盖掉
     val invocations = (existing?.toolInvocations ?: emptyList()).toMutableList()
     var usage: TokenUsage? = null
+    val requestStartedAt = SystemClock.elapsedRealtime()
+    var firstChunkAt: Long? = null
+    var finishedAt: Long? = null
+    var streamEndedAt: Long? = null
+    fun currentStats(): Message {
+        val end = streamEndedAt ?: SystemClock.elapsedRealtime()
+        val elapsed = if (effectiveSettings.stream) firstChunkAt?.let { end - it } ?: 0L else end - requestStartedAt
+        return assistantMsg.copy(usage = usage, generationTimeMs = null, finishedAt = finishedAt)
+            .withStepStats(stepBase, elapsed.coerceAtLeast(0L).milliseconds)
+    }
 
     fun mergedContent(): String = when {
         priorContent.isBlank() -> text.toString()
@@ -275,18 +300,36 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
     }
 
     var lastOverlayAt = 0L
+    // 长正文的解析和排版成本随字数增长，流式刷新随之降频，避免后台解析挤掉UI线程
+    fun streamPublishIntervalMs(): Long {
+        val size = text.length + reasoning.length
+        return when {
+            size > 80_000 -> STREAM_OVERLAY_INTERVAL_MS * 4
+            size > 30_000 -> STREAM_OVERLAY_INTERVAL_MS * 3
+            size > 8_000 -> STREAM_OVERLAY_INTERVAL_MS * 2
+            else -> STREAM_OVERLAY_INTERVAL_MS
+        }
+    }
     fun publishOverlay(force: Boolean = false) {
         val now = SystemClock.elapsedRealtime()
-        if (!force && now - lastOverlayAt < STREAM_OVERLAY_INTERVAL_MS) return
+        if (!force && now - lastOverlayAt < streamPublishIntervalMs()) return
         lastOverlayAt = now
+        val stats = currentStats()
         _streamingOverlay.value = StreamOverlay(
             assistantMsg.id,
             mergedContent(),
             mergedReasoning(),
             mergedParts(),
+            stats.usage, stats.generationTimeMs, stats.lastUsage, stats.stepCount, stats.finishedAt,
         )
     }
 
+    coroutineScope {
+    publishOverlay(force = true)
+    val ticker = launch {
+        while (true) { delay(250L); publishOverlay(force = true) }
+    }
+    try {
     client.chatStream(provider, effectiveSettings, model, apiMessages, tools,
         override = conv.providerOverride(provider.id),
         thinking = conv.effectiveThinking())
@@ -298,6 +341,8 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
             }
         }
         .collect { delta ->
+            if (firstChunkAt == null) firstChunkAt = SystemClock.elapsedRealtime()
+            delta.usage?.let { usage = usage.merge(it) }
             if (delta.text.isNotEmpty()) {
                 text.append(delta.text)
                 appendText(delta.text)
@@ -327,27 +372,23 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
                     parts.add(com.miniichatNext.carter.data.model.MessageSegment.Tool(tc.id))
                 }
             }
-            if (delta.toolCalls.isNotEmpty()) publishOverlay()
+            publishOverlay()
 
-            val elapsed = (SystemClock.elapsedRealtime() - startTime).coerceAtLeast(1)
-            if (delta.usage != null) usage = delta.usage
             val now = SystemClock.elapsedRealtime()
             if (now - lastPersistAt >= PERSIST_INTERVAL_MS) {
                 lastPersistAt = now
-                persistAssistantStep(cid, assistantMsg.id, mergedContent(), mergedReasoning(), invocations, usage, orderedParts = mergedParts())
+                persistAssistantStep(cid, assistantMsg.id, mergedContent(), mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts())
             }
         }
 
-    // usage为空时按字符数估算（原逻辑在每delta里算，节流后移到流末补一次）
-    if (usage == null) {
-        val elapsed = (SystemClock.elapsedRealtime() - startTime).coerceAtLeast(1)
-        val est = (text.length / 2).coerceAtLeast(1)
-        usage = TokenUsage(
-            completionTokens = est,
-            totalTokens = est,
-            durationMs = elapsed,
-            tokensPerSecond = (est * 1000f) / elapsed
-        )
+    } finally {
+        streamEndedAt = SystemClock.elapsedRealtime()
+        finishedAt = System.currentTimeMillis()
+        ticker.cancel()
+        withContext(NonCancellable) {
+            persistAssistantStep(cid, assistantMsg.id, mergedContent(), mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts())
+        }
+    }
     }
     if (text.isBlank() && invocations.isEmpty()) {
         // 只在首轮且完全没产出时才写占位符，续写时不要覆盖掉之前的内容
@@ -355,13 +396,12 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
             val fallback = if (reasoning.isNotBlank())
                 getApplication<Application>().getString(R.string.chat_reasoning_only)
             else getApplication<Application>().getString(R.string.chat_no_content)
-            persistAssistantStep(cid, assistantMsg.id, fallback, mergedReasoning(), invocations, usage, orderedParts = mergedParts())
+            persistAssistantStep(cid, assistantMsg.id, fallback, mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts())
         }
     } else {
-        persistAssistantStep(cid, assistantMsg.id, mergedContent(), mergedReasoning(), invocations, usage, orderedParts = mergedParts())
+        persistAssistantStep(cid, assistantMsg.id, mergedContent(), mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts())
     }
 
-    settingsRepo.addTokenUsage(usage)
     generateTitle(cid)
     // 候选词只在用户打开候选面板时才生成（SuggestionPanel的LaunchedEffect触发）
     // 只返回仍待用户审批的调用：已执行完的（含上一轮续写携带）不能再算pending，
@@ -378,7 +418,7 @@ private suspend fun ChatViewModel.persistAssistantStep(
     content: String,
     reasoning: String,
     invocations: List<ToolInvocation>,
-    usage: TokenUsage?,
+    stats: Message,
     orderedParts: List<com.miniichatNext.carter.data.model.MessageSegment> = emptyList(),
 ) {
     store.updateMessages(cid) { msgs ->
@@ -388,11 +428,15 @@ private suspend fun ChatViewModel.persistAssistantStep(
                 reasoningContent = reasoning.ifBlank { null },
                 toolInvocations = invocations.toList(),
                 orderedParts = orderedParts,
-                usage = usage ?: m.usage
+                usage = stats.usage,
+                generationTimeMs = stats.generationTimeMs,
+                lastUsage = stats.lastUsage,
+                stepCount = stats.stepCount,
+                finishedAt = stats.finishedAt,
             ) else m
         }
     }
-    _streamingOverlay.value = StreamOverlay(msgId, content, reasoning, orderedParts)
+    _streamingOverlay.value = StreamOverlay(msgId, content, reasoning, orderedParts, stats.usage, stats.generationTimeMs, stats.lastUsage, stats.stepCount, stats.finishedAt)
 }
 
 internal fun ChatViewModel.approveToolCall(inv: ToolInvocation, customResult: String? = null) {

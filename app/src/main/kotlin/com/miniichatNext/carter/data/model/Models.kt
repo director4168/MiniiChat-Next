@@ -1,7 +1,6 @@
 package com.miniichatNext.carter.data.model
 
 import androidx.compose.runtime.Immutable
-
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -49,18 +48,16 @@ data class TokenUsage(
     val completionTokens: Int = 0,
     val totalTokens: Int = 0,
     val durationMs: Long = 0,
-    val tokensPerSecond: Float = 0f
-) {
-    operator fun plus(other: TokenUsage) = TokenUsage(
-        promptTokens = promptTokens + other.promptTokens,
-        completionTokens = completionTokens + other.completionTokens,
-        totalTokens = totalTokens + other.totalTokens,
-        durationMs = durationMs + other.durationMs,
-        tokensPerSecond = if (durationMs + other.durationMs > 0)
-            ((completionTokens + other.completionTokens) * 1000f) / (durationMs + other.durationMs)
-        else 0f
-    )
-}
+    val tokensPerSecond: Float = 0f,
+    val estimated: Boolean = false,
+    val lastPromptTokens: Int? = null,
+    val lastCompletionTokens: Int? = null,
+    val steps: Int = 1,
+    val cachedTokens: Int = 0,
+    val promptEstimated: Boolean = false,
+    val completionEstimated: Boolean = false,
+    val contextEstimated: Boolean = false
+)
 
 /** 消息内记录的一次工具调用与执行结果 */
 @Immutable
@@ -112,6 +109,10 @@ data class Message(
     val content: String,
     val attachments: List<Attachment> = emptyList(),
     val usage: TokenUsage? = null,
+    val generationTimeMs: Long? = null,
+    val lastUsage: TokenUsage? = null,
+    val stepCount: Int? = null,
+    val finishedAt: Long? = null,
     val toolInvocations: List<ToolInvocation> = emptyList(),
     val reasoningContent: String? = null,
     val toolCallId: String? = null,
@@ -127,7 +128,10 @@ data class Message(
     /** 续写指令等隐形消息：UI不渲染，但参与API请求历史 */
     val hidden: Boolean = false,
     val createdAt: Long = System.currentTimeMillis()
-)
+) {
+    fun lastRequestUsage(): TokenUsage? = lastUsage ?: usage
+    fun contextTokens(): Int? = lastRequestUsage()?.let { it.promptTokens + it.completionTokens }
+}
 
 @Serializable
 data class ProviderOverride(

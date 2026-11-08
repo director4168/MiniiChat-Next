@@ -221,7 +221,10 @@ MiniiChat-Next-<versionName>-<abi>-debug.apk
 MiniiChat-Next-<versionName>-<abi>-release.apk
 ```
 
-AndroidIDE 构建遇到增量缓存异常时，可以清理后重新构建：
+复制任务的输出带颜色：成功绿色、警告黄色、失败红色。`--console=plain`、设置`NO_COLOR`或`TERM=dumb`时自动退回纯文本。
+
+
+构建遇到增量缓存异常时，可以清理后重新构建：
 
 ```bash
 ./gradlew --stop

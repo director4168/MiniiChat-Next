@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -18,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.store.AppSettings
 import com.miniichatNext.carter.ui.components.SectionCard
@@ -40,8 +44,38 @@ fun MorePreferencesScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp)
         ) {
+            SectionHeader(stringResource(R.string.pref_conversations))
+            SectionCard {
+                Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                    PreferenceSwitch(stringResource(R.string.pref_auto_new_chat), stringResource(R.string.pref_auto_new_chat_desc),
+                        settings.autoNewChatOnLaunch) { v -> onChange { it.copy(autoNewChatOnLaunch = v) } }
+                }
+            }
+            SectionHeader(stringResource(R.string.pref_display))
+            SectionCard {
+                Column(Modifier.padding(16.dp)) {
+                    Text(stringResource(R.string.pref_font_size, settings.fontSizeSp.toInt()))
+                    Slider(value = settings.fontSizeSp, onValueChange = { v -> onChange { it.copy(fontSizeSp = v) } },
+                        valueRange = 12f..22f, steps = 9)
+                    Text(stringResource(R.string.pref_font_preview), fontSize = settings.fontSizeSp.sp)
+                    PreferenceSwitch(stringResource(R.string.pref_reasoning), stringResource(R.string.pref_reasoning_desc),
+                        settings.showReasoningCard) { v -> onChange { it.copy(showReasoningCard = v) } }
+                    PreferenceSwitch(stringResource(R.string.pref_usage), stringResource(R.string.pref_usage_desc),
+                        settings.showCardTokenUsage) { v -> onChange { it.copy(showCardTokenUsage = v) } }
+                }
+            }
+            SectionHeader(stringResource(R.string.pref_interaction))
+            SectionCard {
+                Column(Modifier.padding(16.dp)) {
+                    PreferenceSwitch(stringResource(R.string.pref_enter), stringResource(R.string.pref_enter_desc),
+                        settings.sendOnEnter) { v -> onChange { it.copy(sendOnEnter = v) } }
+                    PreferenceSwitch(stringResource(R.string.pref_paste), stringResource(R.string.pref_paste_desc),
+                        settings.pasteAsAttachment) { v -> onChange { it.copy(pasteAsAttachment = v) } }
+                }
+            }
             SectionHeader(stringResource(R.string.section_preferences))
             SectionCard {
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) {

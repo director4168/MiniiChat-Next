@@ -18,6 +18,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import com.miniichatNext.carter.ui.settings.LocalAppPreferences
 
 /**
  * Markdown渲染入口（对外签名与旧实现一致，调用方零改动）。
@@ -38,7 +40,8 @@ internal fun MarkdownText(
     onLinkClick: ((String) -> Unit)? = null,
 ) {
     val effColor = if (color.isSpecified) color else LocalContentColor.current
-    val style = MaterialTheme.typography.bodyLarge
+    val fontSize = LocalAppPreferences.current.fontSizeSp
+    val style = MaterialTheme.typography.bodyLarge.copy(fontSize = fontSize.sp, lineHeight = (fontSize * 1.5f).sp)
     // 默认点链接先弹确认框，不直接跳转；调用方要自定义时传onLinkClick
     var pendingLink by remember { mutableStateOf<String?>(null) }
     CompositionLocalProvider(LocalContentColor provides effColor) {
