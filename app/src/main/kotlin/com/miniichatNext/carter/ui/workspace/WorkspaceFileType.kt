@@ -1,6 +1,7 @@
 package com.miniichatNext.carter.ui.workspace
 
 import com.miniichatNext.carter.data.workspace.WorkspaceFileEntry
+import java.util.Locale
 
 /** 工作区文件的粗略分类，用于决定点击文件时的行为。 */
 enum class WorkspaceFileType { TEXT, IMAGE, OTHER }
@@ -19,7 +20,7 @@ private val TEXT_EXTENSIONS = setOf(
 )
 
 fun WorkspaceFileEntry.detectFileType(): WorkspaceFileType {
-    val ext = name.substringAfterLast('.', "").lowercase()
+    val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
     return when {
         ext.isEmpty() -> WorkspaceFileType.OTHER
         ext in IMAGE_EXTENSIONS -> WorkspaceFileType.IMAGE
