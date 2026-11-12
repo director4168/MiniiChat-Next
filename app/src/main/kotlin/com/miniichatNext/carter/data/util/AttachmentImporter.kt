@@ -7,6 +7,7 @@ import android.util.Log
 import com.miniichatNext.carter.data.model.Attachment
 import java.security.MessageDigest
 import java.util.UUID
+import java.util.Locale
 
 /**
  * 把picker返回的URI登记为附件：不复制文件，直接指向原始位置（content://）。
@@ -125,7 +126,7 @@ object AttachmentImporter {
     }
 
     private fun guessMimeByName(name: String): String? {
-        val ext = name.substringAfterLast('.', "").lowercase()
+        val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
         return when (ext) {
             "jpg", "jpeg" -> "image/jpeg"
             "png" -> "image/png"
