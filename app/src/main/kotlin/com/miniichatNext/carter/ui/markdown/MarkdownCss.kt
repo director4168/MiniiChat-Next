@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.TextUnitType
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import java.util.Locale
 
 // 这里只解析HTML行内样式里对文本渲染有意义的那一小部分CSS。
 // 相对单位统一换算成em，绝对单位按1px=1sp处理，所以解析阶段不需要Density和基准字号。
@@ -22,7 +23,7 @@ private val EMPTY_SPAN_STYLE = SpanStyle()
 internal fun parseCssDeclarations(css: String): Map<String, String> {
     if (css.isBlank()) return emptyMap()
     return css.split(';').mapNotNull { declaration ->
-        val name = declaration.substringBefore(':', "").trim().lowercase()
+        val name = declaration.substringBefore(':', "").trim().lowercase(Locale.ROOT)
         val value = declaration.substringAfter(':', "").trim()
         if (name.isEmpty() || value.isEmpty()) null else name to value
     }.toMap()
@@ -85,7 +86,7 @@ private val SIZE_KEYWORDS = mapOf(
 )
 
 internal fun parseCssSize(value: String): TextUnit? {
-    val match = SIZE_REGEX.matchEntire(value.trim().lowercase()) ?: return null
+    val match = SIZE_REGEX.matchEntire(value.trim().lowercase(Locale.ROOT)) ?: return null
     val number = match.groupValues[1].toFloatOrNull() ?: return null
     return when (match.groupValues[2]) {
         "", "px", "sp", "dp" -> number.sp
@@ -98,13 +99,13 @@ internal fun parseCssSize(value: String): TextUnit? {
 
 // 限制上限，避免font-size: 9999px这种内容把布局撑爆
 private fun parseFontSize(value: String): TextUnit? {
-    val size = SIZE_KEYWORDS[value.trim().lowercase()]?.em ?: parseCssSize(value) ?: return null
+    val size = SIZE_KEYWORDS[value.trim().lowercase(Locale.ROOT)]?.em ?: parseCssSize(value) ?: return null
     if (size.value <= 0f) return null
     return if (size.type == TextUnitType.Em) size.value.coerceAtMost(6f).em else size.value.coerceAtMost(96f).sp
 }
 
 private fun parseLineHeight(value: String): TextUnit? {
-    val normalized = value.trim().lowercase()
+    val normalized = value.trim().lowercase(Locale.ROOT)
     // 无单位的数字是字号的倍数
     val size = normalized.toFloatOrNull()?.em ?: parseCssSize(normalized) ?: return null
     return size.takeIf { it.value > 0f }
@@ -119,7 +120,7 @@ private fun parseLegacyFontSize(value: String): TextUnit? {
     return LEGACY_FONT_SCALES[level.coerceIn(1, 7) - 1].em
 }
 
-private fun parseFontWeight(value: String): FontWeight? = when (val normalized = value.trim().lowercase()) {
+private fun parseFontWeight(value: String): FontWeight? = when (val normalized = value.trim().lowercase(Locale.ROOT)) {
     "normal" -> FontWeight.Normal
     "bold" -> FontWeight.Bold
     "bolder" -> FontWeight.ExtraBold
@@ -127,14 +128,14 @@ private fun parseFontWeight(value: String): FontWeight? = when (val normalized =
     else -> normalized.toIntOrNull()?.takeIf { it in 1..1000 }?.let(::FontWeight)
 }
 
-private fun parseFontStyle(value: String): FontStyle? = when (value.trim().lowercase()) {
+private fun parseFontStyle(value: String): FontStyle? = when (value.trim().lowercase(Locale.ROOT)) {
     "italic", "oblique" -> FontStyle.Italic
     "normal" -> FontStyle.Normal
     else -> null
 }
 
 private fun parseFontFamily(value: String): FontFamily? {
-    val family = value.substringBefore(',').trim().trim('"', '\'').lowercase()
+    val family = value.substringBefore(',').trim().trim('"', '\'').lowercase(Locale.ROOT)
     return when {
         family.isEmpty() -> null
         "mono" in family || "courier" in family || "consolas" in family || "menlo" in family -> FontFamily.Monospace
@@ -147,7 +148,7 @@ private fun parseFontFamily(value: String): FontFamily? {
 }
 
 private fun parseTextDecoration(value: String): TextDecoration? {
-    val parts = value.lowercase().split(' ')
+    val parts = value.lowercase(Locale.ROOT).split(' ')
     val decorations = buildList {
         if ("underline" in parts) add(TextDecoration.Underline)
         if ("line-through" in parts) add(TextDecoration.LineThrough)
@@ -159,7 +160,7 @@ private fun parseTextDecoration(value: String): TextDecoration? {
     }
 }
 
-private fun parseTextAlign(value: String): TextAlign? = when (value.trim().lowercase()) {
+private fun parseTextAlign(value: String): TextAlign? = when (value.trim().lowercase(Locale.ROOT)) {
     "left", "start" -> TextAlign.Start
     "right", "end" -> TextAlign.End
     "center", "middle" -> TextAlign.Center
@@ -168,7 +169,7 @@ private fun parseTextAlign(value: String): TextAlign? = when (value.trim().lower
 }
 
 internal fun parseCssColor(value: String): Color? {
-    val normalized = value.trim().lowercase()
+    val normalized = value.trim().lowercase(Locale.ROOT)
     return when {
         normalized.startsWith('#') -> parseHexColor(normalized.substring(1))
         normalized.startsWith("rgb") -> parseRgbColor(normalized)
