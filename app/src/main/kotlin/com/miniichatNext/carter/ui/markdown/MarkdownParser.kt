@@ -25,6 +25,7 @@ import org.jsoup.nodes.Element
 import org.jsoup.nodes.Node
 import org.jsoup.nodes.TextNode
 import org.jsoup.parser.Tag
+import java.util.Locale
 
 // 解析流程：Markdown经JetBrains Markdown转HTML，再由Jsoup合成DOM树，最后转成MarkdownDocument
 // Markdown解析器会把内嵌的HTML拆成零散的节点（行内标签是一个个独立的token，块级HTML遇到空行就断开），
@@ -117,7 +118,7 @@ private object InlineHtmlTagProvider : GeneratingProvider {
     override fun processNode(visitor: HtmlGenerator.HtmlGeneratingVisitor, text: String, node: ASTNode) {
         val tag = node.getTextInNode(text)
         val name = HTML_TAG_NAME_REGEX.find(tag)?.groupValues?.get(1)
-        if (name != null && !Tag.isKnownTag(name.lowercase())) {
+        if (name != null && !Tag.isKnownTag(name.lowercase(Locale.ROOT))) {
             visitor.consumeHtml(tag.toString().replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
         } else {
             visitor.consumeHtml(tag)
