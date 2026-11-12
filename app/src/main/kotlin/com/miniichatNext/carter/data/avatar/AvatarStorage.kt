@@ -10,6 +10,7 @@ import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 object AvatarStorage {
     private const val DIR = "avatars"
@@ -27,7 +28,7 @@ object AvatarStorage {
     }
 
     fun file(context: Context, id: String, ext: String = "jpg"): File =
-        File(dir(context), "${id}.${ext.lowercase()}")
+        File(dir(context), "${id}.${ext.lowercase(Locale.ROOT)}")
 
     fun cropDir(context: Context): File = File(dir(context), ".crop").also { it.mkdirs() }
 
