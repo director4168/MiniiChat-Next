@@ -1,8 +1,9 @@
 package com.miniichatNext.carter.data.util
 
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Replace prompt variables in a system prompt or user message.
@@ -18,6 +19,16 @@ import java.util.Locale
  * - {weekday}→Monday/Tuesday/... (locale-formatted)
  */
 object PromptVars {
+    private class Formats(locale: Locale) {
+        val date = DateTimeFormatter.ofPattern("yyyy-MM-dd", locale)
+        val time = DateTimeFormatter.ofPattern("HH:mm", locale)
+        val datetime = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", locale)
+        val weekday = DateTimeFormatter.ofPattern("EEEE", locale)
+    }
+
+    // DateTimeFormatter is immutable and thread-safe, so one set per locale can be shared.
+    private val formats = ConcurrentHashMap<Locale, Formats>()
+
     fun render(
         template: String,
         model: String = "",
@@ -25,17 +36,18 @@ object PromptVars {
         assistant: String = "",
     ): String {
         if (template.isEmpty()) return template
-        val now = Date()
+        val now = LocalDateTime.now()
         val locale = Locale.getDefault()
+        val fmt = formats.getOrPut(locale) { Formats(locale) }
         val map = mapOf(
             "model" to model,
             "provider" to provider,
             "assistant" to assistant,
-            "date" to SimpleDateFormat("yyyy-MM-dd", locale).format(now),
-            "time" to SimpleDateFormat("HH:mm", locale).format(now),
-            "datetime" to SimpleDateFormat("yyyy-MM-dd HH:mm", locale).format(now),
+            "date" to now.format(fmt.date),
+            "time" to now.format(fmt.time),
+            "datetime" to now.format(fmt.datetime),
             "locale" to locale.toLanguageTag(),
-            "weekday" to SimpleDateFormat("EEEE", locale).format(now),
+            "weekday" to now.format(fmt.weekday),
         )
         var out = template
         for ((k, v) in map) {
