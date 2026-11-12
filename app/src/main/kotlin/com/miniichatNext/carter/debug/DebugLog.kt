@@ -10,8 +10,10 @@ import java.io.File
 import java.io.OutputStream
 import java.io.PrintWriter
 import java.io.StringWriter
-import java.text.SimpleDateFormat
-import java.util.Date
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.zip.ZipEntry
@@ -58,14 +60,15 @@ object DebugLog {
 
     private val fileLock = Any()
 
-    private val timeFormat = SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.US)
+    private val timeFormat = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss.SSS", Locale.US)
+    private val exportTimeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss", Locale.US)
+    private val manifestTimeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.US)
     private val buffer = ArrayDeque<String>()
     private val io = Executors.newSingleThreadExecutor { r -> Thread(r, "DebugLog-IO") }
 
     /** 统一的导出文件名：MiniiChat-Next_Log_<yyyy-MM-dd_HH-mm-ss>.zip（下载目录与缓存目录共用） */
     private fun exportFileName(): String =
-        "MiniiChat-Next_Log_" +
-            SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date()) + ".zip"
+        "MiniiChat-Next_Log_" + LocalDateTime.now().format(exportTimeFormat) + ".zip"
 
     @Volatile
     private var appContext: Context? = null
@@ -127,7 +130,7 @@ object DebugLog {
                 append(StringWriter().also { tr.printStackTrace(PrintWriter(it)) }.toString())
             }
         }
-        val line = timeFormat.format(Date()) + " [" + lvl.name + "/" + tag + "] " + text
+        val line = LocalDateTime.now().format(timeFormat) + " [" + lvl.name + "/" + tag + "] " + text
         synchronized(buffer) {
             buffer.addLast(line)
             while (buffer.size > MAX_BUFFER) buffer.removeFirst()
@@ -174,7 +177,7 @@ object DebugLog {
             val f = logFile(context)
             trimIfOversized(f)
             f.appendText(
-                timeFormat.format(Date()) + " " + levelName + "/" + tag + " " + text + "\n"
+                LocalDateTime.now().format(timeFormat) + " " + levelName + "/" + tag + " " + text + "\n"
             )
         }
     }
@@ -346,8 +349,8 @@ object DebugLog {
                 payloads[src.entryName] = bytes
                 manifestLines[src.entryName] = src.entryName +
                     "  bytes=" + bytes.size +
-                    "  mtime=" + SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-                        .format(Date(src.file.lastModified()))
+                    "  mtime=" + Instant.ofEpochMilli(src.file.lastModified())
+                        .atZone(ZoneId.systemDefault()).format(manifestTimeFormat)
                 if (src.deleteAfterPack) deletableCrashZips[src.entryName] = src.file
             }
 
@@ -380,7 +383,7 @@ object DebugLog {
                 .append('\n')
                 .append("logLevel=").append(level.name)
                 .append("  exportedAt=")
-                .append(SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date()))
+                .append(LocalDateTime.now().format(manifestTimeFormat))
                 .append('\n')
                 .append("entries=").append(payloads.size + 1).append(" (including this manifest)")
                 .append("\n\n")
