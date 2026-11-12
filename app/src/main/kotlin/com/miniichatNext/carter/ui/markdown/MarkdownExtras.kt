@@ -61,6 +61,7 @@ import com.miniichatNext.carter.ui.theme.LocalDarkMode
 import com.miniichatNext.carter.util.AppThemeOverrides
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.Locale
 
 private fun AnnotatedString.lineSlice(start: Int, end: Int): AnnotatedString {
     val source = this
@@ -84,7 +85,7 @@ internal fun MdCodeBlockCard(
     preferences: MarkdownPreferences = LocalMarkdownPreferences.current,
     onFullscreen: (String, Boolean) -> Unit,
 ) {
-    val lang = block.language.orEmpty().trim().substringBefore(' ').lowercase()
+    val lang = block.language.orEmpty().trim().substringBefore(' ').lowercase(Locale.ROOT)
     if (lang.equals("mermaid", ignoreCase = true) && block.closed && block.code.isNotBlank()) {
         MermaidChart(block.code, palette, onFullscreen = onFullscreen)
         return

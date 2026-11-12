@@ -9,6 +9,7 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import com.miniichatNext.carter.ui.markdown.lang.ALL_LANGUAGES
 import com.miniichatNext.carter.ui.markdown.lang.LangRules
+import java.util.Locale
 
 private class Span(val start: Int, val end: Int, val style: SpanStyle)
 
@@ -47,9 +48,9 @@ private fun contrastingBg(argb: Int): androidx.compose.ui.graphics.Color {
 }
 
 internal fun highlightCode(code: String, lang: String, palette: HighlightPalette): AnnotatedString {
-    val key = HighlightKey(code, lang.lowercase(), palette)
+    val key = HighlightKey(code, lang.lowercase(Locale.ROOT), palette)
     synchronized(highlightCache) { highlightCache.get(key)?.let { return it } }
-    val rules = ALL_LANGUAGES[lang.lowercase()] ?: return AnnotatedString(code)
+    val rules = ALL_LANGUAGES[lang.lowercase(Locale.ROOT)] ?: return AnnotatedString(code)
     val spans = scan(code, rules, palette)
     if (spans.isEmpty()) return AnnotatedString(code).also { synchronized(highlightCache) { highlightCache.put(key, it) } }
     return buildAnnotatedString {
@@ -135,7 +136,7 @@ private fun scan(code: String, rules: LangRules, palette: HighlightPalette): Lis
             var j = i + 1
             while (j < len && (code[j].isLetterOrDigit() || code[j] == '_')) j++
             val word = code.substring(i, j)
-            val lower = word.lowercase()
+            val lower = word.lowercase(Locale.ROOT)
             val style = when {
                 word in rules.keywords || lower in rules.keywordsLower -> SpanStyle(color = palette.keyword)
                 word in rules.types || lower in rules.typesLower -> SpanStyle(color = palette.type)
