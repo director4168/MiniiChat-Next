@@ -411,7 +411,7 @@ fun AppRoot(vm: ChatViewModel) {
                     latexEnabled = settings.latexEnabled,
                 )
             ) {
-            AppNavHost(nav = nav) { key ->
+            AppNavHost(nav = nav, liveRoutes = setOf(Screen.Chat.name)) { key ->
                 when (Screen.entries.firstOrNull { it.name == key.route } ?: Screen.Chat) {
                     Screen.Chat -> {
                         ModalNavigationDrawer(
@@ -425,9 +425,10 @@ fun AppRoot(vm: ChatViewModel) {
                                     activeAssistantId = settings.activeAssistantId,
                                     onSelectAssistant = { vm.selectAssistant(it) },
                                     onSelect = { id ->
-                                        // 先收侧滑栏再切换：切换会触发首帧解析，放在后面不会拖住关闭
-                                        scope.launch { drawerState.snapTo(DrawerValue.Closed) }
-                                        vm.selectConversation(id)
+                                        scope.launch {
+                                            drawerState.snapTo(DrawerValue.Closed)
+                                            vm.selectConversation(id)
+                                        }
                                     },
                                     onNew = {
                                         vm.newConversation()
@@ -436,12 +437,16 @@ fun AppRoot(vm: ChatViewModel) {
                                     onDelete = { vm.deleteConversation(it) },
                                     onRename = { id, t -> vm.renameConversation(id, t) },
                                     onOpenAssistants = {
-                                        nav.push(Screen.Assistants.name)
-                                        scope.launch { drawerState.close() }
+                                        scope.launch {
+                                            drawerState.snapTo(DrawerValue.Closed)
+                                            nav.push(Screen.Assistants.name)
+                                        }
                                     },
                                     onOpenSettings = {
-                                        gotoSettings(false)
-                                        scope.launch { drawerState.close() }
+                                        scope.launch {
+                                            drawerState.snapTo(DrawerValue.Closed)
+                                            gotoSettings(false)
+                                        }
                                     }
                                 )
                             }

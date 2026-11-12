@@ -19,16 +19,10 @@ object AppThemeOverrides {
     /** 保存后递增：任何读取.intValue的组合会订阅并重载 */
     val version = mutableIntStateOf(0)
 
-    /** 允许覆盖的ColorScheme角色（App实际大量使用的12个） */
-    val ALLOWED_ROLES = listOf(
-        "primary", "onPrimary", "primaryContainer", "onPrimaryContainer",
-        "background", "onBackground",
-        "surface", "onSurface", "surfaceVariant", "onSurfaceVariant",
-        "outline", "outlineVariant",
-        "error", "onError",
-        "workspaceWarning", "workspaceDanger", "toastWarningAction",
-        "messageJumperBackground", "messageJumperContent",
-    )
+    internal val ROLE_GROUPS = ThemeColorRoles.groups
+    val ALLOWED_ROLES = ThemeColorRoles.allowedRoles
+
+    fun normalizeRoles(values: Map<String, String>): Map<String, String> = ThemeColorRoles.normalize(values)
 
     /** 当前覆盖：{"light": {role: hex}, "dark": {role: hex}}；解析失败返回空 */
     fun load(context: Context): Map<String, Map<String, String>> {
@@ -38,25 +32,17 @@ object AppThemeOverrides {
         return buildMap {
             for (mode in listOf("light", "dark")) {
                 val m = AppJson.obj(obj, mode) ?: continue
-                put(mode, buildMap {
-                    for (role in ALLOWED_ROLES) {
-                        AppJson.str(m, role)?.takeIf { parseHex(it) != null }?.let { put(role, it) }
-                    }
-                })
+                val rawValues = m.keys.mapNotNull { role -> AppJson.str(m, role)?.let { role to it } }.toMap()
+                put(mode, normalizeRoles(rawValues))
             }
         }
     }
 
     fun save(context: Context, light: Map<String, String>, dark: Map<String, String>) {
-        // key=角色名（须在ALLOWED_ROLES内），value=hex（须parseHex可解析）
-        fun valid(m: Map<String, String>): Map<String, String> =
-            m.filterKeys { it in ALLOWED_ROLES }.filterValues { parseHex(it) != null }
-        // diff保存：只保留与当前默认基色不同的角色
-        // 未改动的角色不写覆盖（否则静态默认色全量压过动态取色/壁纸派生色，导致"动态取色失灵"）
         val baseLight = currentSchemeHexes(dark = false)
         val baseDark = currentSchemeHexes(dark = true)
-        fun diffed(m: Map<String, String>, base: Map<String, String>): Map<String, String> =
-            valid(m).filterKeys { role -> base[role] != m[role] }
+        fun diffed(values: Map<String, String>, base: Map<String, String>): Map<String, String> =
+            normalizeRoles(values).filter { (role, value) -> parseHex(value) != parseHex(base.getValue(role)) }
         val json = org.json.JSONObject().apply {
             put("light", org.json.JSONObject(diffed(light, baseLight)))
             put("dark", org.json.JSONObject(diffed(dark, baseDark)))
@@ -74,7 +60,8 @@ object AppThemeOverrides {
     /** 把覆盖应用到ColorScheme上（hex非法的条目忽略） */
     fun apply(scheme: ColorScheme, overrides: Map<String, String>): ColorScheme {
         if (overrides.isEmpty()) return scheme
-        fun c(role: String): Color? = overrides[role]?.let { parseHex(it) }
+        val values = normalizeRoles(overrides)
+        fun c(role: String): Color? = values[role]?.let { parseHex(it) }
         return scheme.copy(
             primary = c("primary") ?: scheme.primary,
             onPrimary = c("onPrimary") ?: scheme.onPrimary,
@@ -93,7 +80,6 @@ object AppThemeOverrides {
         )
     }
 
-    /** "#RRGGBB"/"#AARRGGBB"→Color；非法返回null */
     /**
      * 软件当前默认配色的角色hex表（ThemeColorsScreen预填用）。
      * 从Theme.kt的默认Light/Dark ColorScheme读取（dynamicColor壁纸取色是运行时派生，debug页以静态定义为基准）。
@@ -119,19 +105,22 @@ object AppThemeOverrides {
             put("outlineVariant", toHex(scheme.outlineVariant))
             put("error", toHex(scheme.error))
             put("onError", toHex(scheme.onError))
-            put("workspaceWarning", if (dark) "#FFCA5C" else "#8A5A00")
-            put("workspaceDanger", if (dark) "#FFB4AB" else "#BA1A1A")
-            put("toastWarningAction", "#B1A4FF")
+            put("warning", if (dark) "#FFCA5C" else "#8A5A00")
+            put("warningAction", "#B1A4FF")
             put("messageJumperBackground", "#CC82B1FF")
             put("messageJumperContent", "#102A56")
+            put("logSearchHighlight", toHex(scheme.onPrimaryContainer))
+            put("logSearchBackground", toHex(scheme.primaryContainer))
         }
     }
 
 
     fun customColor(overrides: Map<String, String>, role: String, fallback: Color): Color =
-        overrides[role]?.let(::parseHex) ?: fallback
+        normalizeRoles(overrides)[ThemeColorRoles.canonicalId(role)]?.let(::parseHex) ?: fallback
 
+    /** "#RRGGBB"/"#AARRGGBB"→Color；非法返回null */
     fun parseHex(s: String): Color? = runCatching {
+        if (!ThemeColorRoles.isValidHex(s)) return null
         val v = s.removePrefix("#").removePrefix("0x").removePrefix("0X")
         when (v.length) {
             6 -> Color(0xFF000000L or v.toLong(16))

@@ -1,5 +1,7 @@
 package com.miniichatNext.carter.ui.workspace
 
+import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -12,15 +14,16 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -31,11 +34,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -52,32 +55,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.text.KeyboardOptions
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.workspace.RootfsInstallManager
 import com.miniichatNext.carter.data.workspace.RootfsInstallStage
 import com.miniichatNext.carter.data.workspace.RootfsInstallState
+import com.miniichatNext.carter.data.workspace.WorkspaceCategoryDefaultApprovals
 import com.miniichatNext.carter.data.workspace.WorkspaceEntity
 import com.miniichatNext.carter.data.workspace.WorkspaceRepository
 import com.miniichatNext.carter.data.workspace.WorkspaceShellStatus
 import com.miniichatNext.carter.data.workspace.WorkspaceStorageArea
-import com.miniichatNext.carter.data.workspace.WorkspaceCategoryDefaultApprovals
 import com.miniichatNext.carter.data.workspace.WorkspaceToolCategory
 import com.miniichatNext.carter.data.workspace.storageKey
 import com.miniichatNext.carter.ui.components.SettingsTopBar
-import com.miniichatNext.carter.util.AppThemeOverrides
+import com.miniichatNext.carter.ui.markdown.MarkdownText
 import com.miniichatNext.carter.ui.theme.LocalDarkMode
+import com.miniichatNext.carter.util.AppThemeOverrides
+import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import android.widget.Toast
-import android.content.Intent
-import java.io.File
-import com.miniichatNext.carter.ui.markdown.MarkdownText
 
 private const val DEFAULT_ROOTFS_URL =
     "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-arm64.tar.gz"
@@ -539,9 +539,9 @@ private fun statusColor(status: String): Color {
         AppThemeOverrides.load(context)[if (dark) "dark" else "light"].orEmpty()
     }
     return when (status) {
-        WorkspaceShellStatus.BROKEN.name -> AppThemeOverrides.customColor(overrides, "workspaceDanger", MaterialTheme.colorScheme.error)
+        WorkspaceShellStatus.BROKEN.name -> AppThemeOverrides.customColor(overrides, "error", MaterialTheme.colorScheme.error)
         WorkspaceShellStatus.DISABLED.name, WorkspaceShellStatus.INSTALLING.name ->
-            AppThemeOverrides.customColor(overrides, "workspaceWarning", if (dark) Color(0xFFFFCA5C) else Color(0xFF8A5A00))
+            AppThemeOverrides.customColor(overrides, "warning", if (dark) Color(0xFFFFCA5C) else Color(0xFF8A5A00))
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
 }

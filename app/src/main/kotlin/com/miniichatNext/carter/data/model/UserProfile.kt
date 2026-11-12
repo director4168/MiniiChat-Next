@@ -36,6 +36,11 @@ class UserProfileStore(private val context: Context) {
 
     suspend fun snapshot(): UserProfile = profileFlow.first()
 
+    suspend fun snapshotForCleanup(): UserProfile {
+        val raw = context.userProfileDataStore.data.first()[key]
+        return if (raw.isNullOrBlank()) UserProfile() else json.decodeFromString(UserProfile.serializer(), raw)
+    }
+
     suspend fun save(profile: UserProfile) {
         context.userProfileDataStore.edit { prefs ->
             prefs[key] = json.encodeToString(UserProfile.serializer(), profile)

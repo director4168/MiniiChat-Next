@@ -14,9 +14,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Image
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LocalContentColor
@@ -29,10 +29,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -46,10 +46,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.Placeholder
 import androidx.compose.ui.text.PlaceholderVerticalAlign
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -101,7 +101,7 @@ internal fun MdCodeBlockCard(
     var expanded by remember(preferences.codeFold) { mutableStateOf(false) }
     val folded = preferences.codeFold && allLines.size > 10 && !expanded
     val displayedCode = if (folded) allLines.take(10).joinToString("\n") else block.code
-    val highlighted by produceState(
+    val highlightedSnapshot by produceState(
         initialValue = AnnotatedString(displayedCode),
         displayedCode,
         lang,
@@ -118,13 +118,23 @@ internal fun MdCodeBlockCard(
             result
         }
     }
-    val highlightedLines = remember(highlighted, displayedCode) {
+    // 新字符先显示，保留前缀已有高亮；后台结果到达前尾行也不会被旧长度截掉。
+    val highlighted = remember(highlightedSnapshot, displayedCode) {
+        if (highlightedSnapshot.text == displayedCode) highlightedSnapshot
+        else buildAnnotatedString {
+            if (displayedCode.startsWith(highlightedSnapshot.text)) {
+                append(highlightedSnapshot)
+                append(displayedCode.substring(highlightedSnapshot.length))
+            } else append(displayedCode)
+        }
+    }
+    val highlightedLines = remember(highlighted) {
         buildList<AnnotatedString> {
             var start = 0
-            displayedCode.split('\n').forEach { line ->
-                val end = (start + line.length).coerceAtMost(highlighted.length)
+            highlighted.text.split('\n').forEach { line ->
+                val end = start + line.length
                 add(highlighted.lineSlice(start, end))
-                start = (end + 1).coerceAtMost(highlighted.length)
+                start = end + 1
             }
         }
     }
@@ -136,7 +146,7 @@ internal fun MdCodeBlockCard(
         val mode = if (dark) "dark" else "light"
         AppThemeOverrides.customColor(
             AppThemeOverrides.load(context)[mode].orEmpty(),
-            "toastWarningAction",
+            "warningAction",
             Color(0xFFB1A4FF),
         )
     }

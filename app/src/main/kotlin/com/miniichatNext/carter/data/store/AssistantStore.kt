@@ -6,15 +6,15 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.miniichatNext.carter.data.model.Assistant
+import com.miniichatNext.carter.data.model.AssistantPresets
+import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.util.AppJson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
-import com.miniichatNext.carter.util.AppJson
-import com.miniichatNext.carter.data.model.Assistant
-import com.miniichatNext.carter.data.model.AssistantPresets
-import com.miniichatNext.carter.debug.DebugLog
 
 private val Context.assistantsDataStore: DataStore<Preferences> by preferencesDataStore(name = "assistants")
 
@@ -32,6 +32,8 @@ class AssistantStore(private val context: Context) {
         }
 
     suspend fun snapshot(): List<Assistant> = assistantsFlow.first()
+
+    suspend fun snapshotForCleanup(): List<Assistant> = read(context.assistantsDataStore.data.first())
 
     suspend fun save(list: List<Assistant>) {
         context.assistantsDataStore.edit { prefs ->

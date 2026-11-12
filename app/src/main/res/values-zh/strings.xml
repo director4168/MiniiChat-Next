@@ -302,6 +302,18 @@
     <string name="debug_theme_imported">已导入并生效</string>
     <string name="debug_theme_import_failed">JSON解析失败</string>
 
+    <!-- 配色分组 -->
+    <string name="debug_theme_group_primary">主题主色</string>
+    <string name="debug_theme_group_surfaces">背景与表面</string>
+    <string name="debug_theme_group_outlines">轮廓与分隔</string>
+    <string name="debug_theme_group_status">状态与提示</string>
+    <string name="debug_theme_group_message_navigation">消息翻页</string>
+
+    <!-- 日志搜索配色 -->
+    <string name="debug_log_search_colors">日志搜索高亮</string>
+    <string name="debug_log_search_highlight">匹配文字颜色</string>
+    <string name="debug_log_search_background">匹配背景颜色（含透明度）</string>
+
     <!-- 调试工具与弹窗 -->
     <string name="debug_level_label">日志等级（DEBUG_[%1$s].log）</string>
     <string name="debug_clear">清空</string>
@@ -652,6 +664,7 @@
     <string name="provider_preset_claude_hint">Anthropic官方API，提供Claude系列模型</string>
     <string name="provider_preset_openrouter_hint">第三方提供商，提供OpenAI / Anthropic / Gemini</string>
     <string name="provider_preset_deepseek_hint">Deepseek官方API，提供deepseek系列模型</string>
+    <string name="provider_preset_xiaoye_hint">本项目赞助中转站，兼容OpenAI格式，支持GPT、Claude等模型。中转站地址：https://api.lwxiaoye.top</string>
     <string name="provider_preset_xai_hint">马斯克产业旗下xAI，提供Grok（格罗克）系列模型</string>
     <string name="provider_preset_mistral_hint">提供Mistral模型</string>
     <string name="provider_preset_minimax_hint">Minimax官方API，提供minimax系列模型</string>
@@ -996,7 +1009,6 @@
     <string name="debug_role_outline_variant">次级轮廓线</string>
     <string name="debug_role_error">错误</string>
     <string name="debug_role_on_error">错误前景</string>
-    <string name="debug_role_workspace_warning">工作区警告</string>
-    <string name="debug_role_workspace_danger">工作区危险</string>
-    <string name="debug_role_toast_warning_action">提示警告操作</string>
+    <string name="debug_role_warning">警告</string>
+    <string name="debug_role_warning_action">警告与错误操作</string>
 </resources>

@@ -92,8 +92,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     val userProfile: StateFlow<UserProfile> = userProfileStore.profileFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, UserProfile())
 
+    // 显示直接使用存储内存快照，结束生成时无需等待第二层stateIn传播。
     val conversations: StateFlow<List<Conversation>> = store.conversationsFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     val workspaces: StateFlow<List<WorkspaceEntity>> = workspaceRepository.workspacesFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -177,6 +177,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     internal var streamingJob: Job? = null
     internal var taskSession: ChatTaskSession? = null
+    internal var stoppingSession: ChatTaskSession? = null
     internal val stoppedToolCalls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     init {
@@ -196,48 +197,33 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         pruneOrphanAvatars()
     }
 
-    /**
-     * 清理不再被引用的头像文件。
-     *
-     * 两个前提都必须满足，否则会误删用户正在用的头像：
-     * 1)助手列表真正加载完（非空）
-     * 2)用户资料真正加载完——`userProfile`是StateFlow，初值是空UserProfile()，
-     * 直接读.value会拿不到头像路径，把它当孤儿删掉。所以走store.snapshot()。
-     * 另外只删24小时前的文件，刚裁剪出来还没写进任何配置的不会被误删。
-     */
+    /** 配置读取失败就跳过回收，避免把反序列化失败时的默认资料当成真实引用。 */
     internal fun pruneOrphanAvatars() {
-        viewModelScope.launch {
-            val loaded = kotlinx.coroutines.withTimeoutOrNull(10_000L) {
-                assistants.first { it.isNotEmpty() }
-            } ?: return@launch
-
-            // 关键：从DataStore读一次快照，而不是读StateFlow的当前值
-            val profile = runCatching { userProfileStore.snapshot() }
-                .getOrElse { return@launch }
-
-            val keep = buildSet {
-                loaded.forEach { a ->
-                    a.avatarPath?.takeIf { it.isNotBlank() }?.let { add(it) }
-                    a.backgroundPath?.takeIf { it.isNotBlank() }?.let { add(it) }
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val loaded = assistantStore.snapshotForCleanup()
+                val profile = userProfileStore.snapshotForCleanup()
+                val keep = buildSet {
+                    loaded.forEach { assistant ->
+                        assistant.avatarPath?.takeIf { it.isNotBlank() }?.let { add(it) }
+                        assistant.backgroundPath?.takeIf { it.isNotBlank() }?.let { add(it) }
+                    }
+                    (profile.avatar as? Avatar.Image)?.path?.takeIf { it.isNotBlank() }?.let { add(it) }
+                    store.snapshot().forEach { conversation ->
+                        conversation.messages.forEach { message ->
+                            message.attachments.forEach { attachment ->
+                                if (attachment.uri.startsWith("file:") || attachment.uri.startsWith('/')) add(attachment.uri)
+                                if (attachment.originalUri.startsWith("file:") || attachment.originalUri.startsWith('/')) add(attachment.originalUri)
+                            }
+                        }
+                    }
                 }
-                (profile.avatar as? com.miniichatNext.carter.data.avatar.Avatar.Image)
-                    ?.path?.takeIf { it.isNotBlank() }?.let { add(it) }
-            }
-
-            // 保险：一条路径都没收集到时不做任何删除（宁可留垃圾也不要误删）
-            if (keep.isEmpty()) {
-                // 正常情况（助手/用户都用emoji头像时keep必然为空）；降为INFO避免误报
-                DebugLog.i("AvatarStorage", "no avatar paths to keep; skip pruning")
-                return@launch
-            }
-
-            val removed = AvatarStorage.pruneOrphans(
-                getApplication(),
-                keep,
-                olderThanMs = 24L * 60 * 60 * 1000
-            )
-            if (removed > 0) {
-                DebugLog.i("AvatarStorage", "pruned $removed orphan avatar file(s)")
+                val removed = AvatarStorage.pruneOrphans(getApplication(), keep, olderThanMs = 24L * 60 * 60 * 1000)
+                if (removed > 0) DebugLog.i("AvatarStorage", "pruned $removed temporary crop file(s)")
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                DebugLog.w("AvatarStorage", "skip pruning: ${error.message}")
             }
         }
     }
@@ -276,24 +262,36 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         val callIds = conversations.value.firstOrNull { it.id == cid }?.messages
             ?.flatMap { it.toolInvocations }?.map { it.callId }?.toSet().orEmpty() + session.toolCallIds()
         stoppedToolCalls.addAll(callIds)
+        stoppingSession = session
         session.cancel()
         taskSession = null
         streamingJob = null
-        _streamingOverlay.value = null
-        _isStreaming.value = false
-        _hasPendingTools.value = false
-        _streamingConvId.value = null
-        _pendingConvId.value = null
         val stoppedNote = getApplication<Application>().getString(R.string.chat_stopped_tool_note)
+        // 保留当前气泡直到取消回调把最后一段正文、思考和计量完整提交。
         viewModelScope.launch {
-            store.updateMessages(cid) { msgs ->
-                msgs.map { msg ->
-                    msg.copy(toolInvocations = msg.toolInvocations.map { inv ->
-                        if (inv.callId in callIds && (inv.state == ToolInvocationState.EXECUTING ||
-                                inv.state == ToolInvocationState.PENDING_APPROVAL)) {
-                            inv.copy(state = ToolInvocationState.CANCELLED, error = stoppedNote)
-                        } else inv
-                    })
+            try {
+                session.awaitStopped()
+                store.updateMessages(cid) { msgs ->
+                    msgs.map { msg ->
+                        msg.copy(toolInvocations = msg.toolInvocations.map { inv ->
+                            if (inv.callId in callIds && (inv.state == ToolInvocationState.EXECUTING ||
+                                    inv.state == ToolInvocationState.PENDING_APPROVAL)) {
+                                inv.copy(state = ToolInvocationState.CANCELLED, error = stoppedNote)
+                            } else inv
+                        })
+                    }
+                }
+            } finally {
+                // 另一次生成可能已经开始，旧会话只负责自己的收尾。
+                if (stoppingSession === session) {
+                    if (taskSession == null) {
+                        _streamingOverlay.value = null
+                        _isStreaming.value = false
+                        _hasPendingTools.value = false
+                        _streamingConvId.value = null
+                        _pendingConvId.value = null
+                    }
+                    stoppingSession = null
                 }
             }
         }

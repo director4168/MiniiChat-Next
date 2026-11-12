@@ -29,6 +29,8 @@ object AvatarStorage {
     fun file(context: Context, id: String, ext: String = "jpg"): File =
         File(dir(context), "${id}.${ext.lowercase()}")
 
+    fun cropDir(context: Context): File = File(dir(context), ".crop").also { it.mkdirs() }
+
     suspend fun saveFromUriToPath(
         context: Context,
         uri: Uri,
@@ -55,23 +57,31 @@ object AvatarStorage {
                 } ?: return@runCatching null
                 val scaled = scaleToMax(decoded, maxSide)
                 val target = file(context, id)
-                FileOutputStream(target).use { out ->
-                    scaled.compress(Bitmap.CompressFormat.JPEG, 92, out)
+                try {
+                    AvatarFileTransfer.write(target) { staged ->
+                        FileOutputStream(staged).use { out ->
+                            check(scaled.compress(Bitmap.CompressFormat.JPEG, 92, out)) { "Avatar encoding failed" }
+                        }
+                    }
+                    target.absolutePath
+                } finally {
+                    if (scaled !== decoded) decoded.recycle()
+                    scaled.recycle()
                 }
-                if (scaled !== decoded) decoded.recycle()
-                scaled.recycle()
-                target.absolutePath
             }.getOrNull()
         }
 
     suspend fun saveBitmap(context: Context, id: String, bitmap: Bitmap, quality: Int = 92): String =
         withContext(Dispatchers.IO) {
             val target = file(context, id)
-            FileOutputStream(target).use { out ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
-            }
-            bitmap.recycle()
-            target.absolutePath
+            try {
+                AvatarFileTransfer.write(target) { staged ->
+                    FileOutputStream(staged).use { out ->
+                        check(bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)) { "Avatar encoding failed" }
+                    }
+                }
+                target.absolutePath
+            } finally { bitmap.recycle() }
         }
 
     suspend fun saveFileToPath(context: Context, sourcePath: String, targetPath: String): String? =
@@ -80,35 +90,37 @@ object AvatarStorage {
                 val bitmap = BitmapFactory.decodeFile(sourcePath) ?: return@runCatching null
                 val target = File(targetPath)
                 target.parentFile?.mkdirs()
-                FileOutputStream(target).use { out ->
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
-                }
-                bitmap.recycle()
-                target.absolutePath
+                try {
+                    AvatarFileTransfer.write(target) { staged ->
+                        FileOutputStream(staged).use { out ->
+                            check(bitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)) { "Avatar encoding failed" }
+                        }
+                    }
+                    target.absolutePath
+                } finally { bitmap.recycle() }
             }.getOrNull()
         }
 
     fun copyToCanonicalPath(sourcePath: String?, targetPath: String): String? {
         if (sourcePath.isNullOrBlank()) return sourcePath
-        val source = File(sourcePath)
-        val target = File(targetPath)
-        if (!source.isFile) return sourcePath
-        if (source.absolutePath == target.absolutePath) return target.absolutePath
         return runCatching {
-            target.parentFile?.mkdirs()
-            source.copyTo(target, overwrite = true)
-            target.absolutePath
-        }.getOrNull() ?: sourcePath
+            val source = if (sourcePath.startsWith("file:")) File(java.net.URI(sourcePath)) else File(sourcePath)
+            if (!source.isFile) return sourcePath
+            AvatarFileTransfer.copy(source, File(targetPath)).absolutePath
+        }.getOrDefault(sourcePath)
     }
 
+    /** 调用方只回收本次裁剪产物，正式资源的移除由配置保存决定。 */
     fun delete(context: Context, path: String) {
-        runCatching { File(path).takeIf { it.exists() }?.delete() }
+        AvatarFileCleanup.deleteTemporary(cropDir(context), path)
     }
 
     fun isInAppStorage(context: Context, path: String?): Boolean {
         if (path.isNullOrBlank()) return false
-        val stableDir = dir(context).absolutePath + File.separator
-        return path.startsWith(stableDir)
+        return runCatching {
+            val file = if (path.startsWith("file:")) File(java.net.URI(path)) else File(path)
+            file.canonicalPath.startsWith(dir(context).canonicalPath + File.separator)
+        }.getOrDefault(false)
     }
 
     fun copyIntoAppStorage(context: Context, path: String?, id: String = newId()): String? {
@@ -118,28 +130,16 @@ object AvatarStorage {
         if (isInAppStorage(context, src.absolutePath)) return path
         return runCatching {
             val target = file(context, id)
-            src.copyTo(target, overwrite = true)
+            AvatarFileTransfer.copy(src, target)
             target.absolutePath
         }.getOrNull() ?: path
     }
 
     fun exists(path: String?): Boolean = !path.isNullOrBlank() && File(path).exists()
 
-    /**
-     * 清理filesDir/avatars下不再被引用的文件（换头像后的旧文件、被放弃的裁剪产物）
-     *
-     * 安全前提：只删除不在[keepPaths]里且最后修改时间早于[olderThanMs]的文件，这样刚生成的裁剪文件（可能还没写进任何assistant）不会被误删
-     *
-     * @return 实际删除的文件数
-     */
+    /** 仅清理专用目录中的过期裁剪文件，旧版avatars根目录也完整保留。 */
     fun pruneOrphans(context: Context, keepPaths: Collection<String>, olderThanMs: Long): Int =
-        runCatching {
-            val keep = keepPaths.filter { it.isNotBlank() }.toSet()
-            val cutoff = System.currentTimeMillis() - olderThanMs
-            dir(context).listFiles()?.count { f ->
-                f.isFile && f.absolutePath !in keep && f.lastModified() < cutoff && f.delete()
-            } ?: 0
-        }.getOrDefault(0)
+        AvatarFileCleanup.pruneTemporary(cropDir(context), keepPaths, olderThanMs)
 
     fun uri(path: String): Uri = File(path).toUri()
 
@@ -163,12 +163,17 @@ object AvatarStorage {
         val scaled = scaleToMax(decoded, maxSide)
         val target = File(targetPath)
         target.parentFile?.mkdirs()
-        FileOutputStream(target).use { out ->
-            scaled.compress(Bitmap.CompressFormat.JPEG, 92, out)
+        try {
+            AvatarFileTransfer.write(target) { staged ->
+                FileOutputStream(staged).use { out ->
+                    check(scaled.compress(Bitmap.CompressFormat.JPEG, 92, out)) { "Avatar encoding failed" }
+                }
+            }
+            target.absolutePath
+        } finally {
+            if (scaled !== decoded) decoded.recycle()
+            scaled.recycle()
         }
-        if (scaled !== decoded) decoded.recycle()
-        scaled.recycle()
-        target.absolutePath
     }.getOrNull()
 
     private fun computeSample(w: Int, h: Int, maxSide: Int): Int {

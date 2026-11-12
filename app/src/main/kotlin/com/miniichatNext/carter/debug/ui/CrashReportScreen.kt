@@ -4,16 +4,17 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -36,6 +37,7 @@ import com.miniichatNext.carter.R
 import com.miniichatNext.carter.debug.CrashLogger
 import com.miniichatNext.carter.debug.DebugLog
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun CrashReportScreen(onDismiss: () -> Unit) {
     val context = LocalContext.current
@@ -46,7 +48,7 @@ fun CrashReportScreen(onDismiss: () -> Unit) {
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(WindowInsets.statusBars.asPaddingValues())
+            .windowInsetsPadding(WindowInsets.safeDrawing)
     ) {
         Row(
             modifier = Modifier
@@ -69,11 +71,15 @@ fun CrashReportScreen(onDismiss: () -> Unit) {
         )
         Spacer(Modifier.height(8.dp))
 
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        FlowRow(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
             TextButton(onClick = {
                 clipboard.setText(AnnotatedString(crashText))
                 Toast.makeText(context, context.getString(R.string.copied), Toast.LENGTH_SHORT).show()
-            }) { Text(stringResource(R.string.crash_copy)) }
+            }) { Text(stringResource(R.string.crash_copy), maxLines = 1, softWrap = false) }
             TextButton(onClick = {
                 runCatching {
                     shareZip(
@@ -82,7 +88,7 @@ fun CrashReportScreen(onDismiss: () -> Unit) {
                         context.getString(R.string.crash_export_title)
                     )
                 }
-            }) { Text(stringResource(R.string.debug_export_share)) }
+            }) { Text(stringResource(R.string.debug_export_share), maxLines = 1, softWrap = false) }
             TextButton(onClick = {
                 runCatching {
                     sendCrashFeedbackMail(
@@ -101,9 +107,8 @@ fun CrashReportScreen(onDismiss: () -> Unit) {
                         Toast.LENGTH_LONG,
                     ).show()
                 }
-            }) { Text(stringResource(R.string.debug_mail_feedback)) }
-            Spacer(Modifier.width(8.dp))
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.crash_ignore)) }
+            }) { Text(stringResource(R.string.debug_mail_feedback), maxLines = 1, softWrap = false) }
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.crash_ignore), maxLines = 1, softWrap = false) }
         }
 
         Text(

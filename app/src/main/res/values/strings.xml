@@ -302,6 +302,18 @@
     <string name="debug_theme_imported">Imported and applied</string>
     <string name="debug_theme_import_failed">Invalid JSON</string>
 
+    <!-- Theme color groups -->
+    <string name="debug_theme_group_primary">Primary colors</string>
+    <string name="debug_theme_group_surfaces">Backgrounds and surfaces</string>
+    <string name="debug_theme_group_outlines">Outlines and dividers</string>
+    <string name="debug_theme_group_status">Status and alerts</string>
+    <string name="debug_theme_group_message_navigation">Message navigation</string>
+
+    <!-- Log search colors -->
+    <string name="debug_log_search_colors">Log search highlighting</string>
+    <string name="debug_log_search_highlight">Matched text color</string>
+    <string name="debug_log_search_background">Match background (with alpha)</string>
+
     <!-- Debug tools and dialogs -->
     <string name="debug_level_label">Log level (DEBUG_[%1$s].log)</string>
     <string name="debug_clear">Clear</string>
@@ -652,6 +664,7 @@
     <string name="provider_preset_claude_hint">Anthropic official API with Claude models</string>
     <string name="provider_preset_openrouter_hint">Third-party provider offering OpenAI / Anthropic / Gemini</string>
     <string name="provider_preset_deepseek_hint">DeepSeek official API with deepseek models</string>
+    <string name="provider_preset_xiaoye_hint">Project sponsor providing an OpenAI-compatible API for GPT, Claude and other models. Website: https://api.lwxiaoye.top</string>
     <string name="provider_preset_xai_hint">xAI by Elon Musk, offering Grok models</string>
     <string name="provider_preset_mistral_hint">Offers Mistral models</string>
     <string name="provider_preset_minimax_hint">Minimax official API with minimax models</string>
@@ -996,7 +1009,6 @@
     <string name="debug_role_outline_variant">Outline variant</string>
     <string name="debug_role_error">Error</string>
     <string name="debug_role_on_error">On error</string>
-    <string name="debug_role_workspace_warning">Workspace warning</string>
-    <string name="debug_role_workspace_danger">Workspace danger</string>
-    <string name="debug_role_toast_warning_action">Toast warning action</string>
+    <string name="debug_role_warning">Warning</string>
+    <string name="debug_role_warning_action">Warning and error actions</string>
 </resources>

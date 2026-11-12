@@ -55,18 +55,18 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
-import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.avatar.Avatar
+import com.miniichatNext.carter.data.avatar.AvatarStorage
+import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.skills.Skill
+import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.ui.components.AvatarPicker
 import com.miniichatNext.carter.ui.components.AvatarView
 import com.miniichatNext.carter.ui.components.ExpandablePill
 import com.miniichatNext.carter.ui.components.Select
-import com.miniichatNext.carter.data.avatar.AvatarStorage
+import com.miniichatNext.carter.ui.markdown.MarkdownText
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.launch
-import com.miniichatNext.carter.debug.DebugLog
-import com.miniichatNext.carter.ui.markdown.MarkdownText
 
 @Composable
 fun AssistantEditorScreen(
@@ -335,7 +335,6 @@ fun AssistantEditorScreen(
                         backgroundMode = "default"
                         // 切到default时顺手清掉image/css状态，避免脏数据
                         if (backgroundPath != null) {
-                            backgroundPath?.let { AvatarStorage.delete(context, it) }
                             backgroundPath = null
                         }
                         backgroundCss = ""
@@ -353,7 +352,6 @@ fun AssistantEditorScreen(
                         backgroundMode = "css"
                         // 切到css时清掉image，避免同时存在两个source
                         if (backgroundPath != null) {
-                            backgroundPath?.let { AvatarStorage.delete(context, it) }
                             backgroundPath = null
                         }
                     },
@@ -417,7 +415,6 @@ fun AssistantEditorScreen(
                                 }) { Text(stringResource(R.string.background_pick_image)) }
                                 if (backgroundPath != null) {
                                     TextButton(onClick = {
-                                        backgroundPath?.let { AvatarStorage.delete(context, it) }
                                         backgroundPath = null
                                     }) { Text(stringResource(R.string.background_clear)) }
                                 }

@@ -46,12 +46,12 @@ import androidx.compose.ui.unit.sp
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.avatar.Avatar
 import com.miniichatNext.carter.data.avatar.AvatarStorage
+import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.util.newId
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
-import com.miniichatNext.carter.debug.DebugLog
 
 
 @Composable
@@ -113,12 +113,9 @@ fun AvatarPicker(
 
     val cropLauncher = rememberImageCropLauncher(
         onResult = { path ->
-            val previousPath: String? = (current as? Avatar.Image)?.path
             scope.launch {
                 val savedPath = if (canonicalPath != null) {
                     AvatarStorage.saveFileToPath(context, path, canonicalPath)
-                } else if (AvatarStorage.isInAppStorage(context, path)) {
-                    path
                 } else {
                     AvatarStorage.saveFileToPath(
                         context,
@@ -129,11 +126,7 @@ fun AvatarPicker(
                 if (savedPath != null) {
                     DebugLog.i("AvatarPicker", "avatar saved: source=$path -> target=$savedPath")
                     onChange(Avatar.Image(savedPath))
-                    if (path != savedPath) runCatching { java.io.File(path).delete() }
-                    if (previousPath != null && previousPath != savedPath) {
-                        kotlinx.coroutines.delay(30_000L)
-                        runCatching { java.io.File(previousPath).delete() }
-                    }
+                    if (path != savedPath) AvatarStorage.delete(context, path)
                 } else {
                     DebugLog.e("AvatarPicker", "avatar save failed: source=$path")
                     Toast.makeText(
@@ -147,7 +140,7 @@ fun AvatarPicker(
         onCancel = {},
         onFailure = importOriginalImage,
         aspectRatio = 1f to 1f,
-        outputDir = AvatarStorage.dir(context),
+        outputDir = AvatarStorage.cropDir(context),
         outputPrefix = "avatar_",
         maxResultSize = 1024
     )

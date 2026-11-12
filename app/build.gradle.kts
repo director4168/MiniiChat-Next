@@ -21,8 +21,8 @@ android {
         applicationId = "com.miniichatNext.carter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 261108023
-        versionName = "v1.7.0-beta"
+        versionCode = 261112041
+        versionName = "v1.7.0"
         vectorDrawables { useSupportLibrary = true }
         externalNativeBuild {
             cmake {
@@ -187,29 +187,82 @@ dependencies {
     implementation("org.jsoup:jsoup:1.18.3")   // HTML解析
 }
 
+val ansiColorEnabled = providers.environmentVariable("NO_COLOR").orNull == null &&
+    providers.environmentVariable("TERM").orNull != "dumb" &&
+    gradle.startParameter.consoleOutput != org.gradle.api.logging.configuration.ConsoleOutput.Plain
+
+fun colored(code: Int, message: String): String =
+    if (ansiColorEnabled) "\u001B[${code}m$message\u001B[0m" else message
+
+fun logSuccess(message: String) = println(colored(32, message))
+fun logWarning(message: String) = println(colored(33, message))
+fun logFailure(message: String) = println(colored(31, message))
+
 // 自定义一个工具，用于将打包输出的apk移动到/build-outputs
+// 命名格式: MiniiChat-Next-[versionName]-[abi]-[BuildType].apk
 val copyAndRenameReleaseApks = tasks.register("copyAndRenameReleaseApks") {
     group = "distribution"
     description = "Rename release APKs to MiniiChat-Next-<ver>-<abi>-release.apk and copy to build-outputs/release/"
     doLast {
         val srcDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
         if (!srcDir.exists()) {
-            logger.warn("No release APK output at $srcDir; skipping copyAndRenameReleaseApks")
+            logWarning("No release APK output at $srcDir; skipping copyAndRenameReleaseApks")
             return@doLast
         }
         val versionName = android.defaultConfig.versionName
         val dstDir = file("${rootProject.projectDir}/build-outputs/release")
         dstDir.deleteRecursively()
         dstDir.mkdirs()
-        srcDir.listFiles { _, name -> name.endsWith(".apk") }?.forEach { apk ->
+        val apks = srcDir.listFiles { _, name -> name.endsWith(".apk") }.orEmpty()
+        if (apks.isEmpty()) {
+            logWarning("No release APK found in $srcDir; skipping copy")
+            return@doLast
+        }
+        apks.forEach { apk ->
             val abi = apk.nameWithoutExtension
                 .removePrefix("app-")
                 .substringBefore("-release")
             val finalName = "MiniiChat-Next-${versionName}-${abi}-release.apk"
-            apk.copyTo(File(dstDir, finalName), overwrite = true)
-            println("MiniiChat-Next: ${apk.name} -> build-outputs/release/$finalName")
+            try {
+                apk.copyTo(File(dstDir, finalName), overwrite = true)
+                logSuccess("MiniiChat-Next: ${apk.name} -> build-outputs/release/$finalName")
+            } catch (error: Exception) {
+                logFailure("MiniiChat-Next: failed to copy ${apk.name}: ${error.message}")
+                throw error
+            }
+        }
+        logSuccess("Release APKs ready: ${apks.size} file(s) -> build-outputs/release/")
+    }
+}
+
+// 当构建release包时，把mapping同步重命名复制到release包输出目录
+// 命名格式: mapping-[versionName].txt
+val copyAndRenameMapping = tasks.register("copyAndRenameMapping") {
+    group = "distribution"
+    description = "Copy release mapping to build-outputs/release/mapping-<ver>.txt"
+    mustRunAfter(copyAndRenameReleaseApks)
+    doLast {
+        val mapping = layout.buildDirectory.file("outputs/mapping/release/mapping.txt").get().asFile
+        if (!mapping.isFile) {
+            logWarning("No release mapping at $mapping; skipping copyAndRenameMapping")
+            return@doLast
+        }
+        val versionName = android.defaultConfig.versionName
+        val dstDir = file("${rootProject.projectDir}/build-outputs/release")
+        val finalName = "mapping-${versionName}.txt"
+        try {
+            check(dstDir.isDirectory || dstDir.mkdirs()) { "Mapping output directory is not writable: $dstDir" }
+            mapping.copyTo(File(dstDir, finalName), overwrite = true)
+            logSuccess("MiniiChat-Next: mapping.txt -> build-outputs/release/$finalName")
+        } catch (error: Exception) {
+            logFailure("MiniiChat-Next: failed to copy release mapping: ${error.message}")
+            throw error
         }
     }
+}
+
+copyAndRenameReleaseApks.configure {
+    finalizedBy(copyAndRenameMapping)
 }
 
 val copyAndRenameDebugApks = tasks.register("copyAndRenameDebugApks") {
@@ -218,21 +271,32 @@ val copyAndRenameDebugApks = tasks.register("copyAndRenameDebugApks") {
     doLast {
         val srcDir = layout.buildDirectory.dir("outputs/apk/debug").get().asFile
         if (!srcDir.exists()) {
-            logger.warn("No debug APK output at $srcDir; skipping copyAndRenameDebugApks")
+            logWarning("No debug APK output at $srcDir; skipping copyAndRenameDebugApks")
             return@doLast
         }
         val versionName = android.defaultConfig.versionName
         val dstDir = file("${rootProject.projectDir}/build-outputs/debug")
         dstDir.deleteRecursively()
         dstDir.mkdirs()
-        srcDir.listFiles { _, name -> name.endsWith(".apk") }?.forEach { apk ->
+        val apks = srcDir.listFiles { _, name -> name.endsWith(".apk") }.orEmpty()
+        if (apks.isEmpty()) {
+            logWarning("No debug APK found in $srcDir; skipping copy")
+            return@doLast
+        }
+        apks.forEach { apk ->
             val abi = apk.nameWithoutExtension
                 .removePrefix("app-")
                 .substringBefore("-debug")
             val finalName = "MiniiChat-Next-${versionName}-${abi}-debug.apk"
-            apk.copyTo(File(dstDir, finalName), overwrite = true)
-            println("MiniiChat-Next: ${apk.name} -> build-outputs/debug/$finalName")
+            try {
+                apk.copyTo(File(dstDir, finalName), overwrite = true)
+                logSuccess("MiniiChat-Next: ${apk.name} -> build-outputs/debug/$finalName")
+            } catch (error: Exception) {
+                logFailure("MiniiChat-Next: failed to copy ${apk.name}: ${error.message}")
+                throw error
+            }
         }
+        logSuccess("Debug APKs ready: ${apks.size} file(s) -> build-outputs/debug/")
     }
 }
 

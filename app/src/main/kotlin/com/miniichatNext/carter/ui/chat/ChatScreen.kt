@@ -32,18 +32,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -69,7 +64,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.first
 
 @Composable
 private fun ChatMessageListItem(
@@ -89,24 +83,12 @@ private fun ChatMessageListItem(
     onFullscreen: ((String, Boolean) -> Unit)?,
 ) {
     val liveOverlay = if (isLastAssistant && isStreaming) {
-        streamingOverlay?.collectAsState(initial = null)?.value
+        streamingOverlay?.collectAsState()?.value
     } else null
     val displayMessage = remember(message, liveOverlay) {
-        liveOverlay?.let { overlay ->
-            message.copy(
-                content = overlay.content,
-                reasoningContent = overlay.reasoning
-                    .ifBlank { message.reasoningContent.orEmpty() }
-                    .takeIf { it.isNotBlank() },
-                orderedParts = overlay.parts.ifEmpty { message.orderedParts },
-                usage = overlay.usage,
-                generationTimeMs = overlay.generationTimeMs,
-                lastUsage = overlay.lastUsage,
-                stepCount = overlay.stepCount,
-                finishedAt = overlay.finishedAt,
-            )
-        } ?: message
+        message.withStreamingSnapshot(liveOverlay)
     }
+
     MessageItem(
         message = displayMessage,
         avatar = if (displayMessage.role == "user") userAvatar else assistantAvatar,
@@ -176,15 +158,19 @@ fun ChatScreen(
     var pendingAttachments by remember { mutableStateOf<List<com.miniichatNext.carter.data.model.Attachment>>(emptyList()) }
     val listState = rememberLazyListState()
     val rawMessages = conversation?.messages ?: emptyList()
-    var followBottom by remember(conversation?.id) { mutableStateOf(true) }
     var rememberedSession by rememberSaveable { mutableStateOf("") }
     var rememberedCount by rememberSaveable { mutableIntStateOf(-1) }
     // 流式overlay只由最后一条生成中的消息订阅，历史消息保持稳定节点。
     val visibleMessages = remember(rawMessages) { rawMessages.filterNot { it.hidden } }
+    val latestFirstMessages = remember(visibleMessages) { visibleMessages.asReversed() }
+    // 结构变化前记住底部位置，新增item重测后索引可能已被稳定key调整。
+    val keepLatestOnAppend = remember(conversation?.id, visibleMessages.size) {
+        listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
+    }
     LaunchedEffect(conversation?.id, visibleMessages.size, isStreaming) {
         snapshotFlow {
             val info = listState.layoutInfo
-            val indexes = info.visibleItemsInfo.map { it.index }.filter { it in visibleMessages.indices }
+            val indexes = info.visibleItemsInfo.mapNotNull { ChatListOrder.messageIndex(it.index, visibleMessages.size) }
             if (indexes.isEmpty()) null else (indexes.minOrNull()!! to indexes.maxOrNull()!!)
         }
             .distinctUntilChanged()
@@ -228,7 +214,6 @@ fun ChatScreen(
     // 递增即请求一次"聚焦输入框+弹键盘"（候选回复点"编辑"时用）
     var focusInputRequest by remember { mutableStateOf(0) }
 
-    val followThresholdPx = with(LocalDensity.current) { 56.dp.toPx() }
     LaunchedEffect(conversation?.id) {
         snapshotFlow { listState.isScrollInProgress }
             .distinctUntilChanged()
@@ -250,50 +235,16 @@ fun ChatScreen(
                 }
             }
     }
-    val userScrollConnection = remember(conversation?.id) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (source == NestedScrollSource.UserInput && available.y > 0f) followBottom = false
-                return Offset.Zero
-            }
-
-            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
-                if (source == NestedScrollSource.UserInput && consumed.y < 0f && !listState.canScrollForward) followBottom = true
-                return Offset.Zero
-            }
-        }
-    }
-    // 内容增长仅触发空闲时的贴底，不抢夺用户拖动和惯性滚动。
-    LaunchedEffect(conversation?.id, isStreaming) {
-        snapshotFlow {
-            val info = listState.layoutInfo
-            val tail = info.visibleItemsInfo.lastOrNull()
-            val end = info.viewportEndOffset - info.afterContentPadding
-            val bottomGap = if (tail?.index == info.totalItemsCount - 1) {
-                ((tail.offset + tail.size) - end).coerceAtLeast(0)
-            } else Int.MAX_VALUE
-            Triple(listState.isScrollInProgress, listState.canScrollForward,
-                Triple(bottomGap, tail?.size ?: 0, info.viewportEndOffset))
-        }.collect { (scrolling, canScrollForward, geometry) ->
-            val bottomGap = geometry.first
-            if (!scrolling) {
-                if (bottomGap <= followThresholdPx && !canScrollForward) followBottom = true
-                if (isStreaming && followBottom && canScrollForward && listState.layoutInfo.totalItemsCount > 0) {
-                    listState.requestScrollToItem(listState.layoutInfo.totalItemsCount - 1)
-                }
-            }
-        }
-    }
+    // 只在切换对话或新增消息时定位。流式增高由reverseLayout同次测量保持底部，毋须事后补滚动。
     LaunchedEffect(conversation?.id, visibleMessages.size) {
         val session = conversation?.id.orEmpty()
         val count = visibleMessages.size
         val newSession = rememberedSession != session
         val appended = !newSession && count > rememberedCount
-        if (count > 0 && (newSession || (appended && followBottom && !isStreaming))) {
-            snapshotFlow { listState.layoutInfo.totalItemsCount }.first { it == count + 1 }
-            listState.requestScrollToItem(count)
+        val sentByUser = visibleMessages.lastOrNull()?.role == "user"
+        if (count > 0 && (newSession || (appended && (keepLatestOnAppend || sentByUser)))) {
+            listState.requestScrollToItem(0)
         }
-        if (newSession) followBottom = true
         rememberedSession = session
         rememberedCount = count
     }
@@ -521,12 +472,14 @@ fun ChatScreen(
         } else {
             LazyColumn(
                 state = listState,
-                modifier = Modifier.fillMaxSize().nestedScroll(userScrollConnection),
-                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 16.dp),
+                reverseLayout = true,
+                modifier = Modifier.fillMaxSize(),
+                // 把旧底部占位项的21dp并入padding，视觉留白保持原样。
+                contentPadding = PaddingValues(start = 18.dp, top = 16.dp, end = 18.dp, bottom = 37.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 items(
-                    items = visibleMessages,
+                    items = latestFirstMessages,
                     key = { it.id },
                     contentType = { if (it.role == "assistant") "assistant" else "user" },
                 ) { msg ->
@@ -553,11 +506,10 @@ fun ChatScreen(
                         onFullscreen = onFullscreen,
                     )
                 }
-                item(key = "chat-bottom-spacer") { Spacer(Modifier.height(1.dp)) }
             }
             }
 
-        MessageJumper(listState, visibleMessages.size, onJump = { followBottom = false })
+        MessageJumper(listState, visibleMessages.size)
 
         // 面板打开时：点一下/滑一下消息区即收起（面板内、输入框内的点击不受影响；不消费事件，所以消息列表照常能滚动）
         if (addPanelOpen || candidatesOpen) {

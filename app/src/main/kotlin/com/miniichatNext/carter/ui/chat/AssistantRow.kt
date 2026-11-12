@@ -132,16 +132,18 @@ internal fun AssistantRow(
                 while (i < parts.size) {
                     val seg = parts[i]
                     if (seg is com.miniichatNext.carter.data.model.MessageSegment.Text) {
-                        if (seg.text.isNotBlank()) {
-                            TextBubble(
-                                text = seg.text,
-                                showMenu = i == lastTextIdx,
-                                onLongClick = onLongPress,
-                                onCopy = { clipboard.setText(AnnotatedString(seg.text)) },
-                                onFullscreen = onFullscreen,
-                                selectable = !(isLastAssistant && isStreaming),
-                            )
-                            Spacer(Modifier.height(8.dp))
+                        key("text:$i") {
+                            if (seg.text.isNotBlank()) {
+                                TextBubble(
+                                    text = seg.text,
+                                    showMenu = i == lastTextIdx,
+                                    onLongClick = onLongPress,
+                                    onCopy = { clipboard.setText(AnnotatedString(seg.text)) },
+                                    onFullscreen = onFullscreen,
+                                    selectable = !(isLastAssistant && isStreaming),
+                                )
+                                Spacer(Modifier.height(8.dp))
+                            }
                         }
                         i++
                     } else {
@@ -228,7 +230,6 @@ internal fun AssistantRow(
                     )
                 }
             }
-            }
             if (isLastAssistant && isStreaming) {
                 TypingDots()
             }
@@ -252,6 +253,7 @@ internal fun AssistantRow(
             )
         }
     }
+}
 
 @Composable
 internal fun AssistantActionBar(
@@ -338,7 +340,6 @@ private fun TextBubble(
     onFullscreen: ((String, Boolean) -> Unit)? = null,
     // 流式生成期间关闭文本选择：内容高频重排，选择器会频繁注册/注销拖慢渲染
     selectable: Boolean = true,
-    // 流式期间走增量解析，只重解析末尾变化的块
 ) {
     Box(
         modifier = Modifier

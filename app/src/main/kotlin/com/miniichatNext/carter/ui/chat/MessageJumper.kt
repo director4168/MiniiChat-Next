@@ -35,13 +35,14 @@ import androidx.compose.ui.unit.dp
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.ui.theme.LocalDarkMode
 import com.miniichatNext.carter.util.AppThemeOverrides
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 /** 参考rikkahub的MessageJumper，消息滚动后短暂显示四向跳转。 */
 @Composable
-internal fun BoxScope.MessageJumper(state: LazyListState, messageCount: Int, onJump: () -> Unit) {
+internal fun BoxScope.MessageJumper(state: LazyListState, messageCount: Int) {
     val context = LocalContext.current
     val dark = LocalDarkMode.current
     val version = AppThemeOverrides.version.intValue
@@ -50,6 +51,7 @@ internal fun BoxScope.MessageJumper(state: LazyListState, messageCount: Int, onJ
     val content = AppThemeOverrides.customColor(overrides, "messageJumperContent", Color(0xFF102A56))
     var visible by remember(state) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    var jumpJob by remember(state) { mutableStateOf<Job?>(null) }
     LaunchedEffect(state) {
         snapshotFlow { state.isScrollInProgress }.collectLatest { scrolling ->
             if (scrolling) visible = true
@@ -69,20 +71,8 @@ internal fun BoxScope.MessageJumper(state: LazyListState, messageCount: Int, onJ
                 Surface(shape = CircleShape, tonalElevation = 0.dp,
                     color = background, contentColor = content) {
                     IconButton(modifier = Modifier.size(36.dp), onClick = {
-                        onJump()
-                        val target = when(action) {
-                            0 -> 0
-                            1 -> state.firstVisibleItemIndex - 1
-                            2 -> state.firstVisibleItemIndex + 1
-                            else -> messageCount - 1
-                        }.coerceIn(0, (messageCount - 1).coerceAtLeast(0))
-                        scope.launch {
-                            when (action) {
-                                0 -> state.scrollToItem(0)
-                                3 -> state.scrollToItem((state.layoutInfo.totalItemsCount - 1).coerceAtLeast(0))
-                                else -> state.animateScrollToItem(target)
-                            }
-                        }
+                        jumpJob?.cancel()
+                        jumpJob = scope.launch { state.jumpMessage(action, messageCount) }
                     }) { Icon(icon, contentDescription = stringResource(labels[action]), modifier = Modifier.size(18.dp)) }
                 }
             }

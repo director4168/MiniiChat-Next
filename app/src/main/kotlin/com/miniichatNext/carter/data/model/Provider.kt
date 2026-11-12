@@ -201,6 +201,9 @@ object ProviderPresets {
             Preset("DeepSeek", "https://api.deepseek.com",
                 R.string.provider_preset_deepseek_hint),
 
+            Preset("Xiaoye", "https://api.lwxiaoye.top/v1",
+                R.string.provider_preset_xiaoye_hint),
+
             Preset("xAI", "https://api.x.ai/v1",
                 R.string.provider_preset_xai_hint,
                 path = "/responses"), // 非标端点：xAI走/responses而不是/chat/completions

@@ -6,18 +6,18 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import kotlinx.coroutines.flow.Flow
+import com.miniichatNext.carter.data.model.Conversation
+import com.miniichatNext.carter.data.model.Message
+import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.util.AppJson
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
-import com.miniichatNext.carter.util.AppJson
-import com.miniichatNext.carter.data.model.Conversation
-import com.miniichatNext.carter.data.model.Message
-import com.miniichatNext.carter.debug.DebugLog
 
 private val Context.conversationsDataStore: DataStore<Preferences> by preferencesDataStore(name = "conversations")
 
@@ -32,7 +32,7 @@ class ConversationStore(private val context: Context) {
     private val legacyKey = stringPreferencesKey(LEGACY_KEY)
 
     private val _cache = MutableStateFlow<List<Conversation>>(emptyList())
-    val conversationsFlow: Flow<List<Conversation>> = _cache.asStateFlow()
+    val conversationsFlow: StateFlow<List<Conversation>> = _cache.asStateFlow()
 
     @Volatile
     private var hydrated = false

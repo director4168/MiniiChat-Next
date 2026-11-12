@@ -38,6 +38,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,6 +48,8 @@ import com.miniichatNext.carter.R
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.ui.components.SettingsTopBar
 import com.miniichatNext.carter.ui.settings.LocalAppPreferences
+import com.miniichatNext.carter.ui.theme.LocalDarkMode
+import com.miniichatNext.carter.util.AppThemeOverrides
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +60,16 @@ import kotlinx.coroutines.withContext
 fun LogViewerScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val preferences = LocalAppPreferences.current
+    val dark = LocalDarkMode.current
+    val overrideVersion = AppThemeOverrides.version.intValue
+    val matchStyle = remember(context, dark, overrideVersion) {
+        val mode = if (dark) "dark" else "light"
+        val colors = AppThemeOverrides.currentSchemeHexes(dark) + AppThemeOverrides.load(context)[mode].orEmpty()
+        SpanStyle(
+            color = requireNotNull(AppThemeOverrides.parseHex(colors.getValue("logSearchHighlight"))),
+            background = requireNotNull(AppThemeOverrides.parseHex(colors.getValue("logSearchBackground"))),
+        )
+    }
     val scope = rememberCoroutineScope()
     var files by remember { mutableStateOf(emptyList<File>()) }
     var selectedPath by remember { mutableStateOf("") }
@@ -166,9 +180,18 @@ fun LogViewerScreen(onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.width((lines.size.toString().length * 8 + 16).dp))
                     SelectionContainer(modifier = if (preferences.codeWrap) Modifier.weight(1f) else Modifier.weight(1f).horizontalScroll(horizontal)) {
-                        Text(line.ifEmpty { " " }, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
+                        val ranges = remember(line, search) { findLogSearchRanges(line, search) }
+                        val highlighted = remember(line, ranges, matchStyle) {
+                            buildAnnotatedString {
+                                append(line.ifEmpty { " " })
+                                ranges.forEach { range ->
+                                    addStyle(matchStyle, range.first, range.last + 1)
+                                }
+                            }
+                        }
+                        Text(highlighted, fontSize = 12.sp, fontFamily = FontFamily.Monospace,
                             softWrap = preferences.codeWrap,
-                            color = if (search.isNotBlank() && line.contains(search, true)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                            color = MaterialTheme.colorScheme.onSurface)
                     }
                 }
             }

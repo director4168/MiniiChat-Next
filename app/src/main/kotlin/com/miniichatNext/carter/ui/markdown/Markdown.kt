@@ -11,9 +11,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.LinkInteractionListener
 import androidx.compose.ui.text.TextStyle
+import java.util.LinkedHashMap
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,7 +29,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
-import java.util.LinkedHashMap
 
 @Composable
 fun Markdown(
@@ -72,7 +73,7 @@ fun Markdown(
     }
     CompositionLocalProvider(LocalMarkdownContext provides context) {
         ProvideTextStyle(style) {
-            MarkdownBlocks(blocks = document.blocks, modifier = modifier)
+            MarkdownBlocks(blocks = document.blocks, modifier = modifier.clipToBounds())
         }
     }
 }
@@ -143,7 +144,8 @@ private suspend fun parseMarkdownShared(
 
 @Composable
 fun rememberMarkdownDocument(content: String, softBreakAsLineBreak: Boolean = true): MarkdownDocument {
-    val state = remember(content, softBreakAsLineBreak) {
+    // 正文追加时保留已显示的完整文档，解析结果到达后整体提交，避免每帧重建状态。
+    val state = remember(softBreakAsLineBreak) {
         mutableStateOf(
             MarkdownDocumentCache.get(content, softBreakAsLineBreak)
                 ?: parseMarkdown(content, softBreakAsLineBreak).also {
@@ -152,7 +154,7 @@ fun rememberMarkdownDocument(content: String, softBreakAsLineBreak: Boolean = tr
         )
     }
     val currentContent by rememberUpdatedState(content)
-    LaunchedEffect(state) {
+    LaunchedEffect(state, softBreakAsLineBreak) {
         snapshotFlow { currentContent }
             .conflate()
             .filter { it != state.value.source }

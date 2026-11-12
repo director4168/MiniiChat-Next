@@ -848,12 +848,12 @@ private fun workspaceStatusColor(status: String): Color {
     }
     return when (status) {
         WorkspaceShellStatus.BROKEN.name -> AppThemeOverrides.customColor(
-            overrides, "workspaceDanger", MaterialTheme.colorScheme.error
+            overrides, "error", MaterialTheme.colorScheme.error
         )
         WorkspaceShellStatus.DISABLED.name, WorkspaceShellStatus.INSTALLING.name ->
             AppThemeOverrides.customColor(
                 overrides,
-                "workspaceWarning",
+                "warning",
                 if (dark) Color(0xFFFFCA5C) else Color(0xFF8A5A00),
             )
         else -> MaterialTheme.colorScheme.onSurfaceVariant

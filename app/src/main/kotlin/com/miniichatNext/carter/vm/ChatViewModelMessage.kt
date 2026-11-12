@@ -99,6 +99,9 @@ internal fun ChatViewModel.triggerGeneration(cid: String, reuseMsgId: String? = 
 private fun ChatViewModel.ownsSession(session: ChatTaskSession): Boolean =
     taskSession === session && session.isActive
 
+private fun ChatViewModel.canPublishStream(session: ChatTaskSession): Boolean =
+    taskSession === session || (taskSession == null && stoppingSession === session)
+
 private fun ChatViewModel.launchGeneration(
     session: ChatTaskSession,
     reuseMsgId: String?,
@@ -130,7 +133,7 @@ private fun ChatViewModel.launchGeneration(
             // 工具调用不设轮数上限：只有无待处理调用、转人工审批或用户中止时才退出
             while (true) {
                 currentCoroutineContext().ensureActive()
-                val res = runGenerationRound(cid, reuse) ?: break
+                val res = runGenerationRound(cid, reuse, session) ?: break
                 reuse = res.msgId
                 if (res.pending.isEmpty()) break
                 if (!executeAutoApprovedTools(cid, res.pending)) {
@@ -171,7 +174,11 @@ private const val STREAM_OVERLAY_INTERVAL_MS = 33L
 /** 跑一轮流式生成并落库，返回本轮待处理的工具调用；返回null表示无法继续 */
 private data class RoundResult(val msgId: String, val pending: List<ToolInvocation>)
 
-private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: String?): RoundResult? {
+private suspend fun ChatViewModel.runGenerationRound(
+    cid: String,
+    reuseMsgId: String?,
+    session: ChatTaskSession,
+): RoundResult? {
     val conv = store.snapshot().firstOrNull { it.id == cid } ?: return null
     currentCoroutineContext().ensureActive()
     val assistant = assistantForConversation(conv)
@@ -311,6 +318,7 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
         }
     }
     fun publishOverlay(force: Boolean = false) {
+        if (!canPublishStream(session)) return
         val now = SystemClock.elapsedRealtime()
         if (!force && now - lastOverlayAt < streamPublishIntervalMs()) return
         lastOverlayAt = now
@@ -377,7 +385,7 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
             val now = SystemClock.elapsedRealtime()
             if (now - lastPersistAt >= PERSIST_INTERVAL_MS) {
                 lastPersistAt = now
-                persistAssistantStep(cid, assistantMsg.id, mergedContent(), mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts())
+                persistAssistantStep(cid, assistantMsg.id, mergedContent(), mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts(), session = session)
             }
         }
 
@@ -386,7 +394,7 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
         finishedAt = System.currentTimeMillis()
         ticker.cancel()
         withContext(NonCancellable) {
-            persistAssistantStep(cid, assistantMsg.id, mergedContent(), mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts())
+            persistAssistantStep(cid, assistantMsg.id, mergedContent(), mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts(), session = session)
         }
     }
     }
@@ -396,10 +404,10 @@ private suspend fun ChatViewModel.runGenerationRound(cid: String, reuseMsgId: St
             val fallback = if (reasoning.isNotBlank())
                 getApplication<Application>().getString(R.string.chat_reasoning_only)
             else getApplication<Application>().getString(R.string.chat_no_content)
-            persistAssistantStep(cid, assistantMsg.id, fallback, mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts())
+            persistAssistantStep(cid, assistantMsg.id, fallback, mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts(), session = session)
         }
     } else {
-        persistAssistantStep(cid, assistantMsg.id, mergedContent(), mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts())
+        persistAssistantStep(cid, assistantMsg.id, mergedContent(), mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts(), session = session)
     }
 
     generateTitle(cid)
@@ -419,8 +427,13 @@ private suspend fun ChatViewModel.persistAssistantStep(
     reasoning: String,
     invocations: List<ToolInvocation>,
     stats: Message,
+    session: ChatTaskSession,
     orderedParts: List<com.miniichatNext.carter.data.model.MessageSegment> = emptyList(),
 ) {
+    // IO期间计时快照仍在推进；持久化结束后再回写旧帧会让界面和计量倒退。
+    if (canPublishStream(session)) {
+        _streamingOverlay.value = StreamOverlay(msgId, content, reasoning, orderedParts, stats.usage, stats.generationTimeMs, stats.lastUsage, stats.stepCount, stats.finishedAt)
+    }
     store.updateMessages(cid) { msgs ->
         msgs.map { m ->
             if (m.id == msgId) m.copy(
@@ -436,7 +449,6 @@ private suspend fun ChatViewModel.persistAssistantStep(
             ) else m
         }
     }
-    _streamingOverlay.value = StreamOverlay(msgId, content, reasoning, orderedParts, stats.usage, stats.generationTimeMs, stats.lastUsage, stats.stepCount, stats.finishedAt)
 }
 
 internal fun ChatViewModel.approveToolCall(inv: ToolInvocation, customResult: String? = null) {

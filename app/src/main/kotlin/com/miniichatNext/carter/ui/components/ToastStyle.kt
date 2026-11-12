@@ -36,7 +36,7 @@ object ToastStyle {
     val NORMAL_ACTION = Color(0xFF4DD0E1)
     /** 错误提示的动作色；与警告统一用toast标准色，靠停留时长区分 */
     val ERROR_ACTION = Color(0xFFB1A4FF)
-    /** 警告动作色默认值；可在配色覆盖里用toastWarningAction改 */
+    /** 警告动作色默认值；可在配色覆盖里用warningAction改 */
     val WARNING_ACTION_FALLBACK = Color(0xFFB1A4FF)
 
     fun showMs(tone: ToastTone): Long = when (tone) {
@@ -66,7 +66,7 @@ fun rememberToastSpec(tone: ToastTone): ToastSpec {
     }
     val warningAction = AppThemeOverrides.customColor(
         overrides,
-        "toastWarningAction",
+        "warningAction",
         ToastStyle.WARNING_ACTION_FALLBACK,
     )
     val action = when (tone) {

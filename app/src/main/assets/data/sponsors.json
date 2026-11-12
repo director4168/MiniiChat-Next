@@ -12,6 +12,13 @@
       "amount": "¥10",
       "date": "2026-09-06",
       "message": "感谢紫菜蛋花汤大佬的赞助！"
+    },
+    {
+      "name": "lwxiaoye",
+      "amount": "赞助额度",
+      "date": "2026-11-08",
+      "message": "感谢Xiaoye中转站站长对MiniiChat Next开发的认可与赠送站点额度！点击本卡片可前往Xiaoye中转站",
+      "url": "https://api.lwxiaoye.top"
     }
   ]
 }

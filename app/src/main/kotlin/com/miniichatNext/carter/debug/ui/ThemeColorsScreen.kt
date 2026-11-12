@@ -137,30 +137,38 @@ fun ThemeColorsScreen(onBack: () -> Unit) {
             }
             Spacer(Modifier.height(12.dp))
 
-            SectionCard {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        stringResource(R.string.debug_theme_edit),
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    AppThemeOverrides.ALLOWED_ROLES.forEach { role ->
-                        RoleEditRow(
-                            role = role,
-                            lightHex = lightMap[role].orEmpty(),
-                            darkHex = darkMap[role].orEmpty(),
-                            onLightChange = { v -> lightMap = lightMap + (role to v) },
-                            onDarkChange = { v -> darkMap = darkMap + (role to v) },
+            Text(
+                stringResource(R.string.debug_theme_edit),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+            )
+            AppThemeOverrides.ROLE_GROUPS.forEach { (group, roles) ->
+                SectionCard {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            stringResource(roleGroupTitleRes(group)),
+                            style = MaterialTheme.typography.titleSmall,
                         )
-                        HorizontalDivider(
-                            color = MaterialTheme.colorScheme.outlineVariant,
-                            thickness = 0.5.dp
-                        )
+                        Spacer(Modifier.height(8.dp))
+                        roles.forEachIndexed { index, role ->
+                            RoleEditRow(
+                                role = role,
+                                lightHex = lightMap[role].orEmpty(),
+                                darkHex = darkMap[role].orEmpty(),
+                                onLightChange = { v -> lightMap = lightMap + (role to v) },
+                                onDarkChange = { v -> darkMap = darkMap + (role to v) },
+                            )
+                            if (index < roles.lastIndex) {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                    thickness = 0.5.dp,
+                                )
+                            }
+                        }
                     }
                 }
+                Spacer(Modifier.height(12.dp))
             }
-            Spacer(Modifier.height(12.dp))
-
 
             notice?.let {
                 Spacer(Modifier.height(4.dp))
@@ -248,10 +256,8 @@ fun ThemeColorsScreen(onBack: () -> Unit) {
                     if (parsed == null) {
                         notice = context.getString(R.string.debug_theme_import_failed)
                     } else {
-                        lightMap = parsed.light.filterKeys { it in AppThemeOverrides.ALLOWED_ROLES }
-                            .filterValues { AppThemeOverrides.parseHex(it) != null }
-                        darkMap = parsed.dark.filterKeys { it in AppThemeOverrides.ALLOWED_ROLES }
-                            .filterValues { AppThemeOverrides.parseHex(it) != null }
+                        lightMap = AppThemeOverrides.currentSchemeHexes(dark = false) + AppThemeOverrides.normalizeRoles(parsed.light)
+                        darkMap = AppThemeOverrides.currentSchemeHexes(dark = true) + AppThemeOverrides.normalizeRoles(parsed.dark)
                         AppThemeOverrides.save(context, lightMap, darkMap)
                         notice = context.getString(R.string.debug_theme_imported)
                     }
@@ -357,6 +363,16 @@ private fun RoleEditRow(
     }
 }
 
+private fun roleGroupTitleRes(group: String): Int = when (group) {
+    "primary" -> R.string.debug_theme_group_primary
+    "surfaces" -> R.string.debug_theme_group_surfaces
+    "outlines" -> R.string.debug_theme_group_outlines
+    "status" -> R.string.debug_theme_group_status
+    "messageNavigation" -> R.string.debug_theme_group_message_navigation
+    "logSearch" -> R.string.debug_log_search_colors
+    else -> error("Unknown theme role group: $group")
+}
+
 /** 角色说明走资源，左侧显示ID为主，说明作为副标题 */
 private fun roleDescriptionRes(role: String): Int? = when (role) {
     "primary" -> R.string.debug_role_primary
@@ -373,11 +389,12 @@ private fun roleDescriptionRes(role: String): Int? = when (role) {
     "outlineVariant" -> R.string.debug_role_outline_variant
     "error" -> R.string.debug_role_error
     "onError" -> R.string.debug_role_on_error
-    "workspaceWarning" -> R.string.debug_role_workspace_warning
-    "workspaceDanger" -> R.string.debug_role_workspace_danger
-    "toastWarningAction" -> R.string.debug_role_toast_warning_action
+    "warning" -> R.string.debug_role_warning
+    "warningAction" -> R.string.debug_role_warning_action
     "messageJumperBackground" -> R.string.debug_message_jumper_background
     "messageJumperContent" -> R.string.debug_message_jumper_content
+    "logSearchHighlight" -> R.string.debug_log_search_highlight
+    "logSearchBackground" -> R.string.debug_log_search_background
     else -> null
 }
 

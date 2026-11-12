@@ -10,14 +10,15 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 
@@ -239,22 +240,34 @@ object AppNavRegistry {
  * 组合状态（rememberSaveable/LazyListState等）按路由key隔离保存：push新路由时旧路由
  * 的组合被销毁，但其状态由state holder持有；pop回来时状态完整恢复（滚动位置/草稿/编辑态）。
  * 没有这层，AnimatedContent切走时content销毁，回来就是"全新页面"——聊天页滚动位置归零。
+ * liveRoutes绕过AnimatedContent的预布局，持续变化的消息只在普通布局中测量和放置。
  */
 @Composable
 fun AppNavHost(
     nav: NavController,
     modifier: Modifier = Modifier,
+    liveRoutes: Set<String> = emptySet(),
     content: @Composable (NavKey) -> Unit,
 ) {
     val stateHolder = rememberSaveableStateHolder()
-    AnimatedContent(
-        targetState = nav.current,
-        modifier = modifier,
-        transitionSpec = { AppNavRegistry.transformFor(initialState, targetState) },
-        label = "app-nav",
-    ) { key ->
-        stateHolder.SaveableStateProvider(key.route) {
-            content(key)
+    val current = nav.current
+    // 实时页绕过动画容器，进出时也不会保留抽屉关闭后的聊天页作为退场内容。
+    if (current.route in liveRoutes) {
+        Box(modifier) {
+            stateHolder.SaveableStateProvider(current.route) {
+                content(current)
+            }
+        }
+    } else {
+        AnimatedContent(
+            targetState = current,
+            modifier = modifier,
+            transitionSpec = { AppNavRegistry.transformFor(initialState, targetState) },
+            label = "app-nav",
+        ) { key ->
+            stateHolder.SaveableStateProvider(key.route) {
+                content(key)
+            }
         }
     }
 }
