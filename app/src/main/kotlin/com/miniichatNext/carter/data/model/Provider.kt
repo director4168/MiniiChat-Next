@@ -3,6 +3,7 @@ package com.miniichatNext.carter.data.model
 import androidx.annotation.StringRes
 import com.miniichatNext.carter.R
 import kotlinx.serialization.Serializable
+import java.util.Locale
 
 enum class ProviderType { OPENAI, CLAUDE }
 
@@ -18,7 +19,7 @@ enum class ThinkingLevel(val budgetTokens: Int, val effort: String?) {
 
     val isEnabled: Boolean get() = this != OFF
 
-    val apiValue: String get() = name.lowercase()
+    val apiValue: String get() = name.lowercase(Locale.ROOT)
 }
 
 /** Anthropic提示缓存的TTL。null表示用服务端默认（5分钟） */
