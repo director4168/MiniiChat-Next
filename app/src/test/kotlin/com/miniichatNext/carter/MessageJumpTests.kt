@@ -1,3 +1,9 @@
+/**
+ * 项目名称: MiniiChat Next
+ * 项目地址: https://github.com/director4168/MiniiChat-Next
+ * 项目开源: AGPL-3.0
+ * © 2026 director_Carter
+ */
 package com.miniichatNext.carter
 
 import com.miniichatNext.carter.ui.chat.ChatListOrder
@@ -13,16 +19,15 @@ class MessageJumpTests {
         val hidden = ChatListOrder.boundaryHidden(1, 0, 1200, viewport)
         assertTrue(hidden)
         assertEquals(0, ChatListOrder.jumpTarget(1, 0, 4, hidden))
-        assertEquals(700f, ChatListOrder.jumpDistance(1, 0, 1200, viewport))
+        assertEquals(700, ChatListOrder.jumpOffset(1, 1200, viewport))
     }
 
     @Test fun upFromMiddleOfDStaysInDAndAlignsItsStart() {
         val hidden = ChatListOrder.boundaryHidden(1, -350, 1200, viewport)
         assertEquals(0, ChatListOrder.jumpTarget(1, 0, 4, hidden))
-        val distance = ChatListOrder.jumpDistance(1, -350, 1200, viewport)
-        assertEquals(350f, distance)
-        val updatedOffset = -350 - distance.toInt()
-        assertEquals(0, viewport - updatedOffset - 1200)
+        val targetOffset = ChatListOrder.jumpOffset(1, 1200, viewport)
+        assertEquals(700, targetOffset)
+        assertEquals(0, viewport + targetOffset - 1200)
     }
 
     @Test fun upFromDStartCanContinueToC() {
@@ -41,37 +46,19 @@ class MessageJumpTests {
         assertEquals(2, ChatListOrder.jumpTarget(1, 1, 4))
     }
 
-    @Test fun downFromDStartGoesOnlyToDEnd() {
-        val hidden = ChatListOrder.boundaryHidden(2, -700, 1200, viewport)
-        assertTrue(hidden)
-        assertEquals(0, ChatListOrder.jumpTarget(2, 0, 4, hidden))
-        val distance = ChatListOrder.jumpDistance(2, -700, 1200, viewport)
-        assertEquals(-700f, distance)
-        assertEquals(0f, -700f - distance)
-    }
-
-    @Test fun downFromMiddleOfDDoesNotJumpBackToItsStart() {
-        assertEquals(-350f, ChatListOrder.jumpDistance(2, -350, 1200, viewport))
-        assertEquals(0, ChatListOrder.jumpOffset(2, 1200, viewport))
-    }
-
-    @Test fun downAtDEndIsANoOp() {
-        assertFalse(ChatListOrder.boundaryHidden(2, 0, 1200, viewport))
-        assertEquals(0, ChatListOrder.jumpTarget(2, 0, 4))
-        assertEquals(0f, ChatListOrder.jumpDistance(2, 0, 1200, viewport))
-    }
-
-    @Test fun downFromCEndTargetsDEnd() {
-        assertFalse(ChatListOrder.boundaryHidden(2, 0, 160, viewport))
-        assertEquals(0, ChatListOrder.jumpTarget(2, 1, 4))
-        assertEquals(0, ChatListOrder.jumpOffset(2, 1200, viewport))
+    @Test fun downAlwaysTargetsNextMessageEvenWhenCurrentEndIsHidden() {
+        assertEquals(1, ChatListOrder.jumpTarget(2, 2, 4, true))
+        assertEquals(0, ChatListOrder.jumpTarget(2, 1, 4, true))
+        assertEquals(0, ChatListOrder.jumpTarget(2, 0, 4, true))
+        assertEquals(700, ChatListOrder.jumpOffset(2, 1200, viewport))
+        assertEquals(-340, ChatListOrder.jumpOffset(2, 160, viewport))
     }
 
     @Test fun shortAndLongMessagesUseTheSameDirectionRules() {
         for (size in listOf(80, 500, 1200)) {
             val offset = ChatListOrder.jumpOffset(1, size, viewport)
             assertEquals(0, viewport + offset - size)
-            assertEquals(0, ChatListOrder.jumpOffset(2, size, viewport))
+            assertEquals(size - viewport, ChatListOrder.jumpOffset(2, size, viewport))
         }
     }
 
@@ -79,15 +66,7 @@ class MessageJumpTests {
         assertFalse(ChatListOrder.boundaryHidden(1, 1, 500, viewport))
         assertTrue(ChatListOrder.boundaryHidden(1, 2, 500, viewport))
         assertFalse(ChatListOrder.boundaryHidden(2, -1, 500, viewport))
-        assertTrue(ChatListOrder.boundaryHidden(2, -2, 500, viewport))
-    }
-
-    @Test fun revealPreviousMessageOnlyMovesItIntoMeasurement() {
-        assertEquals(21f, ChatListOrder.revealDistance(1, -700, 1200, viewport, 20))
-    }
-
-    @Test fun revealNextMessageKeepsDownwardDirection() {
-        assertEquals(-21f, ChatListOrder.revealDistance(2, 0, 160, viewport, 20))
+        assertFalse(ChatListOrder.boundaryHidden(2, -2, 500, viewport))
     }
 
     @Test fun extremeMessageSizeDoesNotOverflowBoundaryTest() {
@@ -100,4 +79,21 @@ class MessageJumpTests {
         assertEquals(0, ChatListOrder.jumpTarget(3, 1, 4, true))
         assertEquals(null, ChatListOrder.jumpTarget(1, 0, 0, true))
     }
+    @Test fun visualTopCountsFromContentBottomInReverseLayout() {
+        assertEquals(0, ChatListOrder.visualTop(itemOffset = 0, itemSize = 500, contentBottom = 500, reverseLayout = true))
+        assertEquals(200, ChatListOrder.visualTop(itemOffset = 300, itemSize = 0, contentBottom = 500, reverseLayout = true))
+        assertEquals(120, ChatListOrder.visualTop(itemOffset = 120, itemSize = 0, contentBottom = 500, reverseLayout = false))
+    }
+
+    @Test fun topOwnerPrefersTheMessageSpanningTheTopEdge() {
+        val tops = listOf(2 to -900, 1 to 120, 0 to 400)
+        assertEquals(2, ChatListOrder.topOwnerIndex(tops, listOf(1000, 160, 100)))
+    }
+
+    @Test fun topOwnerFallsBackToTheNearestMessageWhenNothingSpansTheEdge() {
+        // 顶边正好落在两条消息的间距里：上面那条已完全越过顶边
+        assertEquals(1, ChatListOrder.topOwnerIndex(listOf(2 to -520, 1 to 10), listOf(500, 300)))
+        assertEquals(null, ChatListOrder.topOwnerIndex(emptyList(), emptyList()))
+    }
+
 }

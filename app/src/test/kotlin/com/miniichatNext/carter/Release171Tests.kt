@@ -1,3 +1,9 @@
+/**
+ * 项目名称: MiniiChat Next
+ * 项目地址: https://github.com/director4168/MiniiChat-Next
+ * 项目开源: AGPL-3.0
+ * © 2026 director_Carter
+ */
 package com.miniichatNext.carter
 
 import com.miniichatNext.carter.api.chatEndpoint
@@ -297,13 +303,13 @@ class Release171Tests {
     }
 
     @Test fun reverseMessageJumperAlignsLongTargetByDirection() {
-        (0..1).forEach { action -> assertEquals(300, ChatListOrder.jumpOffset(action, 800, 500)) }
-        (2..3).forEach { action -> assertEquals(0, ChatListOrder.jumpOffset(action, 800, 500)) }
+        (0..2).forEach { action -> assertEquals(300, ChatListOrder.jumpOffset(action, 800, 500)) }
+        (3..3).forEach { action -> assertEquals(0, ChatListOrder.jumpOffset(action, 800, 500)) }
     }
 
     @Test fun reverseMessageJumperUsesNegativeOffsetForShortMessageTop() {
-        (0..1).forEach { action -> assertEquals(-300, ChatListOrder.jumpOffset(action, 200, 500)) }
-        (2..3).forEach { action -> assertEquals(0, ChatListOrder.jumpOffset(action, 200, 500)) }
+        (0..2).forEach { action -> assertEquals(-300, ChatListOrder.jumpOffset(action, 200, 500)) }
+        (3..3).forEach { action -> assertEquals(0, ChatListOrder.jumpOffset(action, 200, 500)) }
     }
 
 }
