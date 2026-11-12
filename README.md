@@ -235,7 +235,7 @@ build-outputs/release/
 mapping-<versionName>.txt
 ```
 
-> !TIP
+> [!NOTE]
 > `copyAndRenameMapping`任务仅在构建release包完毕后运行，且优先级低于`copyAndRenameDebugApks`任务。`copyAndRenameMapping`添加于v1.7.0正式版
 
 
