@@ -1,5 +1,7 @@
 package com.miniichatNext.carter.ui.markdown.lang
 
+import java.util.Locale
+
 internal data class LangRules(
     val keywords: Set<String>,
     val types: Set<String>,
@@ -11,7 +13,7 @@ internal data class LangRules(
     /** 是否渲染#RRGGBB(AA)为颜色本身（hex颜色高亮） */
     val allowHexColors: Boolean = true,
 ) {
-    val keywordsLower: Set<String> = keywords.mapTo(HashSet()) { it.lowercase() }
-    val typesLower: Set<String> = types.mapTo(HashSet()) { it.lowercase() }
-    val functionsLower: Set<String> = functions.mapTo(HashSet()) { it.lowercase() }
+    val keywordsLower: Set<String> = keywords.mapTo(HashSet()) { it.lowercase(Locale.ROOT) }
+    val typesLower: Set<String> = types.mapTo(HashSet()) { it.lowercase(Locale.ROOT) }
+    val functionsLower: Set<String> = functions.mapTo(HashSet()) { it.lowercase(Locale.ROOT) }
 }
