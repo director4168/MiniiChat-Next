@@ -14,6 +14,7 @@ import com.miniichatNext.carter.R
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
+import java.util.Locale
 
 /** 读取content://或file://URI并返回base64+mime+名称+大小 */
 data class LoadedAttachment(
@@ -276,7 +277,7 @@ object AttachmentLoader {
     }
 
     private fun guessMimeFromName(name: String): String? {
-        val ext = name.substringAfterLast('.', "").lowercase()
+        val ext = name.substringAfterLast('.', "").lowercase(Locale.ROOT)
         return when (ext) {
             "jpg", "jpeg" -> "image/jpeg"
             "png" -> "image/png"
