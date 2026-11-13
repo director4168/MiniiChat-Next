@@ -47,4 +47,19 @@ internal object ChatListOrder {
     fun jumpOffset(action: Int, messageHeight: Int, viewportHeight: Int): Int =
         if (action in 0..2) messageHeight - viewportHeight.coerceAtLeast(0) else 0
 
+    /**
+     * 流式期间反向列表的最新消息贴底，内容增长会向上顶；用户不在底部时按增量补偿滚动，
+     * 让正在查看的内容保持原位。贴底或用户手指还在滑动时不补偿，交给原生锚定/手势。
+     */
+    fun streamCompensation(
+        atBottom: Boolean,
+        isScrollInProgress: Boolean,
+        lastLatestSize: Int,
+        newLatestSize: Int,
+    ): Int {
+        val delta = newLatestSize - lastLatestSize
+        if (delta <= 0 || atBottom || isScrollInProgress) return 0
+        return delta
+    }
+
 }

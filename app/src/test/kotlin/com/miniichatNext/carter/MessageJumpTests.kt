@@ -96,4 +96,17 @@ class MessageJumpTests {
         assertEquals(null, ChatListOrder.topOwnerIndex(emptyList(), emptyList()))
     }
 
+    @Test fun streamCompensationAppliesOnlyWhenScrolledAwayAndIdle() {
+        // 未贴底且没有手指滑动：按增长量补偿
+        assertEquals(120, ChatListOrder.streamCompensation(atBottom = false, isScrollInProgress = false, lastLatestSize = 800, newLatestSize = 920))
+        // 贴底：不补偿
+        assertEquals(0, ChatListOrder.streamCompensation(true, false, 800, 920))
+        // 手指正在滑动：不补偿
+        assertEquals(0, ChatListOrder.streamCompensation(false, true, 800, 920))
+        // 无增长：不补偿
+        assertEquals(0, ChatListOrder.streamCompensation(false, false, 800, 800))
+        // 收缩：不补偿
+        assertEquals(0, ChatListOrder.streamCompensation(false, false, 800, 700))
+    }
+
 }
