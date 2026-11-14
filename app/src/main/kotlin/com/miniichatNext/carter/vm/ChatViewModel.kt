@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -262,6 +263,11 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         if (session.conversationId == _activeId.value) stopTaskSession()
     }
 
+    private companion object {
+        /** 停止后等待旧会话收尾的上限：超时就先恢复界面，避免停止键像失灵 */
+        const val STOP_SETTLE_TIMEOUT_MS = 2000L
+    }
+
     internal fun stopTaskSession() {
         val session = taskSession ?: return
         val cid = session.conversationId
@@ -276,7 +282,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         // 保留当前气泡直到取消回调把最后一段正文、思考和计量完整提交。
         viewModelScope.launch {
             try {
-                session.awaitStopped()
+                // 工具执行可能是不可中断的阻塞调用，等太久会让停止键看起来失灵
+                withTimeoutOrNull(STOP_SETTLE_TIMEOUT_MS) { session.awaitStopped() }
+                // 超时后旧会话仍可能从NonCancellable收尾，先封住它的后续持久化
+                session.settleStop()
                 store.updateMessages(cid) { msgs ->
                     msgs.map { msg ->
                         msg.copy(toolInvocations = msg.toolInvocations.map { inv ->

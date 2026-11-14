@@ -14,7 +14,7 @@
     },
     {
       "name": "rikkahub/rikkahub",
-      "desc": "（AGPL-3.0）工具调用、MCP、Markdown/LaTeX渲染等多处功能参考了该项目；消息用量组件、缓存统计及计量合并源码移植自该项目",
+      "desc": "（AGPL-3.0）工具调用、MCP、Markdown/LaTeX渲染及正序聊天列表等多处功能参考了该项目；消息用量组件、缓存统计及计量合并源码移植自该项目",
       "url": "https://github.com/rikkahub/rikkahub"
     },
     {

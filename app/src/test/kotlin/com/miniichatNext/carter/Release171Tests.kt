@@ -267,33 +267,33 @@ class Release171Tests {
         assertEquals("https://api.lwxiaoye.top/v1/models", modelsEndpoint(preset.baseUrl + "/"))
     }
 
-    @Test fun reverseListIndexStillMapsToChronologicalMessages() {
-        assertEquals(4, ChatListOrder.messageIndex(0, 5))
-        assertEquals(0, ChatListOrder.messageIndex(4, 5))
-        assertEquals(listOf(4, 3, 2, 1, 0), (0 until 5).map { ChatListOrder.messageIndex(it, 5) })
+    @Test fun forwardListIndicesAreChronological() {
+        assertEquals(0, ChatListOrder.messageIndex(0, 5))
+        assertEquals(4, ChatListOrder.messageIndex(4, 5))
+        assertEquals(listOf(0, 1, 2, 3, 4), (0 until 5).map { ChatListOrder.messageIndex(it, 5) })
     }
 
-    @Test fun reverseListMappingRejectsFooterAndInvalidIndices() {
+    @Test fun forwardListMappingRejectsFooterAndInvalidIndices() {
         assertEquals(null, ChatListOrder.messageIndex(-1, 5))
         assertEquals(null, ChatListOrder.messageIndex(5, 5))
         assertEquals(null, ChatListOrder.messageIndex(0, 0))
     }
 
-    @Test fun reverseMessageJumperKeepsVisualUpAndDownMeaning() {
-        assertEquals(4, ChatListOrder.jumpTarget(0, 2, 5))
-        assertEquals(3, ChatListOrder.jumpTarget(1, 2, 5))
-        assertEquals(1, ChatListOrder.jumpTarget(2, 2, 5))
-        assertEquals(0, ChatListOrder.jumpTarget(3, 2, 5))
+    @Test fun messageJumperKeepsVisualUpAndDownMeaning() {
+        assertEquals(0, ChatListOrder.jumpTarget(0, 2, 5))
+        assertEquals(1, ChatListOrder.jumpTarget(1, 2, 5))
+        assertEquals(3, ChatListOrder.jumpTarget(2, 2, 5))
+        assertEquals(4, ChatListOrder.jumpTarget(3, 2, 5))
     }
 
-    @Test fun reverseMessageJumperClampsAtBothEnds() {
-        assertEquals(4, ChatListOrder.jumpTarget(1, 4, 5))
-        assertEquals(0, ChatListOrder.jumpTarget(2, 0, 5))
-        assertEquals(4, ChatListOrder.jumpTarget(1, 100, 5))
-        assertEquals(0, ChatListOrder.jumpTarget(2, -10, 5))
+    @Test fun messageJumperClampsAtBothEnds() {
+        assertEquals(0, ChatListOrder.jumpTarget(1, 0, 5))
+        assertEquals(4, ChatListOrder.jumpTarget(2, 4, 5))
+        assertEquals(3, ChatListOrder.jumpTarget(1, 100, 5))
+        assertEquals(1, ChatListOrder.jumpTarget(2, -10, 5))
     }
 
-    @Test fun reverseMessageJumperHandlesEmptyAndSingleMessageLists() {
+    @Test fun messageJumperHandlesEmptyAndSingleMessageLists() {
         (0..3).forEach { action ->
             assertEquals(null, ChatListOrder.jumpTarget(action, 0, 0))
             assertEquals(0, ChatListOrder.jumpTarget(action, 0, 1))
@@ -301,15 +301,4 @@ class Release171Tests {
         assertEquals(null, ChatListOrder.jumpTarget(-1, 0, 5))
         assertEquals(null, ChatListOrder.jumpTarget(4, 0, 5))
     }
-
-    @Test fun reverseMessageJumperAlignsLongTargetByDirection() {
-        (0..2).forEach { action -> assertEquals(300, ChatListOrder.jumpOffset(action, 800, 500)) }
-        (3..3).forEach { action -> assertEquals(0, ChatListOrder.jumpOffset(action, 800, 500)) }
-    }
-
-    @Test fun reverseMessageJumperUsesNegativeOffsetForShortMessageTop() {
-        (0..2).forEach { action -> assertEquals(-300, ChatListOrder.jumpOffset(action, 200, 500)) }
-        (3..3).forEach { action -> assertEquals(0, ChatListOrder.jumpOffset(action, 200, 500)) }
-    }
-
 }

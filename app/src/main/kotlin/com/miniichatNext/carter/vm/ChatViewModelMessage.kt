@@ -373,12 +373,24 @@ private suspend fun ChatViewModel.runGenerationRound(
                 if (idx >= 0) {
                     invocations[idx] = invocations[idx].copy(arguments = tc.argumentsJson)
                 } else {
+                    // 只有确实需要人工介入的工具才记为待审批，其余先记执行中，
+                    // 免得未开启审批的工具在界面上闪出点不动的审批按钮
+                    val resolved = try {
+                        resolveAvailableTool(cid, tc.name)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        null
+                    }
+                    val needsAttention = resolved == null || !resolved.permission.enabled ||
+                        resolved.permission.requireApproval || tc.name == "interactive_clarification"
                     invocations.add(
                         ToolInvocation(
                             callId = tc.id,
                             toolName = tc.name,
                             arguments = tc.argumentsJson,
-                            state = ToolInvocationState.PENDING_APPROVAL
+                            state = if (needsAttention) ToolInvocationState.PENDING_APPROVAL
+                            else ToolInvocationState.EXECUTING
                         )
                     )
                     // 工具节点：按出现顺序追加；后续同id的delta只更新参数，不再重复append
@@ -440,12 +452,16 @@ private suspend fun ChatViewModel.persistAssistantStep(
     if (canPublishStream(session)) {
         _streamingOverlay.value = StreamOverlay(msgId, content, reasoning, orderedParts, stats.usage, stats.generationTimeMs, stats.lastUsage, stats.stepCount, stats.finishedAt)
     }
+    if (session.stopSettled) return
     store.updateMessages(cid) { msgs ->
         msgs.map { m ->
             if (m.id == msgId) m.copy(
                 content = content,
                 reasoningContent = reasoning.ifBlank { null },
-                toolInvocations = invocations.toList(),
+                toolInvocations = invocations.map { incoming ->
+                    val current = m.toolInvocations.firstOrNull { it.callId == incoming.callId }
+                    if (session.stopRequested && current?.state == ToolInvocationState.CANCELLED) current else incoming
+                },
                 orderedParts = orderedParts,
                 usage = stats.usage,
                 generationTimeMs = stats.generationTimeMs,
@@ -541,13 +557,14 @@ private suspend fun ChatViewModel.claimPendingTool(
     cid: String,
     callId: String,
     state: String,
+    from: String = ToolInvocationState.PENDING_APPROVAL,
 ): ToolInvocation? {
     var claimed: ToolInvocation? = null
     store.updateMessages(cid) { msgs ->
         msgs.map { msg ->
             msg.copy(toolInvocations = msg.toolInvocations.map { inv ->
                 if (inv.callId == callId && callId !in stoppedToolCalls &&
-                    inv.state == ToolInvocationState.PENDING_APPROVAL && claimed == null) {
+                    inv.state == from && claimed == null) {
                     claimed = inv
                     inv.copy(state = state)
                 } else inv
@@ -565,6 +582,19 @@ private suspend fun ChatViewModel.continueIfAllToolsAnswered(session: ChatTaskSe
     if (owner.toolInvocations.any { it.isUnanswered() || it.state == ToolInvocationState.CANCELLED }) return
     val batchKey = owner.id + ":" + owner.toolInvocations.joinToString(",") { it.callId }
     if (session.claimContinuation(batchKey)) launchGeneration(session, owner.id)
+}
+
+private suspend fun ChatViewModel.markToolPendingApproval(cid: String, callId: String) {
+    store.updateMessages(cid) { msgs ->
+        msgs.map { msg ->
+            if (msg.toolInvocations.none { it.callId == callId }) msg
+            else msg.copy(toolInvocations = msg.toolInvocations.map { inv ->
+                if (inv.callId == callId && inv.state == ToolInvocationState.EXECUTING) {
+                    inv.copy(state = ToolInvocationState.PENDING_APPROVAL)
+                } else inv
+            })
+        }
+    }
 }
 
 private suspend fun ChatViewModel.updateToolInvocationState(
@@ -692,15 +722,20 @@ private suspend fun ChatViewModel.executeAutoApprovedTools(
         currentCoroutineContext().ensureActive()
         val resolved = resolveAvailableTool(cid, inv.toolName)
         if (!resolved.permission.enabled) {
-            if (claimPendingTool(cid, inv.callId, ToolInvocationState.REJECTED) != null) {
+            if (claimPendingTool(cid, inv.callId, ToolInvocationState.REJECTED, from = inv.state) != null) {
                 updateToolInvocationState(cid, inv.callId, ToolInvocationState.REJECTED,
                     "Tool is disabled or not available in this conversation")
                 answeredAny = true
             }
             continue
         }
-        if (inv.toolName == "interactive_clarification" || resolved.permission.requireApproval) continue
-        val claimed = claimPendingTool(cid, inv.callId, ToolInvocationState.RUNNING) ?: continue
+        if (inv.toolName == "interactive_clarification" || resolved.permission.requireApproval) {
+            if (inv.state == ToolInvocationState.EXECUTING) {
+                markToolPendingApproval(cid, inv.callId)
+            }
+            continue
+        }
+        val claimed = claimPendingTool(cid, inv.callId, ToolInvocationState.RUNNING, from = inv.state) ?: continue
         val (ok, output) = executeTool(cid, claimed.toolName, claimed.arguments)
         currentCoroutineContext().ensureActive()
         updateToolInvocationState(cid, inv.callId,

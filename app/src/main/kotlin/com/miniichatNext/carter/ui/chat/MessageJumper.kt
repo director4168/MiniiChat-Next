@@ -27,6 +27,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -48,7 +49,12 @@ import kotlinx.coroutines.launch
 
 /** 参考rikkahub的MessageJumper，消息滚动后短暂显示四向跳转。 */
 @Composable
-internal fun BoxScope.MessageJumper(state: LazyListState, messageCount: Int) {
+internal fun BoxScope.MessageJumper(
+    state: LazyListState,
+    messageCount: Int,
+    onJumpStarted: () -> Unit = {},
+    onJumpFinished: () -> Unit = {},
+) {
     val context = LocalContext.current
     val dark = LocalDarkMode.current
     val version = AppThemeOverrides.version.intValue
@@ -58,6 +64,7 @@ internal fun BoxScope.MessageJumper(state: LazyListState, messageCount: Int) {
     var visible by remember(state) { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var jumpJob by remember(state) { mutableStateOf<Job?>(null) }
+    var jumpVersion by remember(state) { mutableIntStateOf(0) }
     LaunchedEffect(state) {
         snapshotFlow { state.isScrollInProgress }.collectLatest { scrolling ->
             if (scrolling) visible = true
@@ -77,8 +84,16 @@ internal fun BoxScope.MessageJumper(state: LazyListState, messageCount: Int) {
                 Surface(shape = CircleShape, tonalElevation = 0.dp,
                     color = background, contentColor = content) {
                     IconButton(modifier = Modifier.size(36.dp), onClick = {
+                        val version = ++jumpVersion
                         jumpJob?.cancel()
-                        jumpJob = scope.launch { state.jumpMessage(action, messageCount) }
+                        onJumpStarted()
+                        jumpJob = scope.launch {
+                            try {
+                                state.jumpMessage(action, messageCount)
+                            } finally {
+                                if (version == jumpVersion) onJumpFinished()
+                            }
+                        }
                     }) { Icon(icon, contentDescription = stringResource(labels[action]), modifier = Modifier.size(18.dp)) }
                 }
             }

@@ -30,11 +30,21 @@ internal class ChatTaskSession(
     @Volatile
     var generation: Job? = null
         private set
+    @Volatile
+    var stopRequested: Boolean = false
+        private set
+    @Volatile
+    var stopSettled: Boolean = false
+        private set
     val isActive: Boolean get() = root.isActive
 
     fun rememberTool(callId: String) { calls.add(callId) }
     fun toolCallIds(): Set<String> = calls.toSet()
-    fun cancel() { root.cancel() }
+    fun cancel() {
+        stopRequested = true
+        root.cancel()
+    }
+    fun settleStop() { stopSettled = true }
     suspend fun awaitStopped() { root.join() }
 
     @Synchronized

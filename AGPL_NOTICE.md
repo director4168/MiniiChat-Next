@@ -397,6 +397,10 @@ Full text of the license is in [`LICENSE`](LICENSE) (above the
 "END OF TERMS AND CONDITIONS" separator). The original source can
 be obtained from <https://github.com/rikkahub/rikkahub>.
 
+The chronological chat-list layout and bottom-follow behavior in
+`ui/chat/ChatScreen.kt` were adapted with reference to RikkaHub's
+`ui/pages/chat/ChatList.kt`.
+
 ### 5.3 久违¹/MiniiChat-Next-Flutter (public derivative)
 
 `MiniiChat-Next-Flutter` is a **public** Flutter derivative of MiniiChat

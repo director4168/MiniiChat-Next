@@ -7,7 +7,6 @@
 package com.miniichatNext.carter.ui.chat
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,8 +20,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,18 +33,24 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.changedToUp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -88,6 +93,7 @@ private fun ChatMessageListItem(
     onApproveTool: ((com.miniichatNext.carter.data.model.ToolInvocation, String?) -> Unit)?,
     onRejectTool: ((com.miniichatNext.carter.data.model.ToolInvocation) -> Unit)?,
     onFullscreen: ((String, Boolean) -> Unit)?,
+    onPositioned: () -> Unit,
 ) {
     val liveOverlay = if (isLastAssistant && isStreaming) {
         streamingOverlay?.collectAsState()?.value
@@ -96,20 +102,22 @@ private fun ChatMessageListItem(
         message.withStreamingSnapshot(liveOverlay)
     }
 
-    MessageItem(
-        message = displayMessage,
-        avatar = if (displayMessage.role == "user") userAvatar else assistantAvatar,
-        senderLabel = senderLabel,
-        isLastAssistant = isLastAssistant,
-        isStreaming = isStreaming,
-        onStartEdit = onStartEdit,
-        onContinue = onContinue,
-        onDelete = { onDelete(displayMessage.id) },
-        onRegenerateFrom = { onRegenerateFrom(displayMessage.id) },
-        onApproveTool = onApproveTool,
-        onRejectTool = onRejectTool,
-        onFullscreen = onFullscreen,
-    )
+    Box(Modifier.onGloballyPositioned { onPositioned() }) {
+        MessageItem(
+            message = displayMessage,
+            avatar = if (displayMessage.role == "user") userAvatar else assistantAvatar,
+            senderLabel = senderLabel,
+            isLastAssistant = isLastAssistant,
+            isStreaming = isStreaming,
+            onStartEdit = onStartEdit,
+            onContinue = onContinue,
+            onDelete = { onDelete(displayMessage.id) },
+            onRegenerateFrom = { onRegenerateFrom(displayMessage.id) },
+            onApproveTool = onApproveTool,
+            onRejectTool = onRejectTool,
+            onFullscreen = onFullscreen,
+        )
+    }
 }
 
 @Composable
@@ -163,43 +171,42 @@ fun ChatScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     var input by rememberSaveable { mutableStateOf("") }
     var pendingAttachments by remember { mutableStateOf<List<com.miniichatNext.carter.data.model.Attachment>>(emptyList()) }
-    val listState = rememberLazyListState()
+    val listState = remember(conversation?.id) { LazyListState() }
     val rawMessages = conversation?.messages ?: emptyList()
-    var rememberedSession by rememberSaveable { mutableStateOf("") }
-    var rememberedCount by rememberSaveable { mutableIntStateOf(-1) }
+    var rememberedCount by remember(conversation?.id) { mutableIntStateOf(-1) }
+    var scrollFollow by remember(listState) { mutableStateOf(ChatScrollFollow()) }
+    val loading by rememberUpdatedState(isStreaming)
     // 流式overlay只由最后一条生成中的消息订阅，历史消息保持稳定节点。
     val visibleMessages = remember(rawMessages) { rawMessages.filterNot { it.hidden } }
-    val latestFirstMessages = remember(visibleMessages) { visibleMessages.asReversed() }
-    // 结构变化前记住底部位置，新增item重测后索引可能已被稳定key调整。
-    val keepLatestOnAppend = remember(conversation?.id, visibleMessages.size) {
-        listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0
-    }
-    // 流式期间用户滚离底部后，反向列表的内容增长会把正在看的内容向上顶；
-    // 记录最新消息实时高度，按增长量反向补偿，让查看位置保持原位。
-    var lastLatestSize by remember { mutableStateOf<Int?>(null) }
-    LaunchedEffect(conversation?.id, isStreaming) {
-        if (!isStreaming) {
-            lastLatestSize = null
-            return@LaunchedEffect
-        }
-        snapshotFlow { listState.layoutInfo }
-            .collectLatest { info ->
-                val contentBottom = (info.viewportEndOffset - info.afterContentPadding).coerceAtLeast(0)
-                // 最新消息（反向列表index0）是否已参与测量：仅在有流式正文时补偿
-                val latest = info.visibleItemsInfo.firstOrNull { it.index == 0 } ?: return@collectLatest
-                val visible = info.visibleItemsInfo.filter {
-                    it.index >= 0 && it.offset.toLong() + it.size > 0 && it.offset < contentBottom
+    val messageCount by rememberUpdatedState(visibleMessages.size)
+    // 只有本对话确实有待审批的工具时才把审批回调传下去，避免残留状态出现点不动的按钮
+    val pendingApprovalConvId = vm?.pendingConvId?.collectAsState()?.value
+    val approveToolsEnabled = vm?.hasPendingTools?.collectAsState()?.value == true &&
+        pendingApprovalConvId == conversation?.id
+    val userScrollConnection = remember(listState) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput && available.y != 0f) {
+                    scrollFollow = scrollFollow.onUserScroll()
                 }
-                val atBottom = visible.all { it.offset >= -1 }
-                val baseline = lastLatestSize
-                lastLatestSize = latest.size
-                if (baseline == null) return@collectLatest
-                val delta = ChatListOrder.streamCompensation(
-                    atBottom, listState.isScrollInProgress, baseline, latest.size,
-                )
-                // 内容向上顶delta，视口需反向向下（reverseLayout里backward指向底部）补偿
-                if (delta != 0) listState.scrollBy(-delta.toFloat())
+                return Offset.Zero
             }
+        }
+    }
+    // rikkahub使用正序列表和尾部占位项；仅跟随底部，历史阅读不发起滚动请求。
+    LaunchedEffect(listState) {
+        snapshotFlow {
+            listState.isScrollInProgress to scrollFollow
+        }.collect { (scrolling, _) ->
+            if (scrolling && !scrollFollow.jumping && !scrollFollow.userScrolling) {
+                scrollFollow = scrollFollow.onUserScroll()
+            } else if (!scrolling) {
+                scrollFollow = scrollFollow.onIdle(atBottom = !listState.canScrollForward)
+            }
+        }
+    }
+    val settleBottom = rememberChatBottomSettler(listState, visibleMessages.size) {
+        scrollFollow.shouldFollow(loading, listState.isScrollInProgress)
     }
     LaunchedEffect(conversation?.id, visibleMessages.size, isStreaming) {
         snapshotFlow {
@@ -269,17 +276,15 @@ fun ChatScreen(
                 }
             }
     }
-    // 只在切换对话或新增消息时定位。流式增高由reverseLayout同次测量保持底部，毋须事后补滚动。
     LaunchedEffect(conversation?.id, visibleMessages.size) {
-        val session = conversation?.id.orEmpty()
         val count = visibleMessages.size
-        val newSession = rememberedSession != session
-        val appended = !newSession && count > rememberedCount
+        val initial = rememberedCount < 0
+        val appended = count > rememberedCount
         val sentByUser = visibleMessages.lastOrNull()?.role == "user"
-        if (count > 0 && (newSession || (appended && (keepLatestOnAppend || sentByUser)))) {
-            listState.requestScrollToItem(0)
+        if (count > 0 && (initial || (appended && (scrollFollow.following || sentByUser)))) {
+            scrollFollow = scrollFollow.followLatest()
+            listState.requestScrollToItem(count)
         }
-        rememberedSession = session
         rememberedCount = count
     }
     val backgroundMode = assistant?.backgroundMode ?: "default"
@@ -506,14 +511,14 @@ fun ChatScreen(
         } else {
             LazyColumn(
                 state = listState,
-                reverseLayout = true,
-                modifier = Modifier.fillMaxSize(),
-                // 把旧底部占位项的21dp并入padding，视觉留白保持原样。
-                contentPadding = PaddingValues(start = 18.dp, top = 16.dp, end = 18.dp, bottom = 37.dp),
+                reverseLayout = false,
+                modifier = Modifier.fillMaxSize().nestedScroll(userScrollConnection)
+                    .onGloballyPositioned { settleBottom() },
+                contentPadding = PaddingValues(start = 18.dp, top = 16.dp, end = 18.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp)
             ) {
                 items(
-                    items = latestFirstMessages,
+                    items = visibleMessages,
                     key = { it.id },
                     contentType = { if (it.role == "assistant") "assistant" else "user" },
                 ) { msg ->
@@ -535,15 +540,26 @@ fun ChatScreen(
                         onContinue = onContinue,
                         onDelete = onDeleteMessage,
                         onRegenerateFrom = { retellTargetId = it },
-                        onApproveTool = onApproveTool,
-                        onRejectTool = onRejectTool,
+                        onApproveTool = onApproveTool.takeIf { approveToolsEnabled },
+                        onRejectTool = onRejectTool.takeIf { approveToolsEnabled },
                         onFullscreen = onFullscreen,
+                        onPositioned = { if (msg.id == visibleMessages.lastOrNull()?.id) settleBottom() },
                     )
+                }
+                item(key = ChatListOrder.BOTTOM_KEY, contentType = "bottom") {
+                    Spacer(Modifier.height(1.dp))
                 }
             }
             }
 
-        MessageJumper(listState, visibleMessages.size)
+        MessageJumper(
+            state = listState,
+            messageCount = visibleMessages.size,
+            onJumpStarted = { scrollFollow = scrollFollow.onJumpStarted() },
+            onJumpFinished = {
+                scrollFollow = scrollFollow.onJumpFinished(atBottom = !listState.canScrollForward)
+            },
+        )
 
         // 面板打开时：点一下/滑一下消息区即收起（面板内、输入框内的点击不受影响；不消费事件，所以消息列表照常能滚动）
         if (addPanelOpen || candidatesOpen) {
