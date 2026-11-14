@@ -237,6 +237,7 @@ mapping-<versionName>.txt
 
 > [!NOTE]
 > `copyAndRenameMapping`任务仅在构建release包完毕后运行，且优先级低于`copyAndRenameDebugApks`任务。`copyAndRenameMapping`添加于v1.7.0正式版
+>
 > 1.7.3版本开始，`copyAndRenameMapping`任务会将mapping.txt，复制并重命名到输出目录后进行7zip压缩，并删除除中间文件
 
 
