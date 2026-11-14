@@ -21,8 +21,8 @@ android {
         applicationId = "com.miniichatNext.carter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 261113048
-        versionName = "v1.7.2"
+        versionCode = 261114051
+        versionName = "v1.7.3"
         vectorDrawables { useSupportLibrary = true }
         externalNativeBuild {
             cmake {
@@ -191,31 +191,29 @@ val ansiColorEnabled = providers.environmentVariable("NO_COLOR").orNull == null 
     providers.environmentVariable("TERM").orNull != "dumb" &&
     gradle.startParameter.consoleOutput != org.gradle.api.logging.configuration.ConsoleOutput.Plain
 
-fun colored(code: Int, message: String): String =
-    if (ansiColorEnabled) "\u001B[${code}m$message\u001B[0m" else message
-
-fun logSuccess(message: String) = println(colored(32, message))
-fun logWarning(message: String) = println(colored(33, message))
-fun logFailure(message: String) = println(colored(31, message))
-
 // 自定义一个工具，用于将打包输出的apk移动到/build-outputs
 // 命名格式: MiniiChat-Next-[versionName]-[abi]-[BuildType].apk
+// 任务动作里只引用本作用域的局部值，不引用脚本顶层属性，否则配置缓存无法序列化
 val copyAndRenameReleaseApks = tasks.register("copyAndRenameReleaseApks") {
     group = "distribution"
     description = "Rename release APKs to MiniiChat-Next-<ver>-<abi>-release.apk and copy to build-outputs/release/"
+    val ansiGreen = if (ansiColorEnabled) "\u001B[32m" else ""
+    val ansiYellow = if (ansiColorEnabled) "\u001B[33m" else ""
+    val ansiRed = if (ansiColorEnabled) "\u001B[31m" else ""
+    val ansiReset = if (ansiColorEnabled) "\u001B[0m" else ""
+    val versionName = android.defaultConfig.versionName
+    val srcDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+    val dstDir = file("${rootProject.projectDir}/build-outputs/release")
     doLast {
-        val srcDir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
         if (!srcDir.exists()) {
-            logWarning("No release APK output at $srcDir; skipping copyAndRenameReleaseApks")
+            println("${ansiYellow}No release APK output at $srcDir; skipping copyAndRenameReleaseApks$ansiReset")
             return@doLast
         }
-        val versionName = android.defaultConfig.versionName
-        val dstDir = file("${rootProject.projectDir}/build-outputs/release")
         dstDir.deleteRecursively()
         dstDir.mkdirs()
         val apks = srcDir.listFiles { _, name -> name.endsWith(".apk") }.orEmpty()
         if (apks.isEmpty()) {
-            logWarning("No release APK found in $srcDir; skipping copy")
+            println("${ansiYellow}No release APK found in $srcDir; skipping copy$ansiReset")
             return@doLast
         }
         apks.forEach { apk ->
@@ -225,13 +223,13 @@ val copyAndRenameReleaseApks = tasks.register("copyAndRenameReleaseApks") {
             val finalName = "MiniiChat-Next-${versionName}-${abi}-release.apk"
             try {
                 apk.copyTo(File(dstDir, finalName), overwrite = true)
-                logSuccess("MiniiChat-Next: ${apk.name} -> build-outputs/release/$finalName")
+                println("${ansiGreen}MiniiChat-Next: ${apk.name} -> build-outputs/release/$finalName$ansiReset")
             } catch (error: Exception) {
-                logFailure("MiniiChat-Next: failed to copy ${apk.name}: ${error.message}")
+                println("${ansiRed}MiniiChat-Next: failed to copy ${apk.name}: ${error.message}$ansiReset")
                 throw error
             }
         }
-        logSuccess("Release APKs ready: ${apks.size} file(s) -> build-outputs/release/")
+        println("${ansiGreen}Release APKs ready: ${apks.size} file(s) -> build-outputs/release/$ansiReset")
     }
 }
 
@@ -239,23 +237,49 @@ val copyAndRenameReleaseApks = tasks.register("copyAndRenameReleaseApks") {
 // 命名格式: mapping-[versionName].txt
 val copyAndRenameMapping = tasks.register("copyAndRenameMapping") {
     group = "distribution"
-    description = "Copy release mapping to build-outputs/release/mapping-<ver>.txt"
+    description = "Copy release mapping to build-outputs/release and compress it to mapping-<ver>.7z"
     mustRunAfter(copyAndRenameReleaseApks)
+    val ansiGreen = if (ansiColorEnabled) "\u001B[32m" else ""
+    val ansiYellow = if (ansiColorEnabled) "\u001B[33m" else ""
+    val ansiRed = if (ansiColorEnabled) "\u001B[31m" else ""
+    val ansiReset = if (ansiColorEnabled) "\u001B[0m" else ""
+    val versionName = android.defaultConfig.versionName
+    val mapping = layout.buildDirectory.file("outputs/mapping/release/mapping.txt").get().asFile
+    val dstDir = file("${rootProject.projectDir}/build-outputs/release")
     doLast {
-        val mapping = layout.buildDirectory.file("outputs/mapping/release/mapping.txt").get().asFile
         if (!mapping.isFile) {
-            logWarning("No release mapping at $mapping; skipping copyAndRenameMapping")
+            println("${ansiYellow}No release mapping at $mapping; skipping copyAndRenameMapping$ansiReset")
             return@doLast
         }
-        val versionName = android.defaultConfig.versionName
-        val dstDir = file("${rootProject.projectDir}/build-outputs/release")
         val finalName = "mapping-${versionName}.txt"
+        val archiveName = "mapping-${versionName}.7z"
         try {
             check(dstDir.isDirectory || dstDir.mkdirs()) { "Mapping output directory is not writable: $dstDir" }
-            mapping.copyTo(File(dstDir, finalName), overwrite = true)
-            logSuccess("MiniiChat-Next: mapping.txt -> build-outputs/release/$finalName")
+            val txt = File(dstDir, finalName)
+            mapping.copyTo(txt, overwrite = true)
+            println("${ansiGreen}MiniiChat-Next: mapping.txt -> build-outputs/release/$finalName$ansiReset")
+            val sevenZip = listOf("7z", "7za", "7zr").firstOrNull { name ->
+                (System.getenv("PATH") ?: "").split(File.pathSeparator)
+                    .any { dir -> File(dir, name).canExecute() }
+            }
+            if (sevenZip == null) {
+                println("${ansiYellow}MiniiChat-Next: 7z not found; keep $finalName uncompressed$ansiReset")
+                return@doLast
+            }
+            val archive = File(dstDir, archiveName)
+            val process = ProcessBuilder(sevenZip, "a", "-t7z", "-mx=7", "-y", archiveName, finalName)
+                .directory(dstDir)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().readText()
+            if (process.waitFor() == 0 && archive.isFile) {
+                txt.delete()
+                println("${ansiGreen}MiniiChat-Next: $finalName -> build-outputs/release/$archiveName$ansiReset")
+            } else {
+                println("${ansiYellow}MiniiChat-Next: 7z failed, keep $finalName: ${output.takeLast(300)}$ansiReset")
+            }
         } catch (error: Exception) {
-            logFailure("MiniiChat-Next: failed to copy release mapping: ${error.message}")
+            println("${ansiRed}MiniiChat-Next: failed to copy release mapping: ${error.message}$ansiReset")
             throw error
         }
     }
@@ -268,19 +292,23 @@ copyAndRenameReleaseApks.configure {
 val copyAndRenameDebugApks = tasks.register("copyAndRenameDebugApks") {
     group = "distribution"
     description = "Rename debug APKs to MiniiChat-Next-<ver>-<abi>-debug.apk and copy to build-outputs/debug/"
+    val ansiGreen = if (ansiColorEnabled) "\u001B[32m" else ""
+    val ansiYellow = if (ansiColorEnabled) "\u001B[33m" else ""
+    val ansiRed = if (ansiColorEnabled) "\u001B[31m" else ""
+    val ansiReset = if (ansiColorEnabled) "\u001B[0m" else ""
+    val versionName = android.defaultConfig.versionName
+    val srcDir = layout.buildDirectory.dir("outputs/apk/debug").get().asFile
+    val dstDir = file("${rootProject.projectDir}/build-outputs/debug")
     doLast {
-        val srcDir = layout.buildDirectory.dir("outputs/apk/debug").get().asFile
         if (!srcDir.exists()) {
-            logWarning("No debug APK output at $srcDir; skipping copyAndRenameDebugApks")
+            println("${ansiYellow}No debug APK output at $srcDir; skipping copyAndRenameDebugApks$ansiReset")
             return@doLast
         }
-        val versionName = android.defaultConfig.versionName
-        val dstDir = file("${rootProject.projectDir}/build-outputs/debug")
         dstDir.deleteRecursively()
         dstDir.mkdirs()
         val apks = srcDir.listFiles { _, name -> name.endsWith(".apk") }.orEmpty()
         if (apks.isEmpty()) {
-            logWarning("No debug APK found in $srcDir; skipping copy")
+            println("${ansiYellow}No debug APK found in $srcDir; skipping copy$ansiReset")
             return@doLast
         }
         apks.forEach { apk ->
@@ -290,13 +318,13 @@ val copyAndRenameDebugApks = tasks.register("copyAndRenameDebugApks") {
             val finalName = "MiniiChat-Next-${versionName}-${abi}-debug.apk"
             try {
                 apk.copyTo(File(dstDir, finalName), overwrite = true)
-                logSuccess("MiniiChat-Next: ${apk.name} -> build-outputs/debug/$finalName")
+                println("${ansiGreen}MiniiChat-Next: ${apk.name} -> build-outputs/debug/$finalName$ansiReset")
             } catch (error: Exception) {
-                logFailure("MiniiChat-Next: failed to copy ${apk.name}: ${error.message}")
+                println("${ansiRed}MiniiChat-Next: failed to copy ${apk.name}: ${error.message}$ansiReset")
                 throw error
             }
         }
-        logSuccess("Debug APKs ready: ${apks.size} file(s) -> build-outputs/debug/")
+        println("${ansiGreen}Debug APKs ready: ${apks.size} file(s) -> build-outputs/debug/$ansiReset")
     }
 }
 

@@ -571,9 +571,12 @@ fun ChatScreen(
         }
         }
 
-        // AI调用需要「所有文件访问权限」的工具但用户未授权→弹窗引导去授权
+        // AI调用需要公共存储的工具但用户未授权→弹窗引导授权；11+去设置，以下直接申请运行时权限
         val pendingPermission = vm?.pendingManageStorage?.collectAsState()?.value
         val permCtx = androidx.compose.ui.platform.LocalContext.current
+        val storagePermissionLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()
+        ) { }
         pendingPermission?.let { tool ->
             androidx.compose.material3.AlertDialog(
                 onDismissRequest = { vm.dismissPermissionRequest() },
@@ -582,11 +585,19 @@ fun ChatScreen(
                 confirmButton = {
                     TextButton(onClick = {
                         vm.dismissPermissionRequest()
-                        val intent = android.content.Intent(
-                            android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                            android.net.Uri.parse("package:" + permCtx.packageName)
-                        ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        permCtx.startActivity(intent)
+                        if (android.os.Build.VERSION.SDK_INT >= 30) {
+                            if (!com.miniichatNext.carter.util.openAllFilesAccessSettings(permCtx)) {
+                                android.widget.Toast.makeText(
+                                    permCtx,
+                                    permCtx.getString(com.miniichatNext.carter.R.string.mcp_open_settings_failed),
+                                    android.widget.Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        } else {
+                            storagePermissionLauncher.launch(
+                                com.miniichatNext.carter.util.storagePermissionNames()
+                            )
+                        }
                     }) { Text(stringResource(com.miniichatNext.carter.R.string.permission_grant)) }
                 },
                 dismissButton = {

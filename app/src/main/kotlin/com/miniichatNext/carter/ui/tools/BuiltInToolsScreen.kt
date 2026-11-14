@@ -11,7 +11,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import android.os.Environment
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -125,29 +124,38 @@ fun BuiltInToolsScreen(
     var openGroupRes by remember { mutableStateOf<Int?>(null) }
     var query by remember { mutableStateOf("") }
 
-    // 权限状态：所有文件访问要在系统设置里开，日历权限走运行时申请
-    var allFilesGranted by remember { mutableStateOf(hasAllFilesAccess()) }
+    // 权限状态：11+要在系统设置里开所有文件访问，10及以下申请运行时存储权限
+    var allFilesGranted by remember { mutableStateOf(com.miniichatNext.carter.util.hasStorageAccess(context)) }
     var calendarGranted by remember { mutableStateOf(hasCalendarAccess(context)) }
     val allFilesLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) { allFilesGranted = hasAllFilesAccess() }
+    ) { allFilesGranted = com.miniichatNext.carter.util.hasStorageAccess(context) }
+    val storageLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { allFilesGranted = com.miniichatNext.carter.util.hasStorageAccess(context) }
     val calendarLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { calendarGranted = hasCalendarAccess(context) }
     val openAllFilesSettings: () -> Unit = {
-        runCatching {
-            allFilesLauncher.launch(
-                Intent(
-                    Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                    Uri.parse("package:${context.packageName}"),
+        if (Build.VERSION.SDK_INT >= 30) {
+            val launched = runCatching {
+                allFilesLauncher.launch(
+                    Intent(
+                        Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                        Uri.parse("package:${context.packageName}"),
+                    )
                 )
-            )
-        }.onFailure {
-            Toast.makeText(
-                context,
-                context.getString(R.string.mcp_open_settings_failed),
-                Toast.LENGTH_LONG,
-            ).show()
+            }.isSuccess
+            // 该ROM没有这个设置页时退到总开关或应用详情，别让点击直接崩
+            if (!launched && !com.miniichatNext.carter.util.openAllFilesAccessSettings(context)) {
+                Toast.makeText(
+                    context,
+                    context.getString(R.string.mcp_open_settings_failed),
+                    Toast.LENGTH_LONG,
+                ).show()
+            }
+        } else {
+            storageLauncher.launch(com.miniichatNext.carter.util.storagePermissionNames())
         }
     }
     // 子页面打开时拦截系统返回手势：先关子页面回组列表，而不是直接退出内置工具页
@@ -199,8 +207,12 @@ fun BuiltInToolsScreen(
             if (openGroupRes == null && !allFilesGranted) {
                 item {
                     PermissionWarningCard(
-                        title = stringResource(R.string.mcp_all_files_title),
-                        message = stringResource(R.string.mcp_all_files_message),
+                        title = stringResource(
+                            if (Build.VERSION.SDK_INT >= 30) R.string.mcp_all_files_title else R.string.mcp_storage_title
+                        ),
+                        message = stringResource(
+                            if (Build.VERSION.SDK_INT >= 30) R.string.mcp_all_files_message else R.string.mcp_storage_message
+                        ),
                         onClick = openAllFilesSettings,
                     )
                 }
@@ -343,12 +355,6 @@ private fun PermissionWarningCard(title: String, message: String, onClick: () ->
         }
     }
 }
-
-/** Android 11+需要“所有文件访问”才能用File API读写/storage/emulated/0 */
-@Suppress("NewApi")
-private fun hasAllFilesAccess(): Boolean =
-    if (Build.VERSION.SDK_INT < 30) true
-    else runCatching { Environment.isExternalStorageManager() }.getOrDefault(false)
 
 /** 日历工具需要读写日历权限 */
 private fun hasCalendarAccess(context: android.content.Context): Boolean =

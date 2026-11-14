@@ -463,6 +463,8 @@
     <string name="mcp_open_settings_failed">无法打开系统设置，请手动授予“所有文件访问”</string>
     <string name="mcp_all_files_title">未授予“所有文件访问”权限</string>
     <string name="mcp_all_files_message">内置文件工具读写内置存储需要该权限，点击前往系统设置授权</string>
+    <string name="mcp_storage_title">未授予存储权限</string>
+    <string name="mcp_storage_message">内置文件工具读写内置存储需要该权限，点击即可申请授权。</string>
     <string name="mcp_calendar_permission_title">未授予日历权限</string>
     <string name="mcp_calendar_permission_message">日历工具需要该权限才能读取和创建事件，点击即可申请授权。</string>
     <string name="mcp_external_servers">外部MCP服务</string>

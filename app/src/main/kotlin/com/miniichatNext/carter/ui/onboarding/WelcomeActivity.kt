@@ -227,7 +227,11 @@ class WelcomeActivity : ComponentActivity() {
             data = Uri.parse("package:$packageName")
         }
         runCatching { specialPermissionLauncher.launch(intent) }
-            .onFailure { permissionVersion.value++ }
+            .onFailure {
+                // 该ROM没有这个设置页，退回应用详情
+                com.miniichatNext.carter.util.openAppDetailsSettings(this)
+                permissionVersion.value++
+            }
     }
 }
 

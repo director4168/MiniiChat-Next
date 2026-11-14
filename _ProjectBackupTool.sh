@@ -1,4 +1,4 @@
-#!/system/bin/sh
+#!/bin/bash
 set -eu
 
 # 需要打包的目录

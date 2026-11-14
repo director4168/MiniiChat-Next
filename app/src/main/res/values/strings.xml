@@ -463,6 +463,8 @@
     <string name="mcp_open_settings_failed">Couldn\'t open system settings — please grant “All files access” manually</string>
     <string name="mcp_all_files_title">"All files access" permission not granted</string>
     <string name="mcp_all_files_message">Built-in file tools need this permission to read and write internal storage. Tap to open system settings and grant it.</string>
+    <string name="mcp_storage_title">Storage permission not granted</string>
+    <string name="mcp_storage_message">Built-in file tools need this permission to read and write internal storage. Tap to request it now.</string>
     <string name="mcp_calendar_permission_title">Calendar permission not granted</string>
     <string name="mcp_calendar_permission_message">Calendar tools need this permission to list and create events. Tap to request it now.</string>
     <string name="mcp_external_servers">External MCP servers</string>

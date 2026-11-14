@@ -606,14 +606,8 @@ private fun toolTargetsPublicStorage(toolName: String, argsJson: String): Boolea
     }
 }
 
-private fun hasAllFilesAccessPermission(context: android.content.Context): Boolean {
-    return if (android.os.Build.VERSION.SDK_INT >= 30) {
-        android.os.Environment.isExternalStorageManager()
-    } else {
-        context.checkSelfPermission(android.Manifest.permission.WRITE_EXTERNAL_STORAGE) ==
-            android.content.pm.PackageManager.PERMISSION_GRANTED
-    }
-}
+private fun hasAllFilesAccessPermission(context: android.content.Context): Boolean =
+    com.miniichatNext.carter.util.hasStorageAccess(context)
 
 private data class AvailableTool(
     val permission: EffectiveToolPermission,
