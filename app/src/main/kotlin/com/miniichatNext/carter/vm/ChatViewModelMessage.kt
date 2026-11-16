@@ -434,7 +434,8 @@ private suspend fun ChatViewModel.runGenerationRound(
     // 否则会误判为"等待用户操作"，busy状态永远不清（表现为"已完成仍显示回复中"）
     return RoundResult(
         assistantMsg.id,
-        invocations.filter { it.state == ToolInvocationState.PENDING_APPROVAL }
+        // 免审批工具初始为EXECUTING，也必须交给自动执行器；审批工具仍保持PENDING_APPROVAL。
+        invocations.filter { it.isUnanswered() }
     )
 }
 

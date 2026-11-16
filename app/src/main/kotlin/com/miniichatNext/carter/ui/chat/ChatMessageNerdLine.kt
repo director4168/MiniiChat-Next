@@ -73,10 +73,13 @@ fun ChatMessageNerdLine(
     color: Color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
 ) {
     val settings = LocalAppPreferences.current
-    val real = message.usage?.takeUnless { it.estimated }
-    val estimatedCompletion = if (generating) {
-        estimateTokens(message.reasoningContent.orEmpty() + message.content)
-    } else 0
+    val real = message.usage?.takeUnless { usage ->
+        usage.estimated || (usage.promptTokens == 0 && usage.completionTokens == 0 &&
+            usage.cachedTokens == 0 && usage.totalTokens == 0)
+    }
+    val outputText = message.reasoningContent.orEmpty() + message.content
+    val hasOutput = outputText.isNotBlank()
+    val estimatedCompletion = if (hasOutput) estimateTokens(outputText) else 0
     val usage = real?.let { current ->
         if (generating) {
             // 工具调用后的新请求可能先回一帧0值usage，prompt沿用上一次已知上下文
@@ -89,7 +92,7 @@ fun ChatMessageNerdLine(
                 estimated = current.estimated || current.completionTokens == 0,
             )
         } else current
-    } ?: if (generating) {
+    } ?: if (generating || hasOutput) {
         val prompt = message.lastUsage?.promptTokens ?: 0
         TokenUsage(
             promptTokens = prompt,

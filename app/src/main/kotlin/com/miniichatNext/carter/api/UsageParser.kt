@@ -12,22 +12,26 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.intOrNull
 
 // Ported from rikkahub OpenAI/Responses/Claude provider usage parsers (AGPL-3.0).
-internal fun parseTokenUsage(usage: JsonObject): TokenUsage = TokenUsage(
-    promptTokens = (usage["prompt_tokens"] as? JsonPrimitive)?.intOrNull ?: 0,
-    completionTokens = (usage["completion_tokens"] as? JsonPrimitive)?.intOrNull ?: 0,
-    totalTokens = (usage["total_tokens"] as? JsonPrimitive)?.intOrNull ?: 0,
-    cachedTokens = ((usage["prompt_tokens_details"] as? JsonObject)?.get("cached_tokens") as? JsonPrimitive)?.intOrNull
-        ?: (usage["cached_tokens"] as? JsonPrimitive)?.intOrNull
-        ?: (usage["prompt_cache_hit_tokens"] as? JsonPrimitive)?.intOrNull
-        ?: 0,
-)
+internal fun parseTokenUsage(usage: JsonObject): TokenUsage {
+    val prompt = usage.count("prompt_tokens", "input_tokens", "promptTokenCount")
+    val completion = usage.count("completion_tokens", "output_tokens", "candidatesTokenCount")
+    val cached = (usage["prompt_tokens_details"] as? JsonObject)?.countOrNull("cached_tokens")
+        ?: (usage["input_tokens_details"] as? JsonObject)?.countOrNull("cached_tokens")
+        ?: usage.count("cached_tokens", "prompt_cache_hit_tokens", "cachedContentTokenCount")
+    return TokenUsage(
+        promptTokens = prompt,
+        completionTokens = completion,
+        totalTokens = usage.countOrNull("total_tokens", "totalTokenCount") ?: (prompt + completion),
+        cachedTokens = cached,
+    )
+}
 
-internal fun parseResponsesTokenUsage(usage: JsonObject): TokenUsage = TokenUsage(
-    promptTokens = (usage["input_tokens"] as? JsonPrimitive)?.intOrNull ?: 0,
-    completionTokens = (usage["output_tokens"] as? JsonPrimitive)?.intOrNull ?: 0,
-    totalTokens = (usage["total_tokens"] as? JsonPrimitive)?.intOrNull ?: 0,
-    cachedTokens = ((usage["input_tokens_details"] as? JsonObject)?.get("cached_tokens") as? JsonPrimitive)?.intOrNull ?: 0,
-)
+internal fun parseResponsesTokenUsage(usage: JsonObject): TokenUsage = parseTokenUsage(usage)
+
+private fun JsonObject.count(vararg keys: String): Int = countOrNull(*keys) ?: 0
+
+private fun JsonObject.countOrNull(vararg keys: String): Int? =
+    keys.firstNotNullOfOrNull { key -> (this[key] as? JsonPrimitive)?.intOrNull?.takeIf { it >= 0 } }
 
 internal fun parseClaudeTokenUsage(usageJson: JsonObject): TokenUsage {
     val inputTokens = (usageJson["input_tokens"] as? JsonPrimitive)?.intOrNull ?: 0

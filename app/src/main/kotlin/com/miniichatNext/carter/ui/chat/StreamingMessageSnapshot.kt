@@ -22,10 +22,10 @@ internal fun Message.withStreamingSnapshot(overlay: StreamOverlay?): Message {
             .ifBlank { reasoningContent.orEmpty() }
             .takeIf { it.isNotBlank() },
         orderedParts = overlay.parts.ifEmpty { orderedParts },
-        usage = overlay.usage,
-        generationTimeMs = overlay.generationTimeMs,
-        lastUsage = overlay.lastUsage,
-        stepCount = overlay.stepCount,
-        finishedAt = overlay.finishedAt,
+        usage = overlay.usage ?: usage,
+        generationTimeMs = overlay.generationTimeMs ?: generationTimeMs,
+        lastUsage = overlay.lastUsage ?: lastUsage,
+        stepCount = overlay.stepCount ?: stepCount,
+        finishedAt = overlay.finishedAt ?: finishedAt,
     )
 }

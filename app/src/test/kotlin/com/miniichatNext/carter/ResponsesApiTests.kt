@@ -143,7 +143,7 @@ class ResponsesApiTests {
         assertEquals(null, message.content)
         assertEquals("think", message.reasoningContent)
         assertEquals("fixture_tool", message.toolCalls!!.single().function!!.name)
-        assertEquals(3, response.usage!!.totalTokens)
+        assertEquals(3, com.miniichatNext.carter.api.parseTokenUsage(response.usage!!).totalTokens)
     }
 
     @Test

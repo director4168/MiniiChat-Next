@@ -11,6 +11,7 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+
 android {
     namespace = "com.miniichatNext.carter"
     compileSdk = 36
@@ -21,8 +22,8 @@ android {
         applicationId = "com.miniichatNext.carter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 261114055
-        versionName = "v1.7.4"
+        versionCode = 261116007
+        versionName = "v1.7.5"
         vectorDrawables { useSupportLibrary = true }
         externalNativeBuild {
             cmake {

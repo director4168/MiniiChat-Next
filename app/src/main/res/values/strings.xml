@@ -968,6 +968,12 @@
 
     <!-- Message usage and jump controls -->
     <string name="chat_message_usage_title">Usage details</string>
+    <string name="chat_message_usage_input_short">↑ %1$s</string>
+    <string name="chat_message_usage_output_short">↓ %1$s</string>
+    <string name="chat_message_usage_duration_short">%1$.1fs</string>
+    <string name="chat_message_usage_unavailable">—</string>
+    <string name="chat_message_usage_waiting">Waiting for usage</string>
+    <string name="chat_message_usage_not_reported">Usage not reported by provider</string>
     <string name="chat_message_usage_steps">%1$d tool requests</string>
     <string name="chat_message_usage_context_short">%1$s context</string>
     <string name="chat_message_usage_cached_short">(%1$s cached)</string>

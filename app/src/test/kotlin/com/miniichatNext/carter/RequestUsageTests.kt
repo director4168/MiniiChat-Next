@@ -6,9 +6,9 @@
  */
 package com.miniichatNext.carter
 
-import com.miniichatNext.carter.api.parseTokenUsage
-import com.miniichatNext.carter.api.parseResponsesTokenUsage
 import com.miniichatNext.carter.api.parseClaudeTokenUsage
+import com.miniichatNext.carter.api.parseResponsesTokenUsage
+import com.miniichatNext.carter.api.parseTokenUsage
 import com.miniichatNext.carter.util.AppJson
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.*
@@ -48,4 +48,33 @@ class RequestUsageTests {
         assertEquals(40,usage.cachedTokens)
         assertEquals(220,usage.totalTokens)
     }
+    @Test fun localGatewaysInputOutputAliasesAreParsedWithoutEstimation() {
+        val usage = parseTokenUsage(AppJson.parseObject("""{"input_tokens":72,"output_tokens":13,"input_tokens_details":{"cached_tokens":9}}"""))
+        assertEquals(72, usage.promptTokens)
+        assertEquals(13, usage.completionTokens)
+        assertEquals(85, usage.totalTokens)
+        assertEquals(9, usage.cachedTokens)
+        assertFalse(usage.estimated)
+    }
+
+    @Test fun numericStringCountsAndGeminiMetadataAreAccepted() {
+        val strings = parseTokenUsage(AppJson.parseObject("""{"prompt_tokens":"100","completion_tokens":"25"}"""))
+        assertEquals(125, strings.totalTokens)
+        val metadata = parseTokenUsage(AppJson.parseObject("""{"promptTokenCount":40,"candidatesTokenCount":12,"totalTokenCount":52,"cachedContentTokenCount":8}"""))
+        assertEquals(40, metadata.promptTokens)
+        assertEquals(12, metadata.completionTokens)
+        assertEquals(8, metadata.cachedTokens)
+    }
+
+    @Test fun chatUsageDtoAcceptsNumericStringsAndNullFields() {
+        val chunk = AppJson.json.decodeFromString(
+            com.miniichatNext.carter.api.ChatChunk.serializer(),
+            """{"choices":[],"usage":{"prompt_tokens":"100","completion_tokens":"25","total_tokens":null}}""",
+        )
+        val usage = parseTokenUsage(chunk.usage!!)
+        assertEquals(100, usage.promptTokens)
+        assertEquals(25, usage.completionTokens)
+        assertEquals(125, usage.totalTokens)
+    }
+
 }

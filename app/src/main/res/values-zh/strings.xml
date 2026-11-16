@@ -968,6 +968,12 @@
 
     <!-- 消息用量与翻页配色 -->
     <string name="chat_message_usage_title">用量详情</string>
+    <string name="chat_message_usage_input_short">↑ %1$s</string>
+    <string name="chat_message_usage_output_short">↓ %1$s</string>
+    <string name="chat_message_usage_duration_short">%1$.1f秒</string>
+    <string name="chat_message_usage_unavailable">—</string>
+    <string name="chat_message_usage_waiting">等待服务商返回用量</string>
+    <string name="chat_message_usage_not_reported">服务商未返回用量</string>
     <string name="chat_message_usage_steps">%1$d次工具请求</string>
     <string name="chat_message_usage_context_short">%1$s 上下文</string>
     <string name="chat_message_usage_cached_short">（%1$s 缓存）</string>

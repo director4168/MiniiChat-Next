@@ -122,7 +122,7 @@ data class ToolCallDelta(
 @Serializable
 internal data class ChatChunk(
     val choices: List<Choice> = emptyList(),
-    val usage: UsageDto? = null,
+    val usage: JsonObject? = null,
 ) {
     @Serializable
     data class Choice(
@@ -181,7 +181,7 @@ internal data class ChatChunk(
 @Serializable
 internal data class ChatResponse(
     val choices: List<Choice> = emptyList(),
-    val usage: ChatChunk.UsageDto? = null,
+    val usage: JsonObject? = null,
 ) {
     @Serializable
     data class Choice(

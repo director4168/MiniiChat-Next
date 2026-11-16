@@ -356,6 +356,9 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
                 val errMsg = (errEl as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull
                 throw RuntimeException((errMsg ?: errEl.toString()).take(500))
             }
+            val usageObject = (element as? JsonObject)?.get("usage") as? JsonObject
+                ?: (element as? JsonObject)?.get("usageMetadata") as? JsonObject
+            usageObject?.let { emit(StreamDelta(usage = parseTokenUsage(it))) }
             val chunk = runCatching {
                 json.decodeFromJsonElement(ChatChunk.serializer(), element)
             }.getOrNull() ?: continue
@@ -374,12 +377,9 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
                 if (tc.function?.name != null) p.name = tc.function.name
                 if (tc.function != null) p.args.append(tc.function.arguments)
             }
-            val usageObject = (element as? JsonObject)?.get("usage") as? JsonObject
-                ?: (element as? JsonObject)?.get("usageMetadata") as? JsonObject
-            usageObject?.let { emit(StreamDelta(usage = parseTokenUsage(it))) }
-            if (finished && usageObject != null) break
             // finish_reason是权威结束信号：部分网关（如MiniMax）发完后不断开连接、
             // 也不发[DONE]，只靠EOF会一直卡在"回复中"
+            if (finished && usageObject != null) break
             val finishReason = chunk.choices.firstOrNull()?.finishReason
             if (finishReason != null) {
                 DebugLog.i("Llm", "openai stream finish_reason=" + finishReason)

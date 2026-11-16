@@ -32,7 +32,7 @@ fun TokenUsage?.merge(other: TokenUsage): TokenUsage {
         promptTokens = promptTokens,
         completionTokens = completionTokens,
         totalTokens = totalTokens,
-        cachedTokens = cachedTokens
+        cachedTokens = cachedTokens,
     )
 }
 

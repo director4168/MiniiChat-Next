@@ -12,6 +12,7 @@ import com.miniichatNext.carter.data.model.merge
 import com.miniichatNext.carter.data.model.sum
 import com.miniichatNext.carter.data.model.withStepStats
 import com.miniichatNext.carter.ui.chat.nerdStats
+import com.miniichatNext.carter.ui.chat.estimateTokens
 import kotlin.time.Duration.Companion.milliseconds
 import org.junit.Assert.*
 import org.junit.Test
@@ -77,4 +78,20 @@ class UsageMetricsTests {
         val msg=Message("m","assistant","",createdAt=1000,finishedAt=3000,usage=TokenUsage(10,20,30))
         assertEquals(10f,msg.nerdStats(msg.usage!!).tps!!,0f)
     }
+
+    @Test fun missingProviderUsageStillHasFinalEstimatedDisplayValue() {
+        val output = "中文回复内容"
+        val estimated = TokenUsage(
+            promptTokens = 0,
+            completionTokens = estimateTokens(output),
+            totalTokens = estimateTokens(output),
+            estimated = true,
+        )
+        val stats = Message("m", "assistant", output, generationTimeMs = 1500)
+            .nerdStats(estimated)
+        assertTrue(stats.total.estimated)
+        assertTrue(stats.total.completionTokens > 0)
+        assertEquals(stats.total.completionTokens.toFloat() / 1.5f, stats.tps!!, 0.001f)
+    }
+
 }
