@@ -572,8 +572,8 @@
     <string name="update_check_timeout">Check timed out, please try again later</string>
     <string name="update_no_update">You are on the latest version</string>
     <string name="update_current_version">Current version: %1$s</string>
-    <string name="update_new_version">New version available: v%1$s</string>
-    <string name="update_force_title">Must update to v%1$s</string>
+    <string name="update_new_version">New version available: %1$s</string>
+    <string name="update_force_title">Must update to %1$s</string>
     <string name="update_ignore_this">Ignore this version</string>
     <string name="update_force_install">Install anyway</string>
     <string name="update_install_failed">Installer could not be opened</string>
@@ -582,6 +582,44 @@
     <string name="update_auto_check_sub">After enabling, the app checks for new versions on startup</string>
     <string name="update_settings_title">Update settings</string>
     <string name="update_settings_sub">Update related features</string>
+    <string name="update_notification_channel">Application updates</string>
+    <string name="update_probe_title">Testing download sources</string>
+    <string name="update_probe_failed_title">Source testing failed</string>
+    <string name="update_check_install_title">Verification and installation</string>
+    <string name="update_verification_failed_title">Verification failed</string>
+    <string name="update_transfer_complete">Download complete</string>
+    <string name="update_checking_cache">Checking the downloaded APK…</string>
+    <string name="update_apk_version_code_mismatch">APK version code mismatch: configuration=%1$d, downloaded APK=%2$d. The download URL and checksum must refer to that version.</string>
+    <string name="update_apk_version_name_mismatch">APK version name mismatch: configuration=%1$s, downloaded APK=%2$s.</string>
+    <string name="update_probe_list_title">Download source test results</string>
+    <string name="update_probe_waiting">Waiting</string>
+    <string name="update_probe_testing">Testing</string>
+    <string name="update_probe_failed">Failed</string>
+    <string name="update_probe_selected">Selected</string>
+    <string name="update_probe_latency">%1$d ms</string>
+    <string name="update_probe_speed">Sample throughput: %1$s</string>
+    <string name="update_probing_nodes">Testing download sources: %1$d/%2$d</string>
+    <string name="update_direct_download">Downloading directly from the original URL</string>
+    <string name="update_using_node">Selected source: %1$s</string>
+    <string name="update_verifying_package">Verifying APK checksum, version, architecture and signing certificate…</string>
+    <string name="update_reused_package">The verified APK is already downloaded; no download is needed.</string>
+    <string name="update_verified_package">The APK has passed verification. You can request installation.</string>
+    <string name="update_cached_invalid">The cached APK is missing or no longer matches this update. Please download it again.</string>
+    <string name="update_hide_download">Hide</string>
+    <string name="update_cancel_download">Cancel download</string>
+    <string name="update_nodes_enabled">Use download nodes</string>
+    <string name="update_nodes_edit">Edit download nodes</string>
+    <string name="update_nodes_count">%1$d enabled / %2$d nodes</string>
+    <string name="update_node_add">Add node</string>
+    <string name="update_node_edit">Edit node</string>
+    <string name="update_node_url">Proxy prefix / URL template</string>
+    <string name="update_nodes_empty">No mirror nodes configured. The original download URL will be used.</string>
+    <string name="update_nodes_invalid">Check the node name and HTTPS URL. Names and URLs must be unique; use at most one {url} placeholder. GitHub and Direct are reserved names.</string>
+    <string name="update_nodes_save_failed">Failed to save nodes: %1$s</string>
+    <string name="update_nodes_reset_message">Replace this draft with the built-in node list? Save afterward to apply.</string>
+    <string name="update_view_download">View update download / install</string>
+    <string name="update_package_info">%1$s %2$s</string>
+    <string name="update_current_build">%1$s (%2$d)</string>
 
     <!-- Tool execution messages -->
     <string name="tool_thinking">Thinking</string>
@@ -948,6 +986,7 @@
     <string name="backup_password_title">Set backup password</string>
     <string name="backup_password">Backup password</string>
     <string name="backup_password_confirm">Confirm password</string>
+    <string name="backup_password_mismatch">Passwords do not match</string>
     <string name="backup_password_import">Backup password</string>
     <string name="backup_password_error">Incorrect password or damaged encrypted data</string>
     <string name="message_usage_context">Context %1$d tokens · %2$d requests</string>
@@ -1019,4 +1058,26 @@
     <string name="debug_role_on_error">On error</string>
     <string name="debug_role_warning">Warning</string>
     <string name="debug_role_warning_action">Warning and error actions</string>
+
+
+
+    <!-- Image generation and previews -->
+    <string name="generated_image_code">Source code</string>
+    <string name="generated_image_preview">Preview</string>
+    <string name="generated_image_failed">Image loading or saving failed</string>
+    <string name="generated_image_loading">Loading image…</string>
+    <string name="aux_model_image_generation">Image generation model</string>
+    <string name="aux_image_prefer_conversation">Prefer conversation model</string>
+    <string name="aux_image_prefer_hint">Use the conversation model when image output is enabled for it; otherwise use the image generation model.</string>
+    <string name="model_supports_image_output">Image output</string>
+    <string name="builtin_tool_image_desc">Generate an image from a text prompt using the configured image generation model.</string>
+    <string name="builtin_tool_image_schema">{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;prompt&quot;:{&quot;type&quot;:&quot;string&quot;}},&quot;required&quot;:[&quot;prompt&quot;]}</string>
+    <string name="image_generation_not_configured">Set an image generation model in Settings first.</string>
+
+    <!-- Diagram preview and viewer -->
+    <string name="diagram_view">View diagram</string>
+    <string name="diagram_reset_zoom">Reset zoom</string>
+    <string name="diagram_zoom_hint">Pinch to zoom; drag to move</string>
+    <string name="diagram_render_failed">Diagram rendering failed: %1$s</string>
+    <string name="update_force_install_confirm">The downloaded APK failed checksum or version verification. Continue only if you trust the file. Android still checks installability and may reject an older version. Continue?</string>
 </resources>

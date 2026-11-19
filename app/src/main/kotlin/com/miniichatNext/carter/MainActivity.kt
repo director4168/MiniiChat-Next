@@ -54,6 +54,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
+        if (intent.getBooleanExtra(com.miniichatNext.carter.data.update.UpdateDownloadService.OPEN_DOWNLOAD, false)) {
+            com.miniichatNext.carter.data.update.UpdateDownloadSession.show()
+        }
         if (intent.getBooleanExtra("open_debug", false)) {
             com.miniichatNext.carter.debug.DebugNavRequest.openDebug.value = true
         }
@@ -65,6 +68,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         (application as MiniiChatApplication).recordAppLaunch()
+        if (intent?.getBooleanExtra(com.miniichatNext.carter.data.update.UpdateDownloadService.OPEN_DOWNLOAD, false) == true) {
+            com.miniichatNext.carter.data.update.UpdateDownloadSession.show()
+        }
         if (!com.miniichatNext.carter.ui.onboarding.OnboardingState.isDone(this)) {
             startActivity(Intent(this, WelcomeActivity::class.java))
             finish()

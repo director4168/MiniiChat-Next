@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -100,6 +101,7 @@ fun ProvidersScreen(
     onAddManualModel: (String, String) -> Unit,
     onRemoveModel: (String, String) -> Unit,
     onSelectModel: (String, String) -> Unit,
+    onToggleImageOutput: (String, String, Boolean) -> Unit = { _, _, _ -> },
     onReorder: (List<String>) -> Unit = {},
 ) {
     var orderedIds by remember { mutableStateOf(providers.map { it.id }) }
@@ -255,7 +257,8 @@ fun ProvidersScreen(
                             onFetch = { onFetchModels(p.id) },
                             onAddManual = { m -> onAddManualModel(p.id, m) },
                             onRemoveModel = { m -> onRemoveModel(p.id, m) },
-                            onSelectModel = { m -> onSelectModel(p.id, m) }
+                            onSelectModel = { m -> onSelectModel(p.id, m) },
+                            onToggleImageOutput = { model, enabled -> onToggleImageOutput(p.id, model, enabled) }
                         )
                 }
             }
@@ -277,7 +280,8 @@ private fun ProviderCard(
     onFetch: () -> Unit,
     onAddManual: (String) -> Unit,
     onRemoveModel: (String) -> Unit,
-    onSelectModel: (String) -> Unit
+    onSelectModel: (String) -> Unit,
+    onToggleImageOutput: (String, Boolean) -> Unit,
 ) {
     var manualInput by remember { mutableStateOf("") }
     var deleteOpen by remember { mutableStateOf(false) }
@@ -411,7 +415,10 @@ private fun ProviderCard(
                             label = m,
                             selected = m == activeModel,
                             onSelect = { onSelectModel(m) },
-                            onRemove = { onRemoveModel(m) }
+                            onRemove = { onRemoveModel(m) },
+                            imageOutput = provider.models.firstOrNull { it.modelId == m || it.displayName == m }?.supportsImageOutput == true,
+                            imageOutputLabel = stringResource(R.string.model_supports_image_output),
+                            onToggleImageOutput = { onToggleImageOutput(m, it) }
                         )
                     }
                 }
@@ -470,7 +477,10 @@ private fun ModelChip(
     label: String,
     selected: Boolean,
     onSelect: () -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    imageOutput: Boolean,
+    imageOutputLabel: String,
+    onToggleImageOutput: (Boolean) -> Unit,
 ) {
     val bg = if (selected) MaterialTheme.colorScheme.primaryContainer
     else MaterialTheme.colorScheme.surfaceVariant
@@ -497,6 +507,11 @@ private fun ModelChip(
             maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier.padding(end = 4.dp)
         )
+        IconButton(onClick = { onToggleImageOutput(!imageOutput) }, modifier = Modifier.size(22.dp)) {
+            Icon(Icons.Default.Image, contentDescription = imageOutputLabel,
+                modifier = Modifier.size(12.dp),
+                tint = if (imageOutput) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+        }
         IconButton(onClick = onRemove, modifier = Modifier.size(22.dp)) {
             Icon(
                 Icons.Default.Close, contentDescription = "remove",

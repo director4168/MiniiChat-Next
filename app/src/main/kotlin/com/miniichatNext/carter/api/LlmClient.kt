@@ -157,7 +157,7 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
             }.execute { response ->
                 if (!response.status.isSuccess()) {
                     val errBody = runCatching { response.bodyAsText() }.getOrDefault("")
-                    DebugLog.e(
+                    DebugLog.w(
                         "Llm",
                         "HTTP ${response.status.value} from $target, body=${errBody.take(500)}"
                     )
@@ -360,7 +360,7 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
                 ?: (element as? JsonObject)?.get("usageMetadata") as? JsonObject
             usageObject?.let { emit(StreamDelta(usage = parseTokenUsage(it))) }
             val chunk = runCatching {
-                json.decodeFromJsonElement(ChatChunk.serializer(), element)
+                json.decodeFromJsonElement(ChatChunk.serializer(), normalizeOpenAiImageOutput(element))
             }.getOrNull() ?: continue
             emit(StreamDelta(eventReceived = true))
             val delta = chunk.choices.firstOrNull()?.delta
@@ -407,7 +407,7 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
         response: io.ktor.client.statement.HttpResponse
     ) {
         val raw = response.bodyAsText()
-        val parsed = runCatching { json.decodeFromString(ChatResponse.serializer(), raw) }
+        val parsed = runCatching { json.decodeFromJsonElement(ChatResponse.serializer(), normalizeOpenAiImageOutput(json.parseToJsonElement(raw))) }
             .getOrElse { throw IllegalStateException("Invalid Chat Completions response", it) }
         val message = parsed.choices.firstOrNull()?.message
             ?: throw IllegalStateException("Chat Completions response has no choice")

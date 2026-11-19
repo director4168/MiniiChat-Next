@@ -1,0 +1,37 @@
+Operit APK download adaptations
+
+Upstream project: AAswordman/Operit
+Source: https://github.com/AAswordman/Operit
+License: GNU Lesser General Public License, version 3 only (LGPL-3.0-only).
+Copyright: Operit contributors; existing upstream notices are retained.
+
+Adapted source files:
+- app/src/main/java/com/ai/assistance/operit/util/GithubReleaseUtil.kt
+- app/src/main/java/com/ai/assistance/operit/data/updates/UpdateDownloadSource.kt
+- app/src/main/java/com/ai/assistance/operit/data/updates/UpdateSourceDownloader.kt
+
+Local files:
+- data/update/UpdateDownloadSources.kt
+- data/update/UpdateSourceDownloader.kt
+
+Modifications by director_Carter (2026-11-18): strict GitHub release URL matching,
+bounded concurrent 64 KiB probes, HttpURLConnection-based cancellable single-stream
+transfers, accepted 200/206 probes, APK/ZIP response checks, ranked source iteration,
+and integration with MiniiChat Next APK integrity verification.
+
+Upstream LGPL-3.0-only terms and attribution remain applicable to the incorporated
+material. This application is distributed as an AGPL-3.0 combined work: LGPL-3.0
+section 3 permits application of GPLv3 to a copy, and GPLv3 section 13 permits
+combination with AGPLv3 code. The notice and original LGPL text are retained here;
+GPLv3 is included as GPL-3.0.txt, and the application AGPLv3 text is in LICENSE.
+Source for this application's modifications is published at:
+https://github.com/director4168/MiniiChat-Next
+
+This port does not include Operit's update metadata API, patch reconstruction,
+GitHub account authentication, or update UI. The listed mirror services are
+third-party operators; their inclusion does not imply availability or endorsement.
+
+2026-11-19 policy follow-up: configurable mirror list/global switch, two small
+samples per candidate, conservative throughput ranking, and one selected
+source per complete APK attempt. Automatic source iteration is no longer
+used by the application. Upstream license and source attribution are unchanged.

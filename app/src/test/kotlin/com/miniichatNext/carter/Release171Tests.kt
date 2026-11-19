@@ -301,4 +301,24 @@ class Release171Tests {
         assertEquals(null, ChatListOrder.jumpTarget(-1, 0, 5))
         assertEquals(null, ChatListOrder.jumpTarget(4, 0, 5))
     }
+
+    @Test fun startupCacheCleanupRetainsFreshSharedExportsAndPrunesExpiredOnes() {
+        val parent = Files.createTempDirectory("cache-shared-ttl").toFile()
+        try {
+            val files = File(parent, "files").apply { mkdirs() }
+            val cache = File(parent, "cache").apply { mkdirs() }
+            val shared = File(cache, "shared").apply { mkdirs() }
+            val fresh = File(shared, "MiniiChat-Next_Log_recent.zip").apply { writeText("keep") }
+            val expired = File(shared, "MiniiChat-Next_data_old.zip").apply {
+                writeText("prune")
+                setLastModified(System.currentTimeMillis() - 48L * 60 * 60 * 1000)
+            }
+            val update = oldFile(File(cache, "Update").apply { mkdirs() }, "update.apk")
+            assertEquals(1, TemporaryCacheCleaner.clearDirectory(cache, files))
+            assertTrue(fresh.exists())
+            assertFalse(expired.exists())
+            assertTrue(update.exists())
+        } finally { parent.deleteRecursively() }
+    }
+
 }

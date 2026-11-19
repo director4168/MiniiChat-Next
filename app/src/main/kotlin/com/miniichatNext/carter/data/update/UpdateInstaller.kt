@@ -6,12 +6,12 @@
  */
 package com.miniichatNext.carter.data.update
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import android.content.ContentValues
 import androidx.core.content.FileProvider
 import com.miniichatNext.carter.debug.DebugLog
 import java.io.File
@@ -26,7 +26,7 @@ object UpdateInstaller {
     fun cacheDir(context: Context): File =
         File(context.cacheDir, "Update").apply { mkdirs() }
 
-    /** APK在缓存目录里的固定文件名（中间文件：下载完成即移入系统Download） */
+    /** 旧版缓存文件名，仅用于校验后迁移到files/updates。 */
     const val APK_FILENAME = "MiniiChat-Next-update.apk"
 
     fun cacheApk(context: Context): File = File(cacheDir(context), APK_FILENAME)
@@ -71,7 +71,7 @@ object UpdateInstaller {
 
     /**
      * 启动系统安装器（用户确认后安装）。
-     * 注意：调用方需要负责安装后清理缓存APK（建议onResume里清）。
+     * 已验证文件保留供取消安装后复用，由更新任务再次校验。
      */
     fun install(context: Context, apkFile: File): Boolean {
         return try {

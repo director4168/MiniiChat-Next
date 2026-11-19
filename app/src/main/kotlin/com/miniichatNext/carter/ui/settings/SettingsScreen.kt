@@ -365,6 +365,20 @@ fun SettingsScreen(
                         onPick = { ref -> onChange { it.copy(ocrModel = ref) } }
                     )
                     Spacer(Modifier.height(8.dp))
+                    AuxModelRow(
+                        label = stringResource(R.string.aux_model_image_generation),
+                        ref = settings.imageGenerationModel,
+                        providers = providers,
+                        onPick = { ref -> onChange { it.copy(imageGenerationModel = ref) } },
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.aux_image_prefer_conversation), modifier = Modifier.weight(1f))
+                        Switch(checked = settings.imageGenerationPreferConversation,
+                            onCheckedChange = { enabled -> onChange { it.copy(imageGenerationPreferConversation = enabled) } })
+                    }
+                    Text(stringResource(R.string.aux_image_prefer_hint), style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(8.dp))
                     // OCR触发模式三态：auto=仅纯文本模型/always=视觉模型也附加/off=禁用
                     Column(modifier = Modifier.padding(horizontal = 4.dp)) {
                         Text(

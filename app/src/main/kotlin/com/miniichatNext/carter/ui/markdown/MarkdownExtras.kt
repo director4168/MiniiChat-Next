@@ -96,6 +96,10 @@ internal fun MdCodeBlockCard(
         MermaidChart(block.code, palette, onFullscreen = onFullscreen)
         return
     }
+    if (lang == "svg" && block.closed && block.code.isNotBlank()) {
+        SvgCodePreview(block.code, palette)
+        return
+    }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val codeStyle = MaterialTheme.typography.bodyMedium.copy(
@@ -308,34 +312,30 @@ internal fun MdMathBlock(formula: String) {
 @Composable
 internal fun MdImageChip(image: MarkdownInline.Image, link: String?, palette: InlinePalette) {
     val uriHandler = LocalUriHandler.current
+    val url = link ?: image.url
     Surface(
-        onClick = { runCatching { uriHandler.openUri(link ?: image.url) } },
+        onClick = { runCatching { uriHandler.openUri(url) } },
         shape = RoundedCornerShape(8.dp),
         color = palette.codeBg,
-        modifier = Modifier.padding(vertical = 2.dp),
+        modifier = Modifier.padding(vertical = 4.dp),
     ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = Icons.Filled.Image,
-                contentDescription = null,
-                tint = palette.link,
-                modifier = Modifier.size(16.dp),
+        Column(modifier = Modifier.fillMaxWidth()) {
+            GeneratedImagePreview(
+                url = url,
+                description = image.alt ?: url,
+                modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                text = image.alt ?: image.url,
+                text = image.alt ?: url,
                 color = palette.link,
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
     }
 }
-
 /**
  * 行内公式拆段：返回多段即允许在文本流中换行（长公式不会把气泡撑破）。
  * 拆分失败时回退为单体占位；连尺寸都测不出时返回空列表，由渲染层降级为等宽源码。

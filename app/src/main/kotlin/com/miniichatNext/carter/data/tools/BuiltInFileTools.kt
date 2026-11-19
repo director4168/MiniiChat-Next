@@ -61,7 +61,7 @@ object BuiltInFileTools {
 
     /** 工具名列表（给权限页计数、isBuiltIn等无文案场景用） */
     val toolNames: List<String> = listOf(
-        "interactive_clarification", "execute_shell", "browser_fetch",
+        "interactive_clarification", "execute_shell", "browser_fetch", "image_generate",
         "file_list", "file_read", "file_write", "file_append", "file_delete",
         "file_move", "file_copy", "file_rename", "file_mkdir",
         "file_exists", "file_search", "file_info", "file_edit"
@@ -69,6 +69,7 @@ object BuiltInFileTools {
 
     /** 工具描述与JSON Schema走资源（内置工具页要跟随界面语言） */
     fun schema(context: Context): List<McpTool> = listOf(
+        tool("image_generate", context.getString(R.string.builtin_tool_image_desc), context.getString(R.string.builtin_tool_image_schema)),
         tool("time_now", context.getString(R.string.builtin_tool_time_desc), context.getString(R.string.builtin_tool_time_schema)),
         tool("clipboard_read", context.getString(R.string.builtin_tool_clipboard_read_desc), context.getString(R.string.builtin_tool_clipboard_read_schema)),
         tool("clipboard_write", context.getString(R.string.builtin_tool_clipboard_write_desc), context.getString(R.string.builtin_tool_clipboard_write_schema)),

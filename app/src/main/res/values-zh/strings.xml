@@ -582,6 +582,44 @@
     <string name="update_auto_check_sub">开启后应用将在启动时自动检查是否有可用的新版本</string>
     <string name="update_settings_title">更新设置</string>
     <string name="update_settings_sub">更新相关功能</string>
+    <string name="update_notification_channel">应用更新下载</string>
+    <string name="update_probe_title">正在测速</string>
+    <string name="update_probe_failed_title">测速失败</string>
+    <string name="update_check_install_title">校验与安装</string>
+    <string name="update_verification_failed_title">校验失败</string>
+    <string name="update_transfer_complete">下载完成</string>
+    <string name="update_checking_cache">正在检查已下载的安装包…</string>
+    <string name="update_apk_version_code_mismatch">APK版本码不匹配：配置要求%1$d，实际安装包为%2$d。下载地址和校验值应对应同一版本。</string>
+    <string name="update_apk_version_name_mismatch">APK版本名不匹配：配置要求%1$s，实际安装包为%2$s。</string>
+    <string name="update_probe_list_title">下载节点测速结果</string>
+    <string name="update_probe_waiting">等待测速</string>
+    <string name="update_probe_testing">测速中</string>
+    <string name="update_probe_failed">测速失败</string>
+    <string name="update_probe_selected">已选中</string>
+    <string name="update_probe_latency">%1$d ms</string>
+    <string name="update_probe_speed">采样速度：%1$s</string>
+    <string name="update_probing_nodes">正在测速下载节点：%1$d/%2$d</string>
+    <string name="update_direct_download">原地址直连</string>
+    <string name="update_using_node">选定节点：%1$s</string>
+    <string name="update_verifying_package">正在核对安装包校验值、版本、架构和签名证书…</string>
+    <string name="update_reused_package">已复用校验通过的安装包，无需重复下载。</string>
+    <string name="update_verified_package">安装包已通过校验，可以申请安装。</string>
+    <string name="update_cached_invalid">已下载的安装包已丢失或与本次更新不匹配，请重新下载。</string>
+    <string name="update_hide_download">隐藏</string>
+    <string name="update_cancel_download">取消下载</string>
+    <string name="update_nodes_enabled">启用下载节点</string>
+    <string name="update_nodes_edit">编辑下载节点</string>
+    <string name="update_nodes_count">已启用%1$d个／共%2$d个节点</string>
+    <string name="update_node_add">添加节点</string>
+    <string name="update_node_edit">编辑节点</string>
+    <string name="update_node_url">代理前缀／地址模板</string>
+    <string name="update_nodes_empty">未配置镜像节点，将使用原始下载地址。</string>
+    <string name="update_nodes_invalid">请检查节点名称和HTTPS地址；名称及地址不得重复，最多包含一个{url}，GitHub与Direct为保留名称。</string>
+    <string name="update_nodes_save_failed">节点保存失败：%1$s</string>
+    <string name="update_nodes_reset_message">用内置节点替换当前编辑列表？需再点击保存才会生效。</string>
+    <string name="update_view_download">查看更新下载／安装</string>
+    <string name="update_package_info">%1$s %2$s</string>
+    <string name="update_current_build">%1$s (%2$d)</string>
 
     <!-- 工具执行消息 -->
     <string name="tool_thinking">思考过程</string>
@@ -948,6 +986,7 @@
     <string name="backup_password_title">设置备份密码</string>
     <string name="backup_password">备份密码</string>
     <string name="backup_password_confirm">确认密码</string>
+    <string name="backup_password_mismatch">两次输入的密码不一致</string>
     <string name="backup_password_import">备份密码</string>
     <string name="backup_password_error">密码不正确或加密数据已损坏</string>
     <string name="message_usage_context">上下文 %1$d tokens · %2$d 次请求</string>
@@ -1019,4 +1058,26 @@
     <string name="debug_role_on_error">错误前景</string>
     <string name="debug_role_warning">警告</string>
     <string name="debug_role_warning_action">警告与错误操作</string>
+
+
+
+    <!-- 生图与图片预览 -->
+    <string name="generated_image_code">源码</string>
+    <string name="generated_image_preview">预览</string>
+    <string name="generated_image_failed">图片加载或保存失败</string>
+    <string name="generated_image_loading">正在加载图片…</string>
+    <string name="aux_model_image_generation">生图模型</string>
+    <string name="aux_image_prefer_conversation">优先对话模型</string>
+    <string name="aux_image_prefer_hint">对话模型支持图片输出时优先使用，否则使用配置的生图模型。</string>
+    <string name="model_supports_image_output">图片输出</string>
+    <string name="builtin_tool_image_desc">使用配置的生图模型，根据文字描述生成图片。</string>
+    <string name="builtin_tool_image_schema">{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;prompt&quot;:{&quot;type&quot;:&quot;string&quot;}},&quot;required&quot;:[&quot;prompt&quot;]}</string>
+    <string name="image_generation_not_configured">请先在设置中选择生图模型。</string>
+
+    <!-- 图表预览与查看 -->
+    <string name="diagram_view">查看图表</string>
+    <string name="diagram_reset_zoom">重置缩放</string>
+    <string name="diagram_zoom_hint">双指缩放，拖动平移</string>
+    <string name="diagram_render_failed">图表渲染失败：%1$s</string>
+    <string name="update_force_install_confirm">下载的APK未通过校验值或版本检查。仅在确认文件可信时继续，系统仍会检查安装条件，旧版本可能被拒绝。是否继续？</string>
 </resources>

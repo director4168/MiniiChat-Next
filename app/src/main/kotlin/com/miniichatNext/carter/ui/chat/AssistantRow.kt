@@ -567,16 +567,19 @@ private fun InlineToolStep(
             StepCodeBlock(stringResource(R.string.tool_args_label), invocation.arguments.ifBlank { noArgsLabel })
             Spacer(Modifier.height(6.dp))
             // 老版本：单个"调用结果"块，错误信息拼到text里（"错误：xxx"）
-            StepCodeBlock(
-                label = stringResource(R.string.tool_result_label),
-                text = when {
-                    isRunning -> stringResource(R.string.tool_result_running)
-                    invocation.error != null -> stringResource(R.string.tool_result_error, invocation.error)
-                    invocation.resultOutput.isNotBlank() -> invocation.resultOutput
-                    isPending -> stringResource(R.string.tool_result_pending)
-                    else -> stringResource(R.string.tool_result_none)
-                }
-            )
+            val resultText = when {
+                isRunning -> stringResource(R.string.tool_result_running)
+                invocation.error != null -> stringResource(R.string.tool_result_error, invocation.error)
+                invocation.resultOutput.isNotBlank() -> invocation.resultOutput
+                isPending -> stringResource(R.string.tool_result_pending)
+                else -> stringResource(R.string.tool_result_none)
+            }
+            if (invocation.toolName == "image_generate" && invocation.resultOutput.isNotBlank()) {
+                Text(stringResource(R.string.tool_result_label), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                MarkdownText(text = resultText, modifier = Modifier.padding(vertical = 4.dp))
+            } else {
+                StepCodeBlock(stringResource(R.string.tool_result_label), resultText)
+            }
         }
         // PENDING审批按钮：行尾对齐（EndArrangement.End），紧凑按钮（30dp高）
         if (isPending && (onApprove != null || onReject != null)) {

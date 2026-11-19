@@ -128,6 +128,7 @@ import com.miniichatNext.carter.vm.setConversationModel
 import com.miniichatNext.carter.vm.setConversationProviderOverride
 import com.miniichatNext.carter.vm.setConversationThinkingLevel
 import com.miniichatNext.carter.vm.setConversationWorkspace
+import com.miniichatNext.carter.vm.setModelImageOutput
 import com.miniichatNext.carter.vm.setSkillEnabled
 import com.miniichatNext.carter.vm.syncMcpServer
 import com.miniichatNext.carter.vm.toggleAssistantSkill
@@ -175,22 +176,22 @@ fun AppRoot(vm: ChatViewModel) {
     // 启动时auto-check触发的更新弹窗：监听全局UpdateState.pending，
     // 任意页面都能弹出（不依赖用户在AboutScreen里）。
     val pendingUpdate by com.miniichatNext.carter.data.update.UpdateState.pending.collectAsState()
-    // 独立下载弹窗状态（提升到AppRoot级：内容弹窗关闭后下载继续）
-    var updateDownloadState by remember { mutableStateOf<com.miniichatNext.carter.ui.settings.update.UpdateDownloadState?>(null) }
-    var updateDownloadInfo by remember { mutableStateOf<com.miniichatNext.carter.data.update.UpdateInfo?>(null) }
-    // 下载完成后的安装启动（前台自动/待安装态手动共用；失败时转Failed态提示）
-    val installFromDownload: (java.io.File) -> Unit = { file ->
-        scope.launch {
-            val ok = com.miniichatNext.carter.data.update.UpdateInstaller.install(context, file)
-            if (ok) {
-                updateDownloadState = null
-            } else {
-                updateDownloadState = com.miniichatNext.carter.ui.settings.update.UpdateDownloadState.Failed(
-                    version = updateDownloadInfo?.displayVersion() ?: "",
-                    message = context.getString(com.miniichatNext.carter.R.string.update_install_failed),
-                    file = file,
-                )
-            }
+    val updateDownloadState by com.miniichatNext.carter.data.update.UpdateDownloadSession.state.collectAsState()
+    val updateDownloadVisible by com.miniichatNext.carter.data.update.UpdateDownloadSession.visible.collectAsState()
+    val updateNotificationPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { }
+    val beginUpdate: (com.miniichatNext.carter.data.update.UpdateInfo) -> Unit = { info ->
+        if (android.os.Build.VERSION.SDK_INT >= 33 && androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            updateNotificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
+        com.miniichatNext.carter.data.update.UpdateDownloadSession.start(context, info)
+    }
+    LaunchedEffect(Unit) { com.miniichatNext.carter.data.update.UpdateDownloadSession.restore(context) }
+    LaunchedEffect(updateDownloadState?.phase, updateDownloadState?.autoInstall) {
+        if (updateDownloadState?.autoInstall == true && com.miniichatNext.carter.util.AppForeground.isForeground()) {
+            com.miniichatNext.carter.data.update.UpdateDownloadSession.install(context, automatic = true)
         }
     }
     val currentVersionName = remember {
@@ -811,7 +812,8 @@ fun AppRoot(vm: ChatViewModel) {
                             onFetchModels = { vm.fetchModels(it) },
                             onAddManualModel = { id, m -> vm.addManualModel(id, m) },
                             onRemoveModel = { id, m -> vm.removeModel(id, m) },
-                            onSelectModel = { id, m -> vm.selectModel(id, m) }
+                            onSelectModel = { id, m -> vm.selectModel(id, m) },
+                            onToggleImageOutput = { id, model, enabled -> vm.setModelImageOutput(id, model, enabled) }
                         )
                     }
 
@@ -942,40 +944,18 @@ fun AppRoot(vm: ChatViewModel) {
                     com.miniichatNext.carter.data.update.UpdateState.clearPending()
                 }
             } else null,
-            onStartDownload = { dInfo ->
-                // 内容弹窗已关闭（上面onDismiss先执行）→记录信息并启动独立下载流程
-                updateDownloadInfo = dInfo
-                com.miniichatNext.carter.ui.settings.update.startUpdateDownload(
-                    context = context,
-                    scope = scope,
-                    info = dInfo,
-                    onState = { updateDownloadState = it },
-                    onFinished = { updateDownloadState = null },
-                    onInstallNow = installFromDownload,
-                )
-            },
+            onStartDownload = beginUpdate,
         )
     }
 
-    // 独立下载进度弹窗：进度/校验失败重试/强制安装；成功后自动拉起安装器并关闭
-    updateDownloadState?.let { st ->
+    if (updateDownloadVisible) updateDownloadState?.let { state ->
         com.miniichatNext.carter.ui.settings.update.UpdateDownloadDialog(
-            state = st,
-            onRetry = {
-                updateDownloadInfo?.let { dInfo ->
-                    com.miniichatNext.carter.ui.settings.update.startUpdateDownload(
-                        context = context,
-                        scope = scope,
-                        info = dInfo,
-                        onState = { updateDownloadState = it },
-                        onFinished = { updateDownloadState = null },
-                        onInstallNow = installFromDownload,
-                    )
-                }
-            },
-            onForceInstall = installFromDownload,
-            onInstallNow = installFromDownload,
-            onDismiss = { updateDownloadState = null },
+            state = state,
+            onRetry = { beginUpdate(state.info) },
+            onForceInstall = { scope.launch { com.miniichatNext.carter.data.update.UpdateDownloadSession.forceInstall(context) } },
+            onInstallNow = { scope.launch { com.miniichatNext.carter.data.update.UpdateDownloadSession.install(context) } },
+            onCancel = { com.miniichatNext.carter.data.update.UpdateDownloadSession.cancel() },
+            onHide = { com.miniichatNext.carter.data.update.UpdateDownloadSession.hide() },
         )
     }
 }

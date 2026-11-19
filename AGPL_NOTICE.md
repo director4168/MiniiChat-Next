@@ -315,6 +315,123 @@ validates the inner archive and decrypts credentials before applying data.
 Formats v1 and v2 remain supported. These changes use JCA and ZIP APIs and
 introduce no additional third-party runtime dependency.
 
+### 3.9 v1.8.0 — SVG/Mermaid previews and Android WebView adaptations
+
+This section supplements §3.7 and the existing diagram-preview follow-up
+below; it does not replace the earlier notices. The following RikkaHub
+sources were consulted and adapted under **GNU AGPL-3.0**:
+
+| RikkaHub original | This fork / adaptation |
+|-------------------|------------------------|
+| `app/src/main/java/me/rerere/rikkahub/ui/components/richtext/HighlightCodeBlock.kt` | `ui/markdown/DiagramPreviewCard.kt` — inline SVG preview, source/preview switching, copy and a separate viewer entry; connected through `MarkdownExtras.kt` |
+| `app/src/main/java/me/rerere/rikkahub/ui/components/richtext/Mermaid.kt` | `ui/markdown/DiagramHtml.kt`, `DiagramPreviewCard.kt` and `MermaidChart.kt` — local Mermaid script loading, diagram preview and viewer/export interaction |
+| `ui/src/main/java/me/rerere/ui/webview/WebView.kt` | `ui/markdown/DiagramPreviewCard.kt` — explicitly sized Android WebView, Compose integration, page loading and lifecycle management |
+| `ui/src/main/java/me/rerere/ui/webview/WebViewLocalAssets.kt` | `ui/markdown/DiagramPreviewCard.kt` — virtual HTTPS origin with in-process responses for the HTML document and the bundled Mermaid script |
+
+Source repository: <https://github.com/rikkahub/rikkahub>.
+The existing RikkaHub copyright attribution and AGPL-3.0 notice in §5.2
+apply. These are **adaptations**, not an unchanged copy of RikkaHub's full
+WebView module; its navigation, dependency injection and WebView state
+classes are not imported wholesale.
+
+Additional changes implemented in this application:
+
+- A shared `DiagramViewer` for SVG and Mermaid, with source switching,
+  pinch zoom, panning, reset and SVG export through Android's document
+  picker. `MermaidPreviewScreen.kt` delegates to this viewer.
+- SVG XML namespace/size normalization and filtering of scripts, event
+  attributes and external references in `DiagramHtml.kt`.
+- Fixed-height, visibility-gated inline previews; explicit native
+  `MATCH_PARENT` dimensions and viewport-height HTML to avoid ambiguous
+  WebView sizing inside Compose.
+- A local HTML main-document response distinct from the JavaScript asset
+  response; other resource requests are blocked on this diagram path.
+- Page-load/render-size diagnostics, loading/error feedback, and viewer
+  colors derived from the page theme rather than the chat-bubble palette.
+
+The Mermaid engine itself, `app/src/main/assets/html/mermaid.min.js`, is
+**unmodified** and byte-identical to the asset in the local RikkaHub
+reference (SHA-256: `74d7c46dabca328c2294733910a8aa1ed0c37451776e8d5295da38a2b758fb9b`).
+Its **MIT** license and attribution remain in §4 / §5.6. It is now loaded
+by the shared diagram WebView; `MermaidChart.kt` is its Markdown entry
+wrapper. The SVG handling uses Android/JDK XML and WebView APIs; these
+changes introduce no additional third-party runtime library.
+
+### 3.10 v1.8.0 — Operit APK download sources and ranked transfers
+
+The node table and source-ranking/transfer mechanisms in
+`data/update/UpdateDownloadSources.kt` and `UpdateSourceDownloader.kt`
+are adapted from **AAswordman/Operit** (<https://github.com/AAswordman/Operit>),
+whose main code is licensed **LGPL-3.0-only**:
+
+| Operit source | Adaptation |
+|---------------|------------|
+| `app/src/main/java/com/ai/assistance/operit/util/GithubReleaseUtil.kt` | GitHub mirror prefixes and sampled source probes; restricted to parsed GitHub release-asset URLs, four concurrent probes and a 64 KiB sample |
+| `app/src/main/java/com/ai/assistance/operit/data/updates/UpdateDownloadSource.kt` | Usable-source ranking by measured throughput, elapsed time and stable node key |
+| `app/src/main/java/com/ai/assistance/operit/data/updates/UpdateSourceDownloader.kt` | Ordered node attempts, progress and verification callbacks; changed to cancellable HttpURLConnection single-stream transfers rather than six ranged workers |
+
+The upstream license and notices are retained. LGPLv3 §3 permits
+application of GPLv3 to a copy of the incorporated material; GPLv3 §13
+permits combination with AGPLv3 code. This application remains distributed
+under AGPL-3.0, without removing the upstream LGPL attribution. The full
+LGPL text is bundled at `assets/licenses/LGPL-3.0.txt`, alongside the
+existing `GPL-3.0.txt`; attribution and modification notices are bundled
+at `assets/licenses/Operit-update-NOTICE.txt`. Unchanged local-reference
+source snapshots and their hashes are preserved in
+`docs/third-party/operit-update/`. Corresponding modified source is
+available from <https://github.com/director4168/MiniiChat-Next>.
+
+MiniiChat Next retains its own update JSON, version-code comparison and
+ABI-specific APK selection. The foreground data-sync service, notification
+controls, persistent verified cache and install checks are application
+integration changes. Operit's patch updater, Release metadata fetching,
+GitHub authentication and update UI are not incorporated. Mirror URLs
+are third-party services and are probed at runtime; no availability or
+endorsement is claimed.
+
+#### Follow-up: one selected source and editable mirror settings
+
+The v1.8.0 follow-up changes the download policy: candidate sources receive
+two small 64 KiB probes (four concurrent candidates at most), ranked by the
+lower measured throughput and the higher elapsed time. Only the winning
+source receives the complete APK request. A network or verification error
+ends that attempt; the updater no longer walks other sources automatically.
+A persistent global mirror switch and editable per-node names, HTTPS URL
+prefixes/templates and enabled flags are MiniiChat Next integration changes.
+Original URLs, ABI selection, APK verification, cache reuse and foreground
+service behavior remain separate from the adapted node definitions.
+
+#### Follow-up: probe result visibility and release metadata diagnostics
+
+`data/update/UpdateNodeProbe.kt` and `ui/settings/update/UpdateProbeList.kt`
+add application-specific per-node waiting/testing/success/failure state and
+scrollable result rows. Probe latency is measured until response headers are
+available (including connection and redirects), separately from the sampled
+transfer duration. APK version mismatches report the configured and actual values, and the
+client reads only `versionCode` for update comparison, ignoring the legacy
+`version` field. This does not weaken checksum,
+package, ABI or signing-certificate validation. Upstream attribution and
+license terms for the adapted probing code remain unchanged.
+
+#### Follow-up: completed download verification failures
+
+The application now distinguishes a completed transfer that fails verification
+from an interrupted transfer. Completed files are retained separately from
+verified-cache artifacts; an explicit confirmation can request installation
+without the published checksum or target-version match. Local file identity,
+package, ABI and installed-app signer checks still apply. This user interface,
+retention policy and independently persisted mirror toggle are MiniiChat Next
+integration changes; the Operit source/license notices remain unchanged.
+
+#### Follow-up: stage-specific updater presentation
+
+The application-specific updater UI now uses separate probing, downloading,
+and verification/installation content within one persistent dialog window.
+Probe lists are discarded when a complete APK download starts; verification
+failures have a separate state and notification title rather than being
+reported as network-download failures. This presentation change does not
+alter the upstream node/probe licensing or the verified/forced install checks.
+
 ## 4. Runtime dependencies with their own notices (AGPL §5(a) source + §5(b) license)
 
 The following artifacts are linked into the shipped APK and are
@@ -564,3 +681,8 @@ is exposed via `<provider android:exported="true"
 android:permission="android.permission.MANAGE_DOCUMENTS">` so a
 system file manager can browse the app's private files directory;
 that path is read-only and does not constitute a remote service.
+
+
+### Diagram preview follow-up (v1.8.0)
+
+`ui/markdown/DiagramPreviewCard.kt` and `DiagramHtml.kt` adapt the preview/source/view controls and the offline WebView layout of rikkahub's `ui/components/richtext/HighlightCodeBlock.kt` and `Mermaid.kt` (AGPL-3.0). Changes in this application: shared SVG/Mermaid viewer, lazy inline rendering, SVG namespace normalization and external-resource blocking, zoom reset, SVG export, and visible rendering errors. The bundled Mermaid asset remains unchanged.

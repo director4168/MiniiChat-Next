@@ -214,7 +214,7 @@ fun ThemeColorsScreen(onBack: () -> Unit) {
                 onClick = { showToolsSheet = false; showResetConfirm = true }
             )
             SheetActionRow(
-                icon = Icons.Default.FileDownload,
+                icon = Icons.Default.FileUpload,
                 label = stringResource(R.string.debug_theme_export),
                 onClick = {
                     showToolsSheet = false
@@ -227,7 +227,7 @@ fun ThemeColorsScreen(onBack: () -> Unit) {
                 }
             )
             SheetActionRow(
-                icon = Icons.Default.FileUpload,
+                icon = Icons.Default.FileDownload,
                 label = stringResource(R.string.debug_theme_import),
                 onClick = { showToolsSheet = false; showImportDialog = true }
             )

@@ -75,6 +75,7 @@ fun BackupScreen(vm: ChatViewModel, onBack: () -> Unit) {
     var exportPasswordOpen by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
+    var passwordMismatch by remember { mutableStateOf(false) }
     BackHandler(enabled = working) { }
     val completed = stringResource(R.string.backup_done)
     val saved = stringResource(R.string.backup_saved)
@@ -136,7 +137,7 @@ fun BackupScreen(vm: ChatViewModel, onBack: () -> Unit) {
             }
             Text(stringResource(R.string.backup_quick_hint), style = MaterialTheme.typography.bodySmall)
             Button(enabled = !working, onClick = {
-                password = ""; confirmPassword = ""; exportPasswordOpen = true
+                password = ""; confirmPassword = ""; passwordMismatch = false; exportPasswordOpen = true
             }) { Text(stringResource(R.string.backup_encrypted)) }
             Text(stringResource(R.string.backup_encrypted_hint), style = MaterialTheme.typography.bodySmall)
             OutlinedButton(enabled = !working, onClick = { importLauncher.launch(arrayOf("application/zip", "application/octet-stream")) }) {
@@ -147,22 +148,27 @@ fun BackupScreen(vm: ChatViewModel, onBack: () -> Unit) {
         }
     }
     if (exportPasswordOpen) AlertDialog(
-        onDismissRequest = { exportPasswordOpen = false; password = ""; confirmPassword = "" },
+        onDismissRequest = { exportPasswordOpen = false; password = ""; confirmPassword = ""; passwordMismatch = false },
         title = { Text(stringResource(R.string.backup_password_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(password, { password = it }, label = { Text(stringResource(R.string.backup_password)) },
+                OutlinedTextField(password, { password = it; passwordMismatch = false }, label = { Text(stringResource(R.string.backup_password)) },
                     singleLine = true, visualTransformation = PasswordVisualTransformation())
-                OutlinedTextField(confirmPassword, { confirmPassword = it }, label = { Text(stringResource(R.string.backup_password_confirm)) },
+                OutlinedTextField(confirmPassword, { confirmPassword = it; passwordMismatch = false }, label = { Text(stringResource(R.string.backup_password_confirm)) },
                     singleLine = true, visualTransformation = PasswordVisualTransformation())
+                if (passwordMismatch) Text(stringResource(R.string.backup_password_mismatch), color = MaterialTheme.colorScheme.error)
             }
         },
-        confirmButton = { TextButton(enabled = password.isNotEmpty() && password == confirmPassword, onClick = {
+        confirmButton = { TextButton(enabled = password.isNotEmpty() && confirmPassword.isNotEmpty(), onClick = {
+            if (password != confirmPassword) {
+                passwordMismatch = true
+                return@TextButton
+            }
             val secret = password.toCharArray()
-            password = ""; confirmPassword = ""; exportPasswordOpen = false
+            password = ""; confirmPassword = ""; passwordMismatch = false; exportPasswordOpen = false
             exportBackup(BackupMode.ENCRYPTED, secret)
         }) { Text(stringResource(R.string.backup_export)) } },
-        dismissButton = { TextButton(onClick = { exportPasswordOpen = false; password = ""; confirmPassword = "" }) { Text(stringResource(R.string.cancel)) } },
+        dismissButton = { TextButton(onClick = { exportPasswordOpen = false; password = ""; confirmPassword = ""; passwordMismatch = false }) { Text(stringResource(R.string.cancel)) } },
     )
     if (importUri != null) {
         val uri = importUri!!

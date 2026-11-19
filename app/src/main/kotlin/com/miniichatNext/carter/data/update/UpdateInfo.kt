@@ -18,12 +18,10 @@ data class UpdateInfo(
     val name: String = "MiniiChat-Next",
     /** 发布时间，格式YYMMDD（如260922） */
     val time: String = "",
-    /** 版本码（数字字符串，如"261013061"）——比较用；legacy的version字段作兼容回退 */
+    /** 版本码（数字字符串，如"261013061"），新客户端唯一比较字段 */
     val versionCode: String = "",
     /** 展示名（如"v1.5.0-Beta"）——弹窗标题/正文显示 */
     val versionName: String = "",
-    /** legacy：旧配置的比较字段，仅作回退兼容 */
-    val version: String = "",
     /** true=强制升级（不允许忽略）；false=可选升级 */
     val compulsory: Boolean = false,
     /** 更新说明，可包含markdown */
@@ -32,25 +30,20 @@ data class UpdateInfo(
     val DownloadUrl: String = "",
     /** APK SHA256哈希（小写hex，ARM64兼容旧配置） */
     val SHA256: String = "",
-    /** ARM32下载地址；为空时回退旧DownloadUrl */
+    /** ARM32独立下载地址 */
     val DownloadUrl_armabi_v7a: String = "",
-    /** ARM32 APK SHA256；为空时回退旧SHA256 */
+    /** ARM32独立APK SHA256 */
     val SHA256_armabi_v7a: String = "",
 )
 
-/** 远端版本码（数字）；优先versionCode，legacy version兜底 */
-fun UpdateInfo.remoteVersionCode(): Long =
-    versionCode.toLongOrNull()
-        ?: version.toLongOrNull()
-        ?: 0L
+/** 仅使用versionCode；未知的旧version字段由JSON解析器忽略。 */
+fun UpdateInfo.remoteVersionCode(): Long = versionCode.trim().toLongOrNull() ?: 0L
 
-/** 远端展示名：versionName优先，回退版本码（legacy version兜底） */
-fun UpdateInfo.displayVersion(): String =
-    versionName.ifBlank { versionCode.ifBlank { version } }
+/** 展示名缺省时展示versionCode，不读取旧字段。 */
+fun UpdateInfo.displayVersion(): String = versionName.ifBlank { versionCode }
 
-/** 忽略记录的键：版本码（legacy回退） */
-fun UpdateInfo.ignoreKey(): String =
-    versionCode.ifBlank { version }
+/** 忽略记录只以versionCode为键。 */
+fun UpdateInfo.ignoreKey(): String = versionCode.trim()
 
 /** 本地已安装versionCode */
 fun localVersionCode(context: android.content.Context): Long = runCatching {
@@ -65,8 +58,8 @@ fun UpdateInfo.isRemoteNewer(context: android.content.Context): Boolean =
 
 data class UpdatePackage(val abi: String, val downloadUrl: String, val sha256: String)
 
-fun UpdateInfo.packageForDevice(): UpdatePackage {
-    val abi = android.os.Build.SUPPORTED_ABIS
+fun UpdateInfo.packageForDevice(abis: List<String> = android.os.Build.SUPPORTED_ABIS.toList()): UpdatePackage {
+    val abi = abis
         .firstOrNull { it == "arm64-v8a" || it == "armeabi-v7a" }
         ?: "arm64-v8a"
     return if (abi == "armeabi-v7a") {

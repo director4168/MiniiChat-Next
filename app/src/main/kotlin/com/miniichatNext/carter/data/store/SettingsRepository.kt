@@ -17,12 +17,16 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.miniichatNext.carter.data.model.TokenUsage
+import com.miniichatNext.carter.data.update.UpdateDownloadSources
+import com.miniichatNext.carter.data.update.UpdateMirrorNode
+import com.miniichatNext.carter.util.AppJson
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.builtins.ListSerializer
 
 const val COMPRESS_MODEL_CONVERSATION = "@conversation"
 
@@ -44,7 +48,7 @@ data class AppSettings(
     val temperature: Float = 0.7f,
     val stream: Boolean = true,
     val language: String = "system",
-    val dynamicColor: Boolean = true,
+    val dynamicColor: Boolean = false,
     val themeMode: String = "system",
     /** Markdown代码块是否自动换行 */
     val codeWrap: Boolean = true,
@@ -54,6 +58,8 @@ data class AppSettings(
     val latexEnabled: Boolean = true,
     // 格式providerId::modelId
     val ocrModel: String = "",
+    val imageGenerationModel: String = "",
+    val imageGenerationPreferConversation: Boolean = false,
     /** OCR触发模式：auto=仅纯文本模型/always=所有带图消息（视觉模型也附加文字）/off=禁用 */
     val ocrMode: String = "auto",
     val titleModel: String = COMPRESS_MODEL_CONVERSATION,
@@ -68,6 +74,8 @@ data class AppSettings(
     val totalCachedTokens: Long = 0,
     /** 启动时自动检查更新 */
     val autoCheckUpdate: Boolean = true,
+    val updateNodesEnabled: Boolean = true,
+    val updateNodes: List<UpdateMirrorNode> = UpdateDownloadSources.defaultNodes(),
     /** 用户已忽略的版本号集合（持久化为逗号分隔字符串） */
     val ignoredUpdateVersions: Set<String> = emptySet(),
 )
@@ -98,6 +106,8 @@ class SettingsRepository(private val context: Context) {
         val CODE_FOLD = booleanPreferencesKey("code_fold")
         val LATEX_ENABLED = booleanPreferencesKey("latex_enabled")
         val DEBUG_LOG_BALL = booleanPreferencesKey("debug_log_ball")
+        val IMAGE_MODEL = stringPreferencesKey("image_generation_model")
+        val IMAGE_PREFER_CONVERSATION = booleanPreferencesKey("image_generation_prefer_conversation")
         val OCR_MODEL = stringPreferencesKey("ocr_model")
     val OCR_MODE = stringPreferencesKey("ocr_mode")
         val TITLE_MODEL = stringPreferencesKey("title_model")
@@ -110,6 +120,8 @@ class SettingsRepository(private val context: Context) {
         val TOTAL_COMPLETION_LEGACY = intPreferencesKey("total_completion_tokens")
         val TOTAL_COMPLETION = longPreferencesKey("total_completion_tokens_long")
         val AUTO_CHECK_UPDATE = booleanPreferencesKey("auto_check_update")
+        val UPDATE_NODES_ENABLED = booleanPreferencesKey("update_nodes_enabled")
+        val UPDATE_NODES = stringPreferencesKey("update_nodes")
         val IGNORED_UPDATE_VERSIONS = stringPreferencesKey("ignored_update_versions")
     }
 
@@ -130,12 +142,14 @@ class SettingsRepository(private val context: Context) {
         temperature = p[Keys.TEMP] ?: 0.7f,
         stream = p[Keys.STREAM] ?: true,
         language = p[Keys.LANG] ?: "system",
-        dynamicColor = p[Keys.DYNAMIC] ?: true,
+        dynamicColor = p[Keys.DYNAMIC] ?: false,
         themeMode = p[Keys.THEME] ?: "system",
         codeWrap = p[Keys.CODE_WRAP] ?: true,
         codeFold = p[Keys.CODE_FOLD] ?: true,
         latexEnabled = p[Keys.LATEX_ENABLED] ?: true,
         ocrModel = p[Keys.OCR_MODEL] ?: "",
+        imageGenerationModel = p[Keys.IMAGE_MODEL] ?: "",
+        imageGenerationPreferConversation = p[Keys.IMAGE_PREFER_CONVERSATION] ?: false,
         ocrMode = p[Keys.OCR_MODE] ?: "auto",
         titleModel = p[Keys.TITLE_MODEL] ?: COMPRESS_MODEL_CONVERSATION,
         compressModel = p[Keys.COMPRESS_MODEL] ?: COMPRESS_MODEL_CONVERSATION,
@@ -146,6 +160,10 @@ class SettingsRepository(private val context: Context) {
         totalPromptTokens = p[Keys.TOTAL_PROMPT] ?: p[Keys.TOTAL_PROMPT_LEGACY]?.toLong() ?: 0L,
         totalCompletionTokens = p[Keys.TOTAL_COMPLETION] ?: p[Keys.TOTAL_COMPLETION_LEGACY]?.toLong() ?: 0L,
         autoCheckUpdate = p[Keys.AUTO_CHECK_UPDATE] ?: true,
+        updateNodesEnabled = p[Keys.UPDATE_NODES_ENABLED] ?: true,
+        updateNodes = p[Keys.UPDATE_NODES]?.let { raw ->
+            AppJson.json.decodeFromString(ListSerializer(UpdateMirrorNode.serializer()), raw)
+        } ?: UpdateDownloadSources.defaultNodes(),
         ignoredUpdateVersions = (p[Keys.IGNORED_UPDATE_VERSIONS] ?: "")
             .split(',').filter { it.isNotBlank() }.toSet(),
     )
@@ -173,6 +191,8 @@ class SettingsRepository(private val context: Context) {
             p[Keys.CODE_FOLD] = next.codeFold
             p[Keys.LATEX_ENABLED] = next.latexEnabled
             p[Keys.OCR_MODEL] = next.ocrModel
+            p[Keys.IMAGE_MODEL] = next.imageGenerationModel
+            p[Keys.IMAGE_PREFER_CONVERSATION] = next.imageGenerationPreferConversation
             p[Keys.OCR_MODE] = next.ocrMode
             p[Keys.TITLE_MODEL] = next.titleModel
             p[Keys.COMPRESS_MODEL] = next.compressModel
@@ -182,6 +202,9 @@ class SettingsRepository(private val context: Context) {
             p[Keys.TOTAL_PROMPT] = next.totalPromptTokens
             p[Keys.TOTAL_COMPLETION] = next.totalCompletionTokens
             p[Keys.AUTO_CHECK_UPDATE] = next.autoCheckUpdate
+            UpdateDownloadSources.validateNodes(next.updateNodes)
+            p[Keys.UPDATE_NODES_ENABLED] = next.updateNodesEnabled
+            p[Keys.UPDATE_NODES] = AppJson.json.encodeToString(ListSerializer(UpdateMirrorNode.serializer()), next.updateNodes)
             p[Keys.IGNORED_UPDATE_VERSIONS] = next.ignoredUpdateVersions.joinToString(",")
             p[Keys.DEBUG_LOG_BALL] = next.debugLogBall
         }
@@ -190,6 +213,11 @@ class SettingsRepository(private val context: Context) {
     // 更新检测相关便捷方法
     suspend fun setAutoCheckUpdate(enabled: Boolean) {
         update { it.copy(autoCheckUpdate = enabled) }
+    }
+
+    suspend fun setUpdateNodesEnabled(enabled: Boolean) = updateMutex.withLock {
+        // 总开关独立保存，关闭代理不依赖节点列表的解析或校验。
+        context.settingsDataStore.edit { it[Keys.UPDATE_NODES_ENABLED] = enabled }
     }
 
     suspend fun ignoreUpdateVersion(version: String) {

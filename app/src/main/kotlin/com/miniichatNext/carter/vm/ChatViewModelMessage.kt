@@ -21,6 +21,7 @@ import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.model.Attachment
 import com.miniichatNext.carter.data.model.Conversation
 import com.miniichatNext.carter.data.model.Message
+import com.miniichatNext.carter.data.model.GeneratedImageStore
 import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.model.TokenUsage
 import com.miniichatNext.carter.data.model.ToolInvocation
@@ -425,7 +426,21 @@ private suspend fun ChatViewModel.runGenerationRound(
             persistAssistantStep(cid, assistantMsg.id, fallback, mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts(), session = session)
         }
     } else {
-        persistAssistantStep(cid, assistantMsg.id, mergedContent(), mergedReasoning(), invocations, currentStats(), orderedParts = mergedParts(), session = session)
+        val materialized = withContext(Dispatchers.IO) {
+            GeneratedImageStore.materialize(mergedContent(), getApplication<Application>().filesDir)
+        }
+        persistAssistantStep(
+            cid, assistantMsg.id, materialized.content, mergedReasoning(), invocations, currentStats(),
+            orderedParts = mergedParts().map { part ->
+                if (part is com.miniichatNext.carter.data.model.MessageSegment.Text) {
+                    var body = part.text
+                    materialized.replacements.forEach { (before, after) -> body = body.replace(before, after) }
+                    part.copy(text = body)
+                } else part
+            },
+            attachments = existing?.attachments.orEmpty() + materialized.attachments,
+            session = session,
+        )
     }
 
     generateTitle(cid)
@@ -448,6 +463,7 @@ private suspend fun ChatViewModel.persistAssistantStep(
     stats: Message,
     session: ChatTaskSession,
     orderedParts: List<com.miniichatNext.carter.data.model.MessageSegment> = emptyList(),
+    attachments: List<com.miniichatNext.carter.data.model.Attachment>? = null,
 ) {
     // IO期间计时快照仍在推进；持久化结束后再回写旧帧会让界面和计量倒退。
     if (canPublishStream(session)) {
@@ -464,6 +480,7 @@ private suspend fun ChatViewModel.persistAssistantStep(
                     if (session.stopRequested && current?.state == ToolInvocationState.CANCELLED) current else incoming
                 },
                 orderedParts = orderedParts,
+                attachments = attachments ?: m.attachments,
                 usage = stats.usage,
                 generationTimeMs = stats.generationTimeMs,
                 lastUsage = stats.lastUsage,
@@ -623,6 +640,7 @@ private suspend fun ChatViewModel.updateToolInvocationState(
 
 private fun toolTargetsPublicStorage(toolName: String, argsJson: String): Boolean {
     if (toolName == "execute_shell") return true
+    if (toolName == "image_generate") return false
     if (toolName in SpecialTools.names) return false
     if (!BuiltInFileTools.isBuiltIn(toolName)) return false
     val args = runCatching { AppJson.parseObject(argsJson) }.getOrDefault(JsonObject(emptyMap()))
@@ -684,6 +702,14 @@ private suspend fun ChatViewModel.executeTool(
         return@withContext false to getApplication<Application>().getString(R.string.permission_manage_storage_required)
     }
     try {
+        if (toolName == "image_generate") {
+            val target = resolveImageGenerationModel(cid)
+                ?: return@withContext false to getApplication<Application>().getString(R.string.image_generation_not_configured)
+            val prompt = AppJson.parseObject(argsJson)["prompt"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            val markdown = com.miniichatNext.carter.api.ImageGenerationClient().generate(target.first, target.second, prompt)
+            val image = com.miniichatNext.carter.data.model.GeneratedImageStore.materialize(markdown, getApplication<Application>().filesDir)
+            return@withContext true to image.content
+        }
         if (isWorkspaceTool(toolName)) {
             val workspaceId = resolved.workspaceId
                 ?: return@withContext false to "This assistant is not bound to a workspace"
@@ -880,6 +906,7 @@ internal suspend fun ChatViewModel.collectToolSpecs(
     val specs = mutableListOf<ToolSpec>()
     val perms = mcpStore.permsSnapshot()
     BuiltInFileTools.schema(getApplication())
+        .filter { it.name != "image_generate" || conv?.id?.let { id -> resolveImageGenerationModel(id) } != null }
         .filter { resolveToolPermission(it.name, "", perms, BuiltInFileTools.defaultRequireApproval(it.name)).enabled }
         .forEach { specs += ToolSpec(it.name, it.description, it.inputSchema) }
 

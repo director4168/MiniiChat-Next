@@ -55,6 +55,7 @@ data class ModelConfig(
     val supportsToolCall: Boolean = true,
     /** 该模型是否支持图片输入（vision）；关掉后发送时跳过图片附件 */
     val supportsImageInput: Boolean = true,
+    val supportsImageOutput: Boolean = false,
     /** 模型级连接覆盖（优先于服务商级；null/空=跟随服务商） */
     val baseUrl: String? = null,
     /** 模型级API路径（如/v1/chat/completions）；null=跟随服务商chatCompletionsPath */
@@ -78,7 +79,7 @@ data class ModelConfig(
     fun hasOverride(): Boolean =
         thinkingLevel != null || temperature != null || maxTokens != null
             || customHeaders.isNotEmpty() || extraBody.isNotEmpty()
-            || !supportsReasoning || !supportsToolCall || !supportsImageInput
+            || !supportsReasoning || !supportsToolCall || !supportsImageInput || supportsImageOutput
             || !baseUrl.isNullOrBlank() || !apiPath.isNullOrBlank() || !apiKey.isNullOrBlank() || apiKeyCleared
             || responseApi != null || promptCache != null || promptCacheTtl != null
 
@@ -135,6 +136,8 @@ data class ProviderConfig(
 
     fun supportsImageInput(modelId: String): Boolean =
         model(modelId)?.supportsImageInput ?: true
+
+    fun supportsImageOutput(modelId: String): Boolean = model(modelId)?.supportsImageOutput == true
 
     /**
      * Response API/提示缓存是「对话级+按服务商」的覆盖：

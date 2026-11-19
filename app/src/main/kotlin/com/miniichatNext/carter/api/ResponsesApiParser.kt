@@ -39,6 +39,7 @@ internal class ResponsesApiStreamParser {
     private val calls = linkedMapOf<Int, PendingCall>()
     private var latestUsage: TokenUsage? = null
     private var emittedCalls = false
+    private val imageItems = mutableSetOf<String>()
 
     fun accept(data: String): List<StreamDelta> {
         if (data.isBlank() || data == "[DONE]") return emptyList()
@@ -64,6 +65,12 @@ internal class ResponsesApiStreamParser {
             }
             "response.output_item.added", "response.output_item.done" -> {
                 val item = event["item"] as? JsonObject
+                if (type == "response.output_item.done" && item?.string("type") == "image_generation_call") {
+                    val id = item.string("id") ?: outputIndex.toString()
+                    if (imageItems.add(id)) item.string("result")?.let {
+                        emitted += StreamDelta(text = imageMarkdown("data:image/png;base64,$it"))
+                    }
+                }
                 if (item?.get("type")?.jsonPrimitive?.contentOrNull == "function_call" && outputIndex >= 0) {
                     val call = calls.getOrPut(outputIndex) { PendingCall() }
                     call.callId = item.string("call_id") ?: call.callId
@@ -75,6 +82,9 @@ internal class ResponsesApiStreamParser {
                         }
                     }
                 }
+            }
+            "response.image_generation_call.completed" -> {
+                event.string("result")?.let { result -> emitted += StreamDelta(text = imageMarkdown("data:image/png;base64,$result")) }
             }
             "response.function_call_arguments.delta" -> {
                 if (outputIndex >= 0) {
@@ -97,6 +107,12 @@ internal class ResponsesApiStreamParser {
                 response?.get("output")?.let { output ->
                     val items = output as? JsonArray ?: JsonArray(emptyList())
                     readOutputItems(items)
+                    items.forEachIndexed { index, value ->
+                        val image = value as? JsonObject
+                        if (image?.string("type") == "image_generation_call" && imageItems.add(image.string("id") ?: index.toString())) {
+                            image.string("result")?.let { emitted += StreamDelta(text = imageMarkdown("data:image/png;base64,$it")) }
+                        }
+                    }
                     if (content.isEmpty()) readOutputText(items, emitted, reasoning = false)
                     if (reasoning.isEmpty()) readOutputText(items, emitted, reasoning = true)
                 }
@@ -189,6 +205,9 @@ internal fun parseResponsesApiBody(text: String): List<StreamDelta> {
                     val summary = value2 as? JsonObject ?: return@forEach
                     summary.string("text")?.takeIf { it.isNotEmpty() }?.let { deltas += StreamDelta(reasoning = it) }
                 }
+            }
+            "image_generation_call" -> item.string("result")?.let {
+                deltas += StreamDelta(text = imageMarkdown("data:image/png;base64,$it"))
             }
             "function_call" -> {
                 val callId = item.string("call_id")

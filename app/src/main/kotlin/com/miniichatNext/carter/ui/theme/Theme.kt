@@ -118,7 +118,7 @@ val LocalDarkMode = staticCompositionLocalOf { false }
 @Composable
 fun MiniiChatTheme(
     themeMode: String = "system", // system | light | dark
-    dynamicColor: Boolean = true,
+    dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val systemDark = isSystemInDarkTheme()

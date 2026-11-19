@@ -46,7 +46,7 @@ object UpdateState {
         val info = result.info
         val remote = info.remoteVersionCode()
         if (remote <= 0L) return
-        if (info.ignoreKey() in ignoredVersions || info.version in ignoredVersions) return
+        if (info.ignoreKey() in ignoredVersions) return
         if (remote <= localCode) return // 不是新版本
         _pending.value = info
     }

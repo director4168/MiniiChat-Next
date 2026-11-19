@@ -7,14 +7,14 @@
 package com.miniichatNext.carter.data.update
 
 import android.content.Context
-import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.BuildConfig
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.debug.DebugLog
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.Json
+import com.miniichatNext.carter.util.AppJson
 import java.net.HttpURLConnection
 import java.net.URL
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
 
 /**
  * 从固定URL拉取更新配置
@@ -41,7 +41,7 @@ object UpdateRepository {
     *   "SHA256_armabi_v7a": ""        // 32位版本安装包SHA256哈希
     * }
     *
-    * version属性是给旧版客户端提供版本解析的，实际使用过程中可以不添加
+    * version属性仅供旧客户端使用，新客户端忽略该字段，只读取versionCode
     */
     const val DEFAULT_URL =
         "https://director4168.github.io/AAAJsonConfiguration/MiniiChat-Next.json"
@@ -91,7 +91,7 @@ object UpdateRepository {
                 }
             }
         } catch (t: Throwable) {
-            DebugLog.e("Update", "check failed", t)
+            DebugLog.w("Update", "check failed: ${t.message}")
             val msg = t.message ?: t::class.java.simpleName ?: "unknown"
             Result.Failure(msg, t)
         } finally {

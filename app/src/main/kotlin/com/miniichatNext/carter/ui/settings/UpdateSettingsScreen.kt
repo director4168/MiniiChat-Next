@@ -7,28 +7,24 @@
 package com.miniichatNext.carter.ui.settings
 
 import android.widget.Toast
-import com.miniichatNext.carter.data.update.isRemoteNewer
-import com.miniichatNext.carter.data.update.remoteVersionCode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material3.HorizontalDivider
@@ -49,12 +45,17 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.miniichatNext.carter.BuildConfig
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.data.store.AppSettings
 import com.miniichatNext.carter.data.store.SettingsRepository
-import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.data.update.isRemoteNewer
+import com.miniichatNext.carter.data.update.remoteVersionCode
 import com.miniichatNext.carter.ui.components.SectionCard
-import com.miniichatNext.carter.ui.components.SectionHeader
+import com.miniichatNext.carter.ui.settings.update.UpdateNodesEditor
+import com.miniichatNext.carter.util.currentPackageAbi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -72,22 +73,26 @@ fun UpdateSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val settingsRepo = remember { SettingsRepository(context) }
+    val downloadTask by com.miniichatNext.carter.data.update.UpdateDownloadSession.state.collectAsState()
+    val loadedSettings by settingsRepo.settings.collectAsState(initial = null as AppSettings?)
+    val settings = loadedSettings ?: AppSettings()
+    var nodesSaving by remember { mutableStateOf(false) }
+    var pendingNodesEnabled by remember { mutableStateOf<Boolean?>(null) }
+    var nodesEditor by remember { mutableStateOf(false) }
 
     // 订阅settings实时变化（autoCheckUpdate+已忽略版本）
     var autoCheck by remember { mutableStateOf(true) }
-    var ignoredVersions by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     LaunchedEffect(Unit) {
         val s = settingsRepo.settings.first()
         autoCheck = s.autoCheckUpdate
-        ignoredVersions = s.ignoredUpdateVersions
     }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .padding(WindowInsets.statusBars.asPaddingValues())
+            .windowInsetsPadding(WindowInsets.safeDrawing)
     ) {
         Row(
             modifier = Modifier
@@ -112,11 +117,21 @@ fun UpdateSettingsScreen(onBack: () -> Unit) {
 
         Column(
             modifier = Modifier
-                .fillMaxSize()
+                .weight(1f)
+                .fillMaxWidth()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
         ) {
             Spacer(Modifier.height(8.dp))
+            if (downloadTask != null) {
+                SectionCard {
+                    androidx.compose.material3.TextButton(
+                        onClick = { com.miniichatNext.carter.data.update.UpdateDownloadSession.show() },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text(stringResource(R.string.update_view_download)) }
+                }
+                Spacer(Modifier.height(8.dp))
+            }
 
             SectionCard {
                 Row(
@@ -154,6 +169,45 @@ fun UpdateSettingsScreen(onBack: () -> Unit) {
                             scope.launch { settingsRepo.setAutoCheckUpdate(newVal) }
                         },
                     )
+                }
+            }
+
+            Spacer(Modifier.height(8.dp))
+            SectionCard {
+                Column {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.update_nodes_enabled), style = MaterialTheme.typography.titleMedium)
+                        }
+                        Switch(checked = pendingNodesEnabled ?: settings.updateNodesEnabled,
+                            enabled = loadedSettings != null && !nodesSaving,
+                            onCheckedChange = { enabled ->
+                                pendingNodesEnabled = enabled
+                                nodesSaving = true
+                                scope.launch {
+                                    try {
+                                        settingsRepo.setUpdateNodesEnabled(enabled)
+                                        settingsRepo.settings.first { it.updateNodesEnabled == enabled }
+                                    }
+                                    catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+                                    catch (failure: Exception) {
+                                        Toast.makeText(context, context.getString(R.string.update_nodes_save_failed, failure.message.orEmpty()), Toast.LENGTH_SHORT).show()
+                                    } finally { nodesSaving = false; pendingNodesEnabled = null }
+                                }
+                            })
+                    }
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    Row(
+                        Modifier.fillMaxWidth().clickable { nodesEditor = true }.padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(stringResource(R.string.update_nodes_edit), style = MaterialTheme.typography.titleMedium)
+                            Text(stringResource(R.string.update_nodes_count, settings.updateNodes.count { it.enabled }, settings.updateNodes.size),
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
 
@@ -224,7 +278,32 @@ fun UpdateSettingsScreen(onBack: () -> Unit) {
 
             // 已忽略的版本：不需要展示列表（忽略行为是"自动检查时不弹该版本"，下次有新版本自动失效）
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(16.dp))
+        }
+        val packageAbi = remember(context) { currentPackageAbi(context) }
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.update_package_info, packageAbi, BuildConfig.BUILD_TYPE),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = stringResource(R.string.update_current_build, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE),
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
+    if (nodesEditor) UpdateNodesEditor(
+        initial = settings.updateNodes,
+        onDismiss = { nodesEditor = false },
+        onSave = { nodes -> settingsRepo.update { it.copy(updateNodes = nodes) } },
+    )
+
 }

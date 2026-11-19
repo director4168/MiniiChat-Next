@@ -171,6 +171,16 @@ internal fun ChatViewModel.addManualModel(providerId: String, model: String) {
     }
 }
 
+internal fun ChatViewModel.setModelImageOutput(providerId: String, modelId: String, enabled: Boolean) {
+    viewModelScope.launch {
+        providerStore.update(providerId) { provider ->
+            provider.copy(models = provider.models.map { model ->
+                if (model.modelId == modelId || model.displayName == modelId) model.copy(supportsImageOutput = enabled) else model
+            })
+        }
+    }
+}
+
 internal fun ChatViewModel.removeModel(providerId: String, model: String) {
     viewModelScope.launch {
         try {

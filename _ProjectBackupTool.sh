@@ -5,10 +5,10 @@ set -eu
 INCLUDE_DIRS="app gradle"
 
 # 忽略打包的文件
-EXCLUDE_FILES="BACKLOG.md CHANGELOG.md workspace.json .gitignore .clangd .clang-tidy *.zip"
+EXCLUDE_FILES="BACKLOG.md CHANGELOG.md workspace.json .gitignore .clangd .clang-tidy *.zip *.bak"
 
 # 忽略打包的子目录内文件/文件夹
-EXCLUDE_PATHS="app/build app/.cxx *.bak"
+EXCLUDE_PATHS="app/build app/.cxx"
 
 
 find_project_root() {

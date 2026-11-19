@@ -45,8 +45,6 @@ enum class DebugLevel(val label: String) {
 private data class ZipSource(
     val file: File,
     val entryName: String,
-    /** 打包成功后可以删除：旧的崩溃归档zip（内容已经进导出包了，留着只会堆积） */
-    val deleteAfterPack: Boolean
 )
 
 object DebugLog {
@@ -74,7 +72,24 @@ object DebugLog {
 
     /** 统一的导出文件名：MiniiChat-Next_Log_<yyyy-MM-dd_HH-mm-ss>.zip（下载目录与缓存目录共用） */
     private fun exportFileName(): String =
-        "MiniiChat-Next_Log_" + LocalDateTime.now().format(exportTimeFormat) + ".zip"
+        "MiniiChat-Next_Log_" + LocalDateTime.now().format(exportTimeFormat) + "_" + java.util.UUID.randomUUID().toString().take(8) + ".zip"
+
+    internal fun isLogExportName(name: String): Boolean =
+        name.startsWith("MiniiChat-Next_Log_") && name.endsWith(".zip")
+
+    internal fun pruneStagedExports(shared: File, keep: File? = null, maxFiles: Int = 3): Int {
+        val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
+        val files = shared.listFiles { file -> file.isFile && isLogExportName(file.name) }
+            ?.sortedByDescending { it.lastModified() }
+            .orEmpty()
+        var removed = 0
+        files.forEachIndexed { index, file ->
+            if (file != keep && (file.lastModified() < cutoff)) {
+                if (runCatching { file.delete() }.getOrDefault(false)) removed++
+            }
+        }
+        return removed
+    }
 
     @Volatile
     private var appContext: Context? = null
@@ -181,10 +196,10 @@ object DebugLog {
     fun appendDirectSync(context: Context, levelName: String, tag: String, text: String) {
         runCatching {
             val f = logFile(context)
-            trimIfOversized(f)
-            f.appendText(
-                LocalDateTime.now().format(timeFormat) + " " + levelName + "/" + tag + " " + text + "\n"
-            )
+            synchronized(fileLock) {
+                trimIfOversized(f)
+                f.appendText(LocalDateTime.now().format(timeFormat) + " " + levelName + "/" + tag + " " + text + "\n")
+            }
         }
     }
 
@@ -211,10 +226,16 @@ object DebugLog {
     /** 打包logs目录全部文件到cacheDir/shared下的zip */
     fun exportZip(context: Context): File {
         val shared = File(context.cacheDir, "shared").apply { mkdirs() }
+        pruneStagedExports(shared)
         val out = File(shared, exportFileName())
-        out.outputStream().use { writeLogZip(context, it) }
-        d("DebugLog", "export zip done: " + out.absolutePath)
-        return out
+        try {
+            out.outputStream().use { writeLogZip(context, it) }
+            pruneStagedExports(shared, keep = out)
+            return out
+        } catch (error: Throwable) {
+            out.delete()
+            throw error
+        }
     }
 
     /**
@@ -228,9 +249,8 @@ object DebugLog {
      * 取最近N条内存缓冲日志（用于「复制到剪贴板」快速诊断）。
      * 失败时返回空串而非抛异常。
      */
-    fun recentLines(maxLines: Int = 200): String = synchronized(fileLock) {
-        val start = (buffer.size - maxLines).coerceAtLeast(0)
-        buffer.toList().subList(start, buffer.size).joinToString("\n")
+    fun recentLines(maxLines: Int = 200): String = synchronized(buffer) {
+        buffer.takeLast(maxLines.coerceAtLeast(0)).joinToString("\n")
     }
 
     /** 把最近日志复制到剪贴板；返回是否成功 */
@@ -249,7 +269,9 @@ object DebugLog {
         val name = exportFileName()
 
         // 先在cacheDir生成完整zip（写日志zip和清理已归档的崩溃zip都在这一步完成）
-        val staging = File(File(context.cacheDir, "shared").apply { mkdirs() }, name)
+        val shared = File(context.cacheDir, "shared").apply { mkdirs() }
+        pruneStagedExports(shared)
+        val staging = File(shared, name)
         val staged = runCatching {
             staging.outputStream().use { writeLogZip(context, it) }
         }
@@ -270,13 +292,18 @@ object DebugLog {
                 }
                 val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
                     ?: error("MediaStore insert returned null")
-                resolver.openOutputStream(uri)?.use { out ->
-                    staging.inputStream().use { it.copyTo(out) }
-                } ?: error("openOutputStream returned null")
-                values.clear()
-                values.put(MediaStore.MediaColumns.IS_PENDING, 0)
-                resolver.update(uri, values, null, null)
-                Environment.DIRECTORY_DOWNLOADS + "/" + name
+                try {
+                    resolver.openOutputStream(uri)?.use { out ->
+                        staging.inputStream().use { it.copyTo(out) }
+                    } ?: error("openOutputStream returned null")
+                    values.clear()
+                    values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+                    check(resolver.update(uri, values, null, null) == 1)
+                    Environment.DIRECTORY_DOWNLOADS + "/" + name
+                } catch (error: Throwable) {
+                    runCatching { resolver.delete(uri, null, null) }
+                    throw error
+                }
             } else {
                 @Suppress("DEPRECATION")
                 val dir = Environment.getExternalStoragePublicDirectory(
@@ -315,7 +342,6 @@ object DebugLog {
         // 把要打包的内容先读进内存
         val payloads = LinkedHashMap<String, ByteArray>()
         val manifestLines = LinkedHashMap<String, String>()
-        val deletableCrashZips = LinkedHashMap<String, File>()
 
         synchronized(fileLock) {
             val sources = LinkedHashMap<String, ZipSource>()
@@ -330,7 +356,6 @@ object DebugLog {
                         ZipSource(
                             file = f,
                             entryName = entryName,
-                            deleteAfterPack = CrashLogger.isCrashZipName(f.name)
                         )
                     )
                 }
@@ -341,7 +366,7 @@ object DebugLog {
                     val entryName = "logs/crash/" + f.name
                     sources.putIfAbsent(
                         entryName,
-                        ZipSource(file = f, entryName = entryName, deleteAfterPack = false)
+                        ZipSource(file = f, entryName = entryName)
                     )
                 }
             }
@@ -357,7 +382,6 @@ object DebugLog {
                     "  bytes=" + bytes.size +
                     "  mtime=" + Instant.ofEpochMilli(src.file.lastModified())
                         .atZone(ZoneId.systemDefault()).format(manifestTimeFormat)
-                if (src.deleteAfterPack) deletableCrashZips[src.entryName] = src.file
             }
 
             val buffered = bufferText()
@@ -399,35 +423,17 @@ object DebugLog {
         val written = mutableSetOf<String>()
         ZipOutputStream(out).use { zip ->
             payloads.forEach { (entryName, bytes) ->
-                val ok = runCatching {
-                    zip.putNextEntry(ZipEntry(entryName))
-                    zip.write(bytes)
-                    zip.closeEntry()
-                    true
-                }.getOrElse { e ->
-                    w("DebugLog", "zip entry failed: $entryName -> ${e.message}")
-                    false
-                }
-                if (ok) written += entryName
-            }
-            runCatching {
-                zip.putNextEntry(ZipEntry(MANIFEST_NAME))
-                zip.write(manifest.toString().toByteArray(Charsets.UTF_8))
+                zip.putNextEntry(ZipEntry(entryName))
+                zip.write(bytes)
                 zip.closeEntry()
+                written += entryName
             }
+            zip.putNextEntry(ZipEntry(MANIFEST_NAME))
+            zip.write(manifest.toString().toByteArray(Charsets.UTF_8))
+            zip.closeEntry()
         }
 
-        // 只删除写进本次zip的崩溃归档zip
-        var removed = 0
-        deletableCrashZips.forEach { (entryName, file) ->
-            if (entryName in written) {
-                runCatching { if (file.delete()) removed++ }
-            }
-        }
-        d(
-            "DebugLog",
-            "log zip written: ${written.size} entries, removed $removed packaged crash zip(s)"
-        )
+        d("DebugLog", "log zip written: ${written.size} entries")
     }
 
     fun clear(context: Context) {

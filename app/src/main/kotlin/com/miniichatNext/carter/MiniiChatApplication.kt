@@ -44,8 +44,7 @@ class MiniiChatApplication : Application() {
         }
         // 前后台追踪（更新下载完成后决定是否可拉起安装器）
         registerActivityLifecycleCallbacks(com.miniichatNext.carter.util.AppForeground.callbacks)
-        // 不在每次启动清缓存——用户已下载但未安装的APK要保留。
-        // 清缓存时机改为：新下载前（UpdateDownloader.start删旧包）/用户主动取消。
+        // 更新包位于files/updates，临时缓存清理不触碰已验证安装包。
         // 启动自动检查更新（用户设置关闭则跳过）
         kickOffAutoUpdateCheck()
         // 恢复日志等级悬浮球（开关开启且"显示在其他应用上层"权限已授予）
@@ -78,7 +77,7 @@ class MiniiChatApplication : Application() {
                     ignoredVersions = ignored,
                 )
             } catch (t: Throwable) {
-                DebugLog.e("Update", "auto-check failed", t)
+                DebugLog.w("Update", "auto-check failed: ${t.message}")
             }
         }
     }
