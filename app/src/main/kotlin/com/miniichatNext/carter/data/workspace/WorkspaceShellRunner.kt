@@ -46,7 +46,7 @@ class HostShellRunner : WorkspaceShellRunner {
 /** 单个流保留的最大字符数，防止命令疯狂输出导致OOM或撑爆LLM上下文 */
 const val MAX_OUTPUT_CHARS = 128 * 1024
 
-fun Process.readResult(timeoutMillis: Long, stdin: ByteArray? = null): WorkspaceCommandResult {
+fun Process.readResult(timeoutMillis: Long, stdin: ByteArray? = null, onTimeout: (() -> Unit)? = null): WorkspaceCommandResult {
     val stdout = StreamCollector(inputStream)
     val stderr = StreamCollector(errorStream)
     val stdinWriter = stdin?.let { bytes -> StreamWriter(outputStream, bytes) }
@@ -54,8 +54,10 @@ fun Process.readResult(timeoutMillis: Long, stdin: ByteArray? = null): Workspace
     try {
         val finished = waitFor(timeoutMillis, TimeUnit.MILLISECONDS)
         if (!finished) {
-            destroyForcibly()
-            waitFor(1_000, TimeUnit.MILLISECONDS)
+            if (onTimeout != null) onTimeout() else {
+                destroyForcibly()
+                waitFor(1_000, TimeUnit.MILLISECONDS)
+            }
         }
         stdinWriter?.join(1_000)
         stdout.join(1_000)
@@ -68,7 +70,7 @@ fun Process.readResult(timeoutMillis: Long, stdin: ByteArray? = null): Workspace
             truncated = stdout.truncated || stderr.truncated,
         )
     } catch (e: InterruptedException) {
-        destroyForcibly()
+        if (onTimeout != null) onTimeout() else destroyForcibly()
         runCatching { waitFor(1_000, TimeUnit.MILLISECONDS) }
         stdinWriter?.join(1_000)
         stdout.join(1_000)

@@ -24,6 +24,7 @@ jlatexmath = "1.5"
 termux = "0.118.0"
 kotlinxCoroutines = "1.9.0"
 jsoup = "1.18.3"
+shizuku = "13.1.5"
 
 [libraries]
 jetbrains-markdown = { module = "com.github.rikkahub:markdown", version.ref = "markdown" }
@@ -68,6 +69,8 @@ ktor-client-logging                     = { group = "io.ktor",                  
 kotlinx-serialization-json              = { group = "org.jetbrains.kotlinx",         name = "kotlinx-serialization-json",        version.ref = "kotlinxSerialization" }
 kotlinx-coroutines-android              = { group = "org.jetbrains.kotlinx",         name = "kotlinx-coroutines-android",        version.ref = "kotlinxCoroutines" }
 jsoup                                   = { module = "org.jsoup:jsoup",               version.ref = "jsoup" }
+shizuku-api                              = { group = "dev.rikka.shizuku",              name = "api",                       version.ref = "shizuku" }
+shizuku-provider                         = { group = "dev.rikka.shizuku",              name = "provider",                  version.ref = "shizuku" }
 
 [plugins]
 android-application = { id = "com.android.application",                version.ref = "agp" }

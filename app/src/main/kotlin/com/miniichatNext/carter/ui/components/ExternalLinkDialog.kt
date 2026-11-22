@@ -17,6 +17,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.util.openExternalLink
@@ -42,7 +45,18 @@ fun ConfirmOpenExternalLinkDialog(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    url,
+                    buildAnnotatedString {
+                        if (url.startsWith("http://", ignoreCase = true)) {
+                            withStyle(
+                                SpanStyle(color = MaterialTheme.colorScheme.error)
+                            ) {
+                                append(url.substring(0, 7))
+                            }
+                            append(url.substring(7))
+                        } else {
+                            append(url)
+                        }
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

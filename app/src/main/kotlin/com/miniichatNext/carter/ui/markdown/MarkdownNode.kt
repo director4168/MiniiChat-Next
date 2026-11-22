@@ -45,6 +45,7 @@ sealed interface MarkdownBlock {
         val code: String,
         val language: String? = null,
         val closed: Boolean = true,
+        val sourceOffset: Int? = null,
     ) : MarkdownBlock
 
     @Immutable

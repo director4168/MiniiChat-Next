@@ -75,12 +75,26 @@ internal fun MarkdownBlocks(
     modifier: Modifier = Modifier,
     spacing: Dp = LocalMarkdownContext.current.theme.blockSpacing,
 ) {
+    val keys = remember(blocks) {
+        val occurrences = mutableMapOf<String, Int>()
+        blocks.mapIndexed { index, block ->
+            val anchor = when (block) {
+                is MarkdownBlock.CodeBlock -> block.sourceOffset?.let { "code:$it" }
+                    ?: "pre:${block.language}:${block.code.lineSequence().firstOrNull().orEmpty().take(100)}"
+                is MarkdownBlock.Details -> "details:${block.summary.plainText()}"
+                else -> "block:$index"
+            }
+            val occurrence = occurrences.getOrDefault(anchor, 0)
+            occurrences[anchor] = occurrence + 1
+            "$anchor:$occurrence"
+        }
+    }
     Column(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(spacing),
     ) {
         blocks.fastForEachIndexed { index, block ->
-            key("block:$index") {
+            key(keys[index]) {
                 MarkdownBlockNode(block = block, first = index == 0)
             }
         }

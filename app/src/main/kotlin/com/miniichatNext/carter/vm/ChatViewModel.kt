@@ -18,6 +18,7 @@ import com.miniichatNext.carter.data.mcp.McpServerConfig
 import com.miniichatNext.carter.data.mcp.McpStore
 import com.miniichatNext.carter.data.mcp.McpTool
 import com.miniichatNext.carter.data.mcp.McpToolPermission
+import com.miniichatNext.carter.data.mcp.sameMcpSession
 import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.model.Conversation
 import com.miniichatNext.carter.data.model.MessageSegment
@@ -70,12 +71,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     internal val workspaceStore = WorkspaceStore(app)
     internal val workspaceRepository = WorkspaceRepository(app, workspaceStore)
 
-    fun hasRootfsFor(root: String): Boolean = runCatching {
-        // 与WorkspaceManager.hasRootfs同源：linux/bin/sh存在即可用（文件直查，不经Repository新API）
-        val dir = java.io.File(java.io.File(getApplication<Application>().filesDir, "workspaces"), root)
-        java.io.File(dir, "linux/bin/sh").isFile
-    }.getOrDefault(false)
-    internal val mcpClient = com.miniichatNext.carter.data.mcp.McpClient()
+    fun hasRootfsFor(root: String): Boolean = runCatching { workspaceRepository.canUseRootfs(root) }.getOrDefault(false)
+    internal val mcpClient = com.miniichatNext.carter.data.mcp.McpClient { requested ->
+        mcpStore.snapshot().any { it.enabled && sameMcpSession(it, requested) }
+    }
 
     init {
         BuiltInFileTools.init(
@@ -188,6 +187,16 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     internal val stoppedToolCalls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     init {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                mcpStore.serversFlow.collect { mcpClient.reconcile(it) }
+            } finally {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { mcpClient.close() }
+            }
+        }
+    }
+
+    init {
         viewModelScope.launch {
             store.migrateAssistantId(settings.value.activeAssistantId)
             val loadedSkills = skillStore.refresh()
@@ -249,8 +258,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         // 删除前先切断该对话的生成与pending工具（停止键同款清理），再落盘删除
         if (taskSession?.conversationId == id) stopTaskSession()
         viewModelScope.launch {
+            val deleted = store.snapshot().firstOrNull { it.id == id }?.messages.orEmpty()
             store.delete(id)
             if (_activeId.value == id) _activeId.value = null
+            cleanupGeneratedImages(deleted)
         }
     }
 

@@ -17,6 +17,8 @@ import android.util.Base64
 import android.util.Base64OutputStream
 import androidx.annotation.StringRes
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.util.InputLimitExceeded
+import com.miniichatNext.carter.util.readBounded
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.InputStream
@@ -141,7 +143,10 @@ object AttachmentLoader {
 
         // 图片压缩后再base64
         if (isCompressibleImage(mime, uri)) {
-            val compressed = runCatching { compressAndEncodeImage(resolver, uri) }.getOrNull()
+            val compressed = try { compressAndEncodeImage(resolver, uri) }
+            catch (_: InputLimitExceeded) { throw AttachmentTooLargeException(MAX_ATTACHMENT_BYTES) }
+            catch (interrupted: InterruptedException) { throw interrupted }
+            catch (_: Exception) { null }
             if (compressed != null) {
                 return LoadedAttachment(
                     name = name,
@@ -193,7 +198,7 @@ object AttachmentLoader {
      * 参考rikkahub的File.compressAndEncode
      */
     private fun compressAndEncodeImage(resolver: ContentResolver, uri: Uri): EncodedImage? {
-        val raw = openStream(resolver, uri)?.use { it.readBytes() } ?: return null
+        val raw = openStream(resolver, uri)?.use { it.readBounded(MAX_ATTACHMENT_BYTES.toInt()) } ?: return null
 
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
@@ -211,7 +216,8 @@ object AttachmentLoader {
 
         return try {
             val bos = ByteArrayOutputStream()
-            normalized.compress(Bitmap.CompressFormat.JPEG, IMG_JPEG_QUALITY, bos)
+            if (!normalized.compress(Bitmap.CompressFormat.JPEG, IMG_JPEG_QUALITY, bos)) return null
+            if (bos.size() > MAX_ATTACHMENT_BYTES) throw InputLimitExceeded()
             val jpegBytes = bos.toByteArray()
 
             // 流式base64（避免再复制一份String）

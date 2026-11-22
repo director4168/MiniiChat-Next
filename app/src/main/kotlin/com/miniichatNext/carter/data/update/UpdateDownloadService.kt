@@ -67,7 +67,7 @@ class UpdateDownloadService : Service() {
         if (info == null) { stopSelf(); return START_NOT_STICKY }
         if (cancelRequested) {
             cancelRequested = false
-            UpdateDownloadSession.update(UpdateDownloadSnapshot(info, phase = UpdatePhase.FAILED, message = getString(R.string.update_cancelled)))
+            UpdateDownloadSession.update(UpdateDownloadSnapshot(info, phase = UpdatePhase.CANCELLED, message = getString(R.string.update_cancelled), probes = emptyList()))
             stopSelf(startId)
             return START_NOT_STICKY
         }
@@ -87,7 +87,7 @@ class UpdateDownloadService : Service() {
                 wakeLock = (getSystemService(POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:update").apply { acquire(30 * 60 * 1000L) }
                 download(info)
             } catch (cancel: CancellationException) {
-                snapshot?.let { publish(it.copy(phase = UpdatePhase.FAILED, message = getString(R.string.update_cancelled)), true) }
+                snapshot?.let { publish(it.copy(phase = UpdatePhase.CANCELLED, message = getString(R.string.update_cancelled), probes = emptyList()), true) }
             } catch (failure: UpdateVerificationFailure) {
                 try {
                     val retained = UpdateArtifactCache(this@UpdateDownloadService).retainFailed(failure.file)
@@ -102,12 +102,13 @@ class UpdateDownloadService : Service() {
                 snapshot?.let { publish(it.copy(phase = it.phase.failed(), message = failure.message.orEmpty()), true) }
             } finally {
                 downloader?.cancel()
-                runCatching { UpdateArtifactCache(this@UpdateDownloadService).partial.delete() }
+                if (snapshot?.phase != UpdatePhase.PUBLICATION_FAILED) runCatching { UpdateArtifactCache(this@UpdateDownloadService).partial.delete() }
                 if (wakeLock?.isHeld == true) wakeLock?.release()
                 wakeLock = null
                 withContext(kotlinx.coroutines.NonCancellable + Dispatchers.Main) {
                     stopForeground(STOP_FOREGROUND_REMOVE)
-                    snapshot?.let { getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification(it)) }
+                    snapshot?.takeUnless { it.phase == UpdatePhase.CANCELLED }
+                        ?.let { getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification(it)) }
                     stopSelf()
                 }
             }
@@ -129,7 +130,8 @@ class UpdateDownloadService : Service() {
             return
         }
         val settings = SettingsRepository(this).settings.first()
-        val sources = UpdateDownloadSources.candidates(selectedPackage.downloadUrl, settings.updateNodesEnabled, settings.updateNodes)
+        val nodes = if (settings.updateNodesInvalid) emptyList() else settings.updateNodes
+        val sources = UpdateDownloadSources.candidates(selectedPackage.downloadUrl, settings.updateNodesEnabled, nodes)
         DebugLog.i("Update", "nodesEnabled=${settings.updateNodesEnabled} candidates=${sources.size}")
         val transfer = UpdateSourceDownloader().also { downloader = it }
         val selected = if (sources.size == 1) {
@@ -158,15 +160,16 @@ class UpdateDownloadService : Service() {
             snapshot?.let { publish(it.copy(phase = UpdatePhase.VERIFYING), true) }
             cache.validate(file, info, selectedPackage)
         })
-        var metadata = try { cache.commit(info, selectedPackage) }
-            catch (cancel: CancellationException) { throw cancel }
-            catch (failure: Exception) {
-                if (cache.partial.isFile) throw UpdateVerificationFailure(cache.partial, failure)
-                throw failure
-            }
+        val metadata = try { cache.commit(info, selectedPackage) }
+        catch (cancel: CancellationException) { throw cancel }
+        catch (failure: UpdateVerificationFailure) { throw failure }
+        catch (failure: Exception) {
+            snapshot?.let { publish(it.copy(phase = UpdatePhase.PUBLICATION_FAILED, message = failure.message.orEmpty()), true) }
+            return
+        }
         val location = runCatching { UpdateInstaller.publishToDownloads(this, cache.apk, info.displayVersion(), selectedPackage.abi) }
             .onFailure { DebugLog.w("Update", "publish copy failed: ${it.message}") }.getOrNull()
-        if (location != null) { metadata = metadata.copy(downloadLocation = location); cache.write(metadata) }
+        if (location != null) runCatching { cache.write(metadata.copy(downloadLocation = location)) }
         publish(UpdateDownloadSnapshot(info, phase = UpdatePhase.READY, file = cache.apk, source = selected.key,
             autoInstall = AppForeground.isForeground() && UpdateDownloadSession.visible.value,
             direct = selected.url == selectedPackage.downloadUrl), true)
@@ -195,7 +198,8 @@ class UpdateDownloadService : Service() {
                 " · " + java.lang.String.format(java.util.Locale.ROOT, "%.1f KB/s", state.progress.bytesPerSec / 1024.0)
             UpdatePhase.VERIFYING -> getString(R.string.update_verifying_package)
             UpdatePhase.READY -> getString(R.string.update_download_done_title)
-            UpdatePhase.FAILED, UpdatePhase.PROBE_FAILED, UpdatePhase.VERIFICATION_FAILED -> state.message.take(160)
+            UpdatePhase.CANCELLED -> getString(R.string.update_cancelled)
+            UpdatePhase.FAILED, UpdatePhase.PROBE_FAILED, UpdatePhase.VERIFICATION_FAILED, UpdatePhase.PUBLICATION_FAILED -> state.message.take(160)
         }
         val builder = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.stat_sys_download)
@@ -204,6 +208,8 @@ class UpdateDownloadService : Service() {
                 UpdatePhase.PROBE_FAILED -> getString(R.string.update_probe_failed_title)
                 UpdatePhase.VERIFYING -> getString(R.string.update_check_install_title)
                 UpdatePhase.VERIFICATION_FAILED -> getString(R.string.update_verification_failed_title)
+                UpdatePhase.PUBLICATION_FAILED -> getString(R.string.update_cache_publish_failed)
+                UpdatePhase.CANCELLED -> getString(R.string.update_cancelled)
                 UpdatePhase.READY -> getString(R.string.update_download_done_title)
                 UpdatePhase.FAILED -> getString(R.string.update_download_failed_title)
                 else -> getString(R.string.update_downloading_title, state.info.displayVersion())

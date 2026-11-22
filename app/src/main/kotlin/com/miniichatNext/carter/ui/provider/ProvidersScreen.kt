@@ -103,10 +103,11 @@ fun ProvidersScreen(
     onSelectModel: (String, String) -> Unit,
     onToggleImageOutput: (String, String, Boolean) -> Unit = { _, _, _ -> },
     onReorder: (List<String>) -> Unit = {},
+    scrollState: androidx.compose.foundation.lazy.LazyListState? = null,
 ) {
     var orderedIds by remember { mutableStateOf(providers.map { it.id }) }
     val bounds = remember { mutableStateMapOf<String, Rect>() }
-    val scroll = rememberLazyListState()
+    val scroll = scrollState ?: rememberLazyListState()
     val density = LocalDensity.current.density
     var draggedId by remember { mutableStateOf<String?>(null) }
     val currentProviders by rememberUpdatedState(providers)

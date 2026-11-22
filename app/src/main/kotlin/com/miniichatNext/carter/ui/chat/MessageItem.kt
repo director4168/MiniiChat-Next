@@ -27,9 +27,11 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Icon
-import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -154,6 +156,7 @@ internal fun UserBubble(
         ) {
             if (message.content.isNotEmpty() || message.attachments.isNotEmpty()) {
                 Box {
+                    val hasLink = com.miniichatNext.carter.ui.markdown.containsMarkdownLink(message.content)
                     Box(
                         modifier = Modifier
                             .clipDrawing(
@@ -165,9 +168,9 @@ internal fun UserBubble(
                                 )
                             )
                             .background(MaterialTheme.colorScheme.primary)
-                            .combinedClickable(
-                                onClick = {},
-                                onLongClick = onLongPress
+                            .then(
+                                if (hasLink) Modifier
+                                else Modifier.combinedClickable(onClick = {}, onLongClick = onLongPress)
                             )
                             .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
@@ -180,18 +183,34 @@ internal fun UserBubble(
                                 if (message.content.isNotBlank()) Spacer(Modifier.height(8.dp))
                             }
                             if (message.content.isNotEmpty()) {
-                                // 用户消息同样走markdown渲染；长按可选择复制
-                                SelectionContainer {
-                                    com.miniichatNext.carter.ui.markdown.MarkdownText(
-                                        text = message.content,
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                        onFullscreen = onFullscreen,
-                                    )
-                                }
+                                com.miniichatNext.carter.ui.markdown.MarkdownText(
+                                    text = message.content,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    palette = com.miniichatNext.carter.ui.markdown.BubblePalette.copy(
+                                        link = MaterialTheme.colorScheme.onPrimary,
+                                        inlineCodeFg = MaterialTheme.colorScheme.onPrimary,
+                                        inlineCodeBg = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.18f),
+                                    ),
+                                    onFullscreen = onFullscreen,
+                                    selectable = true,
+                                    selectionColors = TextSelectionColors(
+                                        handleColor = MaterialTheme.colorScheme.onPrimary,
+                                        backgroundColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.30f),
+                                    ),
+                                )
                             }
                         }
                     }
                 }
+            }
+        }
+        if (com.miniichatNext.carter.ui.markdown.containsMarkdownLink(message.content)) {
+            IconButton(onClick = onLongPress, modifier = Modifier.size(26.dp)) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = stringResource(R.string.message_more),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
         Spacer(Modifier.width(8.dp))

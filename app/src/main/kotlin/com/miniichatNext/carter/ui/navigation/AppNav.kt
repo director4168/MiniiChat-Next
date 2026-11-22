@@ -6,6 +6,7 @@
  */
 package com.miniichatNext.carter.ui.navigation
 
+import android.os.Bundle
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.ContentTransform
 import androidx.compose.animation.core.tween
@@ -23,10 +24,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import java.util.UUID
 
 /**
  * 一次导航的目标。
@@ -36,6 +40,7 @@ data class NavKey(
     val route: String,
     val depth: Int = 0,
     val args: Map<String, String> = emptyMap(),
+    val id: String = UUID.randomUUID().toString(),
 )
 
 /**
@@ -51,12 +56,12 @@ class NavController(initialRoute: String) {
     val canPop: Boolean get() = stack.size > 1
 
     fun push(route: String, args: Map<String, String> = emptyMap()) {
-        if (current.route == route) return
+        if (current.route == route && current.args == args) return
         stack.add(NavKey(route, stack.size, args))
     }
 
     fun replace(route: String, args: Map<String, String> = emptyMap()) {
-        if (current.route == route) return
+        if (current.route == route && current.args == args) return
         stack[stack.lastIndex] = NavKey(route, stack.lastIndex, args)
     }
 
@@ -94,22 +99,42 @@ class NavController(initialRoute: String) {
     }
 
     companion object {
-        /** 进程重建后恢复整个返回栈（之前只存了单个screen，栈信息会丢） */
-        val Saver: androidx.compose.runtime.saveable.Saver<NavController, ArrayList<String>> =
+        private val savedArgs = setOf("serverId", "workspaceId", "providerId", "assistantId", "scrollTarget")
+
+        @Suppress("DEPRECATION")
+        val Saver: androidx.compose.runtime.saveable.Saver<NavController, Bundle> =
             androidx.compose.runtime.saveable.Saver(
-                save = { nav -> ArrayList(nav.entries.map { e -> e.route }) },
-                restore = { routes ->
-                    NavController(routes.firstOrNull() ?: "Chat").apply {
-                        routes.drop(1).forEach { push(it) }
+                save = { nav -> Bundle().apply {
+                    putParcelableArrayList("stack", ArrayList(nav.entries.filterNot { it.route == "MermaidPreview" }.map { key ->
+                        Bundle().apply {
+                            putString("route", key.route)
+                            putString("id", key.id)
+                            key.args.filter { (name, value) -> name in savedArgs && value.length <= 256 }.forEach { (name, value) ->
+                                putString("arg:$name", value)
+                            }
+                        }
+                    }))
+                } },
+                restore = { saved ->
+                    val restored = saved.getParcelableArrayList<Bundle>("stack").orEmpty().mapNotNull { entry ->
+                        val route = entry.getString("route") ?: return@mapNotNull null
+                        val id = entry.getString("id") ?: return@mapNotNull null
+                        val args = savedArgs.mapNotNull { name -> entry.getString("arg:$name")?.let { name to it } }.toMap()
+                        NavKey(route, args = args, id = id)
+                    }
+                    NavController("Chat").apply {
+                        if (restored.isNotEmpty()) {
+                            stack.clear()
+                            stack.addAll(restored.mapIndexed { depth, item -> item.copy(depth = depth) })
+                        }
                     }
                 }
             )
+        }
     }
-}
 
 /**
  * 统一的「返回上一级」调度器。
- *
  * 页面可注册**层级内**的返回处理器（例如MCP详情页要先回到列表页而不是退出该模块），
  * 后注册的优先处理；没有任何处理器消费时再由[NavController]弹栈；栈底交回系统。
  *
@@ -243,7 +268,7 @@ object AppNavRegistry {
  * 承载当前页面并播放进入/返回过渡动画。
  *
  * 用[androidx.compose.runtime.saveable.rememberSaveableStateHolder]把每个路由的
- * 组合状态（rememberSaveable/LazyListState等）按路由key隔离保存：push新路由时旧路由
+ * 组合状态（rememberSaveable/LazyListState等）按返回栈条目隔离保存：push新路由时旧路由
  * 的组合被销毁，但其状态由state holder持有；pop回来时状态完整恢复（滚动位置/草稿/编辑态）。
  * 没有这层，AnimatedContent切走时content销毁，回来就是"全新页面"——聊天页滚动位置归零。
  * liveRoutes绕过AnimatedContent的预布局，持续变化的消息只在普通布局中测量和放置。
@@ -257,10 +282,17 @@ fun AppNavHost(
 ) {
     val stateHolder = rememberSaveableStateHolder()
     val current = nav.current
+    val retained = remember { mutableSetOf<String>() }
+    val activeIds = nav.entries.map { it.id }.toSet()
+    SideEffect {
+        (retained - activeIds).forEach(stateHolder::removeState)
+        retained.clear()
+        retained.addAll(activeIds)
+    }
     // 实时页绕过动画容器，进出时也不会保留抽屉关闭后的聊天页作为退场内容。
     if (current.route in liveRoutes) {
         Box(modifier) {
-            stateHolder.SaveableStateProvider(current.route) {
+            stateHolder.SaveableStateProvider(current.id) {
                 content(current)
             }
         }
@@ -271,7 +303,7 @@ fun AppNavHost(
             transitionSpec = { AppNavRegistry.transformFor(initialState, targetState) },
             label = "app-nav",
         ) { key ->
-            stateHolder.SaveableStateProvider(key.route) {
+            stateHolder.SaveableStateProvider(key.id) {
                 content(key)
             }
         }

@@ -29,6 +29,13 @@ internal fun openAllFilesAccessSettings(context: Context): Boolean {
     return candidates.any { context.startSettings(it) }
 }
 
+/** 通知设置页；Android 8+可用，打不开时回退应用详情。 */
+internal fun openNotificationSettings(context: Context): Boolean {
+    val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+    return context.startSettings(intent) || openAppDetailsSettings(context)
+}
+
 /** 应用详情页：低版本ROM上没有专用设置页时的兜底入口。 */
 internal fun openAppDetailsSettings(context: Context): Boolean =
     context.startSettings(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri(context)))

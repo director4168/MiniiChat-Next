@@ -74,7 +74,8 @@ data class ToolInvocation(
     val arguments: String = "",
     val state: String = ToolInvocationState.EXECUTING,
     val result: String = "",
-    val error: String? = null
+    val error: String? = null,
+    val mcpBinding: String? = null,
 ) {
     val argumentsJson: String get() = arguments
     val resultOutput: String get() = result

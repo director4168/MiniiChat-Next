@@ -41,6 +41,14 @@
         android:theme="@style/Theme.MiniiChat"
         android:enableOnBackInvokedCallback="true">
 
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:enabled="true"
+            android:exported="true"
+            android:multiprocess="false"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
+
         <activity
             android:name="com.miniichatNext.carter.MainActivity"
             android:exported="true"
@@ -86,6 +94,10 @@
 
         <service
             android:name=".data.update.UpdateDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+        <service
+            android:name=".data.workspace.RootfsDownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 

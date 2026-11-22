@@ -77,13 +77,13 @@ object DebugLog {
     internal fun isLogExportName(name: String): Boolean =
         name.startsWith("MiniiChat-Next_Log_") && name.endsWith(".zip")
 
-    internal fun pruneStagedExports(shared: File, keep: File? = null, maxFiles: Int = 3): Int {
+    internal fun pruneStagedExports(shared: File, keep: File? = null): Int {
         val cutoff = System.currentTimeMillis() - 24L * 60 * 60 * 1000
         val files = shared.listFiles { file -> file.isFile && isLogExportName(file.name) }
             ?.sortedByDescending { it.lastModified() }
             .orEmpty()
         var removed = 0
-        files.forEachIndexed { index, file ->
+        files.forEach { file ->
             if (file != keep && (file.lastModified() < cutoff)) {
                 if (runCatching { file.delete() }.getOrDefault(false)) removed++
             }

@@ -38,7 +38,7 @@ class ProviderStore(private val context: Context) {
     val providersFlow: Flow<List<ProviderConfig>> =
         context.providersDataStore.data.map { prefs ->
             val raw = prefs[key] ?: return@map emptyList()
-            runCatching { decode(raw) }
+            runCatching { decode(raw, allowInvalidEntries = true) }
                 .getOrDefault(emptyList())
                 // API Key在磁盘上是密文，读出来给上层用之前解密
                 .map(::decryptProvider)
@@ -161,31 +161,26 @@ class ProviderStore(private val context: Context) {
         }
     }
 
-    private fun decode(raw: String): List<ProviderConfig> {
-        val array = json.parseToJsonElement(raw).jsonArray
-        return array.mapNotNull { item ->
-            val obj = item.jsonObject
-            val modelElement = obj["models"]
-            val isLegacyStringList = modelElement is JsonArray &&
-                modelElement.all { it is JsonPrimitive && it.jsonPrimitive.isString }
-            if (modelElement == null || isLegacyStringList) {
-                migrateProvider(obj)
-            } else {
-                runCatching {
-                    json.decodeFromJsonElement(ProviderConfig.serializer(), item)
-                }.getOrNull()
+    private fun decode(raw: String, allowInvalidEntries: Boolean = false): List<ProviderConfig> {
+        return json.parseToJsonElement(raw).jsonArray.mapIndexedNotNull { index, item ->
+            try {
+                val obj = item.jsonObject
+                val models = obj["models"]
+                if (models is JsonArray && models.any { it is JsonPrimitive }) {
+                    val converted = models.map { model ->
+                        if (model is JsonPrimitive && model.isString) {
+                            json.encodeToJsonElement(ModelConfig.serializer(), ModelConfig(modelId = model.content, displayName = model.content))
+                        } else model
+                    }
+                    json.decodeFromJsonElement(ProviderConfig.serializer(), JsonObject(obj + ("models" to JsonArray(converted))))
+                } else {
+                    json.decodeFromJsonElement(ProviderConfig.serializer(), obj)
+                }
+            } catch (error: IllegalArgumentException) {
+                if (!allowInvalidEntries) throw IllegalStateException("Invalid provider configuration at entry ${index + 1}; original retained", error)
+                DebugLog.w("Store", "Skipping invalid provider entry ${index + 1}; original retained")
+                null
             }
         }
-    }
-
-    private fun migrateProvider(obj: JsonObject): ProviderConfig? {
-        return runCatching {
-            val models = obj["models"]?.jsonArray?.mapNotNull { el ->
-                val s = el.jsonPrimitive.content
-                ModelConfig(modelId = s, displayName = s)
-            } ?: emptyList()
-            val base = json.decodeFromJsonElement(ProviderConfig.serializer(), obj)
-            base.copy(models = models)
-        }.getOrNull()
     }
 }

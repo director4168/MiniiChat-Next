@@ -81,6 +81,7 @@ data class ToolSpec(
     val name: String,
     val description: String,
     val inputSchema: String,
+    val mcpBinding: String? = null,
 )
 
 /** Function parameters在各家模型API里都必须是object schema；空schema会被部分模型拒绝。 */
@@ -111,6 +112,7 @@ data class StreamDelta(
     val usage: TokenUsage? = null,
     /** 本轮流式末尾收集到的工具调用（每轮一个final delta） */
     val toolCalls: List<ToolCallDelta> = emptyList(),
+    val outputSnapshot: List<com.miniichatNext.carter.data.model.MessageSegment>? = null,
 )
 
 data class ToolCallDelta(

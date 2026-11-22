@@ -8,6 +8,7 @@ package com.miniichatNext.carter
 
 import com.miniichatNext.carter.data.tools.planTextEdit
 import com.miniichatNext.carter.data.tools.resolveToolPath
+import com.miniichatNext.carter.data.workspace.WorkspaceFileSystem
 import com.miniichatNext.carter.data.tools.resolveRenameTarget
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -47,6 +48,31 @@ class TextEditMatcherTests {
             assertTrue(error?.message.orEmpty().contains("outside allowed roots"))
         } finally { root.deleteRecursively(); outside.deleteRecursively() }
     }
+    @Test fun workspaceFilesRejectTraversalAndSymlinkEscape() {
+        val root = Files.createTempDirectory("workspace-root").toFile()
+        val outside = Files.createTempDirectory("workspace-outside").toFile()
+        try {
+            outside.resolve("secret.txt").writeText("secret")
+            Files.createSymbolicLink(root.resolve("link").toPath(), outside.toPath())
+            val fs = WorkspaceFileSystem()
+            assertTrue(runCatching { fs.list(root, "../outside") }.isFailure)
+            assertTrue(runCatching { fs.list(root, "link") }.isFailure)
+            assertTrue(runCatching { fs.writeText(root, "link/secret.txt", "changed") }.isFailure)
+        } finally { root.deleteRecursively(); outside.deleteRecursively() }
+    }
+
+    @Test fun workspaceGlobUsesRequestedSubdirectory() {
+        val root = Files.createTempDirectory("workspace-glob").toFile()
+        try {
+            root.resolve("one").mkdirs()
+            root.resolve("one/a.kt").writeText("a")
+            root.resolve("two").mkdirs()
+            root.resolve("two/b.kt").writeText("b")
+            val fs = WorkspaceFileSystem()
+            assertEquals(listOf("a.kt"), fs.glob(root, "*.kt", "one").map { it.name })
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun renameCannotTraverseOrReplaceRoot() {
         val root = Files.createTempDirectory("rename-root").toFile()
         try {

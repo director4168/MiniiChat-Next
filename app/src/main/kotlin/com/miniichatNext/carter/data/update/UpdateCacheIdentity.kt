@@ -18,11 +18,3 @@ internal data class CachedUpdate(
     val size: Long,
     val downloadLocation: String? = null,
 )
-
-
-internal object UpdateCacheIdentity {
-    fun matches(cached: CachedUpdate, info: UpdateInfo, selected: UpdatePackage): Boolean =
-        cached.info.remoteVersionCode() == info.remoteVersionCode() && cached.info.versionName == info.versionName &&
-            cached.abi == selected.abi && cached.url == selected.downloadUrl &&
-            cached.expectedSha256.equals(selected.sha256.trim(), true)
-}

@@ -8,7 +8,6 @@ package com.miniichatNext.carter
 
 import com.miniichatNext.carter.data.update.CachedUpdate
 import com.miniichatNext.carter.data.update.UpdateArtifactCache
-import com.miniichatNext.carter.data.update.UpdateCacheIdentity
 import com.miniichatNext.carter.data.update.UpdateDownloadSources
 import com.miniichatNext.carter.data.update.UpdateInfo
 import com.miniichatNext.carter.data.update.UpdateMirrorNode
@@ -66,15 +65,10 @@ class UpdateDownloadTests {
         assertEquals(listOf("tie", "fast", "slow"), UpdateDownloadSources.ranked(candidates).map { it.key })
     }
 
-    @Test fun reuseRequiresVersionAbiUrlAndChecksumIdentity() {
-        val selected = info.packageForDevice(listOf("arm64-v8a"))
-        val cached = CachedUpdate(info, selected.abi, selected.downloadUrl, selected.sha256, "c".repeat(64), 1234)
-        assertTrue(UpdateCacheIdentity.matches(cached, info, selected))
-        assertFalse(UpdateCacheIdentity.matches(cached, info.copy(versionCode = "102"), selected))
-        assertFalse(UpdateCacheIdentity.matches(cached, info.copy(versionName = "v3"), selected))
-        assertFalse(UpdateCacheIdentity.matches(cached, info, info.packageForDevice(listOf("armeabi-v7a"))))
-        assertFalse(UpdateCacheIdentity.matches(cached, info, selected.copy(downloadUrl = selected.downloadUrl + "?changed")))
-        assertFalse(UpdateCacheIdentity.matches(cached, info, selected.copy(sha256 = "d".repeat(64))))
+    @Test fun cancelledTaskIsNotActiveOrClassifiedAsAVerificationFailure() {
+        assertFalse(UpdatePhase.CANCELLED.active)
+        assertFalse(UpdatePhase.CANCELLED.showsProbes)
+        assertEquals(UpdateDialogStage.DOWNLOADING, UpdatePhase.CANCELLED.dialogStage)
     }
 
     private fun withServer(action: (HttpServer, String) -> Unit) {

@@ -70,20 +70,18 @@ object SkillFrontmatterParser {
     }
 
     fun sanitizeName(raw: String): String {
-        val cleaned = raw.trim().lowercase()
+        val cleaned = raw.trim().lowercase(java.util.Locale.ROOT).filterNot(Char::isISOControl)
             .replace(Regex("[\\\\/:*?\"<>|]"), "_")
             .replace(Regex("\\s+"), "_")
-            .trim('_', '.')
+            .take(100).trim('_', '.')
         return cleaned.ifBlank { "skill_${System.currentTimeMillis()}" }
     }
 
     fun resolveSkillDir(skillsRoot: java.io.File, skillName: String): java.io.File? {
-        if (skillName.isBlank()) return null
-        if (skillName == "." || skillName == "..") return null
-        if (skillName.contains('/') || skillName.contains('\\')) return null
+        if (skillName.isBlank() || skillName.startsWith('.') || skillName.any { it == '/' || it == '\\' || it.isISOControl() }) return null
         val canonicalRoot = skillsRoot.canonicalFile
-        val canonicalDir = canonicalRoot.resolve(skillName).canonicalFile
-        if (canonicalDir.parentFile != canonicalRoot) return null
-        return canonicalDir
+        val dir = canonicalRoot.resolve(skillName)
+        if (java.nio.file.Files.isSymbolicLink(dir.toPath())) return null
+        return dir
     }
 }

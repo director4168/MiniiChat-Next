@@ -7,6 +7,7 @@
 package com.miniichatNext.carter.ui.workspace
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,12 +24,14 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,9 +51,7 @@ import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.workspace.WorkspaceRepository
 import com.miniichatNext.carter.data.workspace.WorkspaceStorageArea
 import com.miniichatNext.carter.ui.components.SettingsTopBar
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * 工作区文本文件查看/编辑器.
@@ -70,43 +71,45 @@ fun FileViewerScreen(
     val scope = rememberCoroutineScope()
     val editable = area == WorkspaceStorageArea.FILES
     val fileName = path.substringAfterLast('/').ifBlank { path }
-    val maxBytes = repository.config.maxReadBytes
+    val maxBytes = repository.previewTextLimit(area)
 
     var text by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var saving by remember { mutableStateOf(false) }
     var tooLarge by remember { mutableStateOf(false) }
-    var dirty by remember { mutableStateOf(false) }
+    var original by remember(workspaceId, area, path) { mutableStateOf("") }
+    var discard by remember(workspaceId, area, path) { mutableStateOf(false) }
+    val dirty = text != original
     var loadError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(workspaceId, area, path) {
         loading = true
         tooLarge = false
         loadError = null
-        runCatching {
-            withContext(Dispatchers.IO) {
-                repository.fileSize(workspaceId, area, path)
+        try {
+            if (repository.fileSize(workspaceId, area, path) > maxBytes) tooLarge = true
+            else {
+                val content = repository.readTextForPreview(workspaceId, area, path)
+                original = content
+                text = content
             }
-        }.onSuccess { size ->
-            if (size > maxBytes) {
-                tooLarge = true
-            } else {
-                runCatching {
-                    withContext(Dispatchers.IO) {
-                        repository.readTextForPreview(workspaceId, area, path)
-                    }
-                }.onSuccess { content ->
-                    text = content
-                    dirty = false
-                }.onFailure { t ->
-                    loadError = t.message ?: t::class.simpleName
-                }
-            }
-        }.onFailure { t ->
-            loadError = t.message ?: t::class.simpleName
-        }
-        loading = false
+        } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+        catch (error: Exception) { loadError = error.message.orEmpty() }
+        finally { loading = false }
     }
+
+    val requestBack = {
+        if (!saving) {
+            if (dirty && editable && !loading && loadError == null && !tooLarge) discard = true else onBack()
+        }
+    }
+    BackHandler(onBack = requestBack)
+    if (discard) AlertDialog(
+        onDismissRequest = { discard = false },
+        title = { Text(stringResource(R.string.workspace_file_unsaved)) },
+        confirmButton = { TextButton(onClick = { discard = false; onBack() }) { Text(stringResource(R.string.workspace_file_discard)) } },
+        dismissButton = { TextButton(onClick = { discard = false }) { Text(stringResource(R.string.cancel)) } },
+    )
 
     Column(
         modifier = Modifier
@@ -116,31 +119,24 @@ fun FileViewerScreen(
     ) {
         SettingsTopBar(
             title = fileName,
-            onBack = {
-                if (dirty && editable) {
-                    Toast.makeText(context, R.string.workspace_file_save_failed, Toast.LENGTH_SHORT).show()
-                }
-                onBack()
-            },
+            onBack = requestBack,
             actions = {
                 if (editable && !tooLarge) {
                     IconButton(
-                        enabled = !saving && dirty,
+                        enabled = !saving && dirty && !loading && loadError == null,
                         onClick = {
+                            val content = text
+                            val baseline = original
                             saving = true
                             scope.launch {
-                                val ok = runCatching {
-                                    withContext(Dispatchers.IO) {
-                                        repository.writeText(workspaceId, area, path, text)
-                                    }
-                                }.isSuccess
-                                saving = false
-                                if (ok) {
-                                    dirty = false
+                                try {
+                                    repository.savePreviewText(workspaceId, path, baseline, content)
+                                    original = content
                                     Toast.makeText(context, R.string.workspace_file_save_done, Toast.LENGTH_SHORT).show()
-                                } else {
-                                    Toast.makeText(context, context.getString(R.string.workspace_file_save_failed, ""), Toast.LENGTH_SHORT).show()
-                                }
+                                } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+                                catch (error: Exception) {
+                                    Toast.makeText(context, context.getString(R.string.workspace_file_save_failed, error.message.orEmpty()), Toast.LENGTH_SHORT).show()
+                                } finally { saving = false }
                             }
                         }
                     ) {
@@ -180,9 +176,8 @@ fun FileViewerScreen(
                     value = text,
                     onValueChange = {
                         text = it
-                        dirty = true
                     },
-                    enabled = editable,
+                    readOnly = !editable,
                     modifier = Modifier
                         .fillMaxWidth()
                         .weight(1f)

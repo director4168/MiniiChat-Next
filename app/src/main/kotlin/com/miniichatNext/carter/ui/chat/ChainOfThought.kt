@@ -85,6 +85,8 @@ import com.miniichatNext.carter.data.model.ToolInvocation
 import com.miniichatNext.carter.data.model.ToolInvocationState
 import com.miniichatNext.carter.data.tools.ClarificationParser
 import com.miniichatNext.carter.data.tools.ClarificationQuestion
+import com.miniichatNext.carter.ui.markdown.MarkdownText
+import com.miniichatNext.carter.ui.theme.toolRiskContainer
 
 /** 一条思考步骤：模型推理或一次工具调用 */
 sealed interface ThoughtStep {
@@ -271,7 +273,14 @@ private fun ToolStep(
     onApprove: ((ToolInvocation, String?) -> Unit)?,
     onReject: ((ToolInvocation) -> Unit)?,
 ) {
-    var expand by remember { mutableStateOf(false) }
+    // 生图成功后自动展开，图片才有机会直接出现在对话里；用户手动收起后状态保持。
+    var expand by remember(invocation.callId, invocation.state) {
+        mutableStateOf(
+            invocation.toolName == "image_generate" &&
+                invocation.state == ToolInvocationState.SUCCESS &&
+                invocation.result.isNotBlank()
+        )
+    }
     val isPending = invocation.state == ToolInvocationState.PENDING_APPROVAL
     val isRunning = invocation.state == ToolInvocationState.EXECUTING
     val isSuccess = invocation.state == ToolInvocationState.SUCCESS
@@ -293,6 +302,7 @@ private fun ToolStep(
         isRejected -> stringResource(R.string.tool_status_rejected)
         else -> invocation.state
     }
+    val riskColor = toolRiskContainer(invocation.toolName)
 
     StepRow(
         icon = {
@@ -342,6 +352,16 @@ private fun ToolStep(
             }
         }
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .then(if (riskColor != null) Modifier.background(riskColor) else Modifier)
+                .padding(
+                    horizontal = if (riskColor != null) 8.dp else 0.dp,
+                    vertical = if (riskColor != null) 6.dp else 0.dp,
+                )
+        ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -375,16 +395,31 @@ private fun ToolStep(
             Spacer(Modifier.height(6.dp))
             CodeBlock(stringResource(R.string.tool_args_label), invocation.arguments.ifBlank { noArgsLabel })
             Spacer(Modifier.height(6.dp))
-            CodeBlock(
-                label = stringResource(R.string.tool_result_label),
-                text = when {
-                    isRunning -> stringResource(R.string.tool_result_running)
-                    invocation.error != null -> stringResource(R.string.tool_result_error, invocation.error)
-                    invocation.result.isNotBlank() -> invocation.result
-                    isPending -> stringResource(R.string.tool_result_pending)
-                    else -> stringResource(R.string.tool_result_none)
-                }
-            )
+            val resultText = when {
+                isRunning -> stringResource(R.string.tool_result_running)
+                invocation.error != null -> stringResource(R.string.tool_result_error, invocation.error)
+                invocation.result.isNotBlank() -> invocation.result
+                isPending -> stringResource(R.string.tool_result_pending)
+                else -> stringResource(R.string.tool_result_none)
+            }
+            if (invocation.toolName == "image_generate" &&
+                invocation.state == ToolInvocationState.SUCCESS &&
+                invocation.result.isNotBlank()) {
+                Text(
+                    text = stringResource(R.string.tool_result_label),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                MarkdownText(
+                    text = resultText,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+            } else {
+                CodeBlock(
+                    label = stringResource(R.string.tool_result_label),
+                    text = resultText,
+                )
+            }
         }
 
         if (isPending && (onApprove != null || onReject != null)) {
@@ -410,6 +445,7 @@ private fun ToolStep(
                 }
             }
         }
+        }
     }
 }
 
@@ -421,6 +457,7 @@ private fun CodeBlock(label: String, text: String) {
         lineHeight = 16.sp
     )
     val lines = remember(text) { text.split('\n') }
+    val gutterWidth = ((lines.size.toString().length * 8) + 18).dp
     Column {
         Text(
             text = label,
@@ -443,6 +480,7 @@ private fun CodeBlock(label: String, text: String) {
             val gutterFg = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             Column(
                 modifier = Modifier
+                    .width(gutterWidth)
                     .drawBehind {
                         val x = size.width - 0.5.dp.toPx()
                         drawLine(

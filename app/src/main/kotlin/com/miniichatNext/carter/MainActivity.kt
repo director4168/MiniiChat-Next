@@ -36,7 +36,10 @@ class MainActivity : ComponentActivity() {
         if (newBase == null) { super.attachBaseContext(null); return }
         val lang = newBase.getSharedPreferences("locale_cache", MODE_PRIVATE)
             .getString("language", "system") ?: "system"
-        val ctx = if (lang == "system") newBase else applyLocale(newBase, lang)
+        val ctx = if (lang == "system") {
+            android.content.res.Resources.getSystem().configuration.locales.get(0)?.let(Locale::setDefault)
+            newBase
+        } else applyLocale(newBase, lang)
         super.attachBaseContext(ctx)
     }
 

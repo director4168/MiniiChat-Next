@@ -10,17 +10,26 @@ import com.miniichatNext.carter.data.mcp.McpToolResult
 import com.miniichatNext.carter.data.mcp.McpTool
 import android.content.Context
 import com.miniichatNext.carter.util.AppJson
+import com.miniichatNext.carter.util.copyBounded
+import com.miniichatNext.carter.util.deleteTreeNoFollow
+import com.miniichatNext.carter.util.readBounded
+import com.miniichatNext.carter.util.writeAtomicFile
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.data.workspace.readResult
-import kotlinx.serialization.json.Json
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.BufferedReader
 import java.io.File
-import java.io.InputStreamReader
+import java.nio.ByteBuffer
+import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.util.concurrent.TimeUnit
 
 /**
@@ -28,6 +37,9 @@ import java.util.concurrent.TimeUnit
  * 路径限制在允许的根目录内（外部存储+应用私有目录）。
  */
 object BuiltInFileTools {
+
+    private val mutations = Mutex()
+    private val mutatingTools = setOf("file_write", "file_append", "file_delete", "file_move", "file_copy", "file_rename", "file_mkdir", "file_edit")
 
     private val json get() = AppJson.json
 
@@ -61,7 +73,7 @@ object BuiltInFileTools {
 
     /** 工具名列表（给权限页计数、isBuiltIn等无文案场景用） */
     val toolNames: List<String> = listOf(
-        "interactive_clarification", "execute_shell", "browser_fetch", "image_generate",
+        "interactive_clarification", "execute_shell", "execute_shell_shizuku", "execute_shell_root", "browser_fetch", "image_generate",
         "file_list", "file_read", "file_write", "file_append", "file_delete",
         "file_move", "file_copy", "file_rename", "file_mkdir",
         "file_exists", "file_search", "file_info", "file_edit"
@@ -88,6 +100,16 @@ object BuiltInFileTools {
         tool(
             "execute_shell",
             context.getString(R.string.builtin_tool_shell_desc),
+            context.getString(R.string.builtin_tool_shell_schema)
+        ),
+        tool(
+            "execute_shell_shizuku",
+            context.getString(R.string.builtin_tool_shell_shizuku_desc),
+            context.getString(R.string.builtin_tool_shell_schema)
+        ),
+        tool(
+            "execute_shell_root",
+            context.getString(R.string.builtin_tool_shell_root_desc),
             context.getString(R.string.builtin_tool_shell_schema)
         ),
         tool(
@@ -161,22 +183,36 @@ object BuiltInFileTools {
 
     fun isBuiltIn(name: String): Boolean = toolNames.contains(name)
 
-    /** 默认免审批的工具（询问类工具不阻塞，用户在选项卡片上交互） */
-    /** 默认免审批：询问类工具+只读网络工具（browser_fetch）不阻塞 */
+    /** 默认免审批：询问类工具、只读网络工具（browser_fetch）与生图工具不阻塞 */
     fun defaultRequireApproval(name: String): Boolean {
         if (name in SpecialTools.names) return SpecialTools.defaultRequireApproval(name)
-        return name != "interactive_clarification" && name != "browser_fetch"
+        if (name == "execute_shell_shizuku" || name == "execute_shell_root") return true
+        return name != "interactive_clarification" && name != "browser_fetch" && name != "image_generate"
     }
     fun hasTool(name: String): Boolean = isBuiltIn(name)
 
-    fun execute(context: Context, name: String, argumentsJson: String): McpToolResult = runCatching {
+    suspend fun execute(context: Context, name: String, argumentsJson: String): McpToolResult = runCatching {
         val args = if (argumentsJson.isBlank()) JsonObject(emptyMap())
         else json.parseToJsonElement(argumentsJson).jsonObject
-        when (name) {
+        if (name == "browser_fetch") return@runCatching BrowserTools.execute(context, args)
+        suspend fun perform() = kotlinx.coroutines.runInterruptible(kotlinx.coroutines.Dispatchers.IO) { executeLocal(context, name, args) }
+        if (name in mutatingTools) mutations.withLock { perform() } else perform()
+    }.getOrElse { e ->
+        if (e is kotlinx.coroutines.CancellationException || e is InterruptedException || e is Error) throw e
+        DebugLog.e("BuiltInTools", "execute $name failed: ${e.message}", e)
+        val error = if (e.message?.startsWith("path is outside allowed roots:") == true) {
+            context.getString(R.string.builtin_path_outside_roots)
+        } else e.message ?: "error"
+        McpToolResult(ok = false, content = "", error = error)
+    }
+
+    private fun executeLocal(context: Context, name: String, args: JsonObject): McpToolResult {
+        return when (name) {
             in SpecialTools.names -> SpecialTools.execute(context, name, args)
             "interactive_clarification" -> interactiveClarification(context, args)
-            "browser_fetch" -> BrowserTools.execute(context, args)
             "execute_shell" -> executeShell(context, args)
+            "execute_shell_shizuku" -> executeShellWith(context, args, ShellMode.SHIZUKU)
+            "execute_shell_root" -> executeShellWith(context, args, ShellMode.ROOT)
             "file_list" -> fileList(args)
             "file_read" -> fileRead(args)
             "file_write" -> fileWrite(args, append = false)
@@ -192,17 +228,11 @@ object BuiltInFileTools {
             "file_info" -> fileInfo(args)
             else -> McpToolResult(ok = false, content = "", error = "unknown builtin tool: $name")
         }
-    }.getOrElse { e ->
-        if (e is InterruptedException) throw e
-        DebugLog.e("BuiltInTools", "execute $name failed: ${e.message}", e)
-        val error = if (e.message?.startsWith("path is outside allowed roots:") == true) {
-            context.getString(R.string.builtin_path_outside_roots)
-        } else e.message ?: "error"
-        McpToolResult(ok = false, content = "", error = error)
     }
 
     private fun executeShell(context: Context, args: JsonObject): McpToolResult {
         val script = requireArg(args, "script")
+        if (containsPrivilegedShellCommand(script)) return fail(context.getString(R.string.builtin_shell_su_forbidden))
         val timeoutSec = (arg(args, "timeout_seconds")?.toLongOrNull() ?: 30L).coerceIn(1L, 600L)
         val tmpDir = File(appFilesDir ?: File("/data/local/tmp"), "scripts").apply { mkdirs() }
         val scriptFile = File.createTempFile("run_", ".sh", tmpDir)
@@ -223,6 +253,39 @@ object BuiltInFileTools {
             fail(context.getString(R.string.builtin_shell_failed, e.message.orEmpty()))
         } finally {
             runCatching { scriptFile.delete() }
+        }
+    }
+
+    private fun containsPrivilegedShellCommand(script: String): Boolean =
+        Regex("""(^|[;&|]\s*)(?:[^\s;&|]*/)*(su|sudo)(\s|$)""", RegexOption.MULTILINE)
+            .containsMatchIn(script)
+
+    private enum class ShellMode { SHIZUKU, ROOT }
+
+    private fun executeShellWith(context: Context, args: JsonObject, mode: ShellMode): McpToolResult {
+        val script = requireArg(args, "script")
+        val timeoutSec = (arg(args, "timeout_seconds")?.toLongOrNull() ?: 30L).coerceIn(1L, 600L)
+        return try {
+            val result = when (mode) {
+                ShellMode.SHIZUKU -> {
+                    if (!ShellAccess.isShizukuAvailable()) return fail(context.getString(R.string.builtin_shell_shizuku_unavailable))
+                    if (!ShellAccess.isShizukuGranted()) return fail(context.getString(R.string.builtin_shell_shizuku_denied))
+                    ShellAccess.executeShizuku(context, script, timeoutSec)
+                }
+                ShellMode.ROOT -> {
+                    if (!ShellAccess.isRootAvailable()) return fail(context.getString(R.string.builtin_shell_root_unavailable))
+                    ShellAccess.executeRoot(script, timeoutSec)
+                }
+            }
+            if (result.timedOut) return fail(context.getString(R.string.builtin_shell_timeout, timeoutSec))
+            val output = listOf(result.stdout, result.stderr).filter { it.isNotBlank() }
+                .joinToString("\n").trim().trimFragment(MAX_TOOL_OUTPUT_CHARS)
+            if (result.exitCode == 0) ok(output.ifBlank { context.getString(R.string.builtin_shell_no_output) })
+            else fail(context.getString(R.string.builtin_shell_exit, result.exitCode, output))
+        } catch (e: InterruptedException) {
+            throw e
+        } catch (e: Exception) {
+            fail(context.getString(R.string.builtin_shell_failed, e.message.orEmpty()))
         }
     }
 
@@ -255,7 +318,7 @@ object BuiltInFileTools {
         val f = safeFile(requireArg(args, "path"))
         if (!f.exists()) return fail("not found: ${f.path}")
         if (!f.isFile) return fail("not a file: ${f.path}")
-        val max = arg(args, "max_bytes")?.toIntOrNull() ?: DEFAULT_MAX_READ_BYTES
+        val max = (arg(args, "max_bytes")?.toIntOrNull() ?: DEFAULT_MAX_READ_BYTES).coerceIn(1, MAX_TEXT_FILE_BYTES)
         val size = f.length()
         if (size > max) {
             return fail(
@@ -263,48 +326,89 @@ object BuiltInFileTools {
                     "Read parts with execute_shell (head / tail / grep), or pass a larger max_bytes."
             )
         }
-        return ok(String(f.readBytes(), Charsets.UTF_8))
+        return ok(Files.newInputStream(f.toPath(), NOFOLLOW_LINKS).use { it.readBounded(max).toString(Charsets.UTF_8) }.trimFragment(MAX_TOOL_OUTPUT_CHARS))
     }
 
     private fun fileWrite(args: JsonObject, append: Boolean): McpToolResult {
-        val f = safeFile(requireArg(args, "path"))
+        val path = requireArg(args, "path")
+        val file = safeFile(path)
         val content = arg(args, "content") ?: ""
-        f.parentFile?.mkdirs()
-        if (append) f.appendText(content) else f.writeText(content)
-        return ok("${if (append) "appended" else "written"} ${content.length} chars to ${f.path}")
+        val bytes = content.toByteArray(Charsets.UTF_8)
+        require(bytes.size <= MAX_TEXT_FILE_BYTES) { "Content is too large" }
+        file.parentFile?.mkdirs()
+        val previous = if (append && file.exists()) readEditableFile(file) else null
+        if (append) require((previous?.size ?: 0) + bytes.size <= MAX_TEXT_FILE_BYTES) { "File is too large" }
+        writeAtomicFile(file, beforeCommit = {
+            require(safeFile(path) == file) { "File path changed" }
+            if (append) {
+                val unchanged = if (previous == null) !file.exists() else readEditableFile(file).contentEquals(previous)
+                require(unchanged) { "File changed while appending" }
+            }
+        }) { staged ->
+            staged.outputStream().use { out -> previous?.let { out.write(it) }; out.write(bytes) }
+        }
+        return ok("${if (append) "appended" else "written"} ${content.length} chars to ${file.path}")
     }
 
     private fun fileDelete(args: JsonObject): McpToolResult {
-        val f = safeFile(requireArg(args, "path"))
-        if (!f.exists()) return fail("not found: ${f.path}")
-        val deleted = if (f.isDirectory) f.deleteRecursively() else f.delete()
-        return if (deleted) ok("deleted: ${f.path}") else fail("delete failed: ${f.path}")
+        val file = safeFile(requireArg(args, "path"))
+        require(allowedRoots().none { it == file }) { "Refusing to delete an allowed root" }
+        if (!file.exists()) return fail("not found: ${file.path}")
+        return if (deleteTreeNoFollow(file)) ok("deleted: ${file.path}") else fail("delete failed: ${file.path}")
     }
 
     private fun fileMoveOrCopy(args: JsonObject, copy: Boolean): McpToolResult {
         val from = safeFile(requireArg(args, "from"))
-        val to = safeFile(requireArg(args, "to"))
-        if (!from.exists()) return fail("source not found: ${from.path}")
-        val target = if (to.isDirectory) File(to, from.name) else to
+        val directoryOrTarget = safeFile(requireArg(args, "to"))
+        val target = if (directoryOrTarget.isDirectory) File(directoryOrTarget, from.name) else directoryOrTarget
+        require(!Files.isSymbolicLink(target.toPath()) && safeFile(target.path) == target) { "Invalid destination" }
+        require(from != target && allowedRoots().none { it == from || it == target }) { "Source and destination must be distinct and not roots" }
+        require(from.exists() && !target.toPath().startsWith(from.toPath())) { "Invalid source or destination" }
         target.parentFile?.mkdirs()
-        return if (copy) {
-            if (from.isDirectory) from.copyRecursively(target, overwrite = true)
-            else from.copyTo(target, overwrite = true)
-            ok("copied ${from.path} -> ${target.path}")
-        } else {
-            if (from.isDirectory) {
-                if (!from.renameTo(target)) {
-                    from.copyRecursively(target, overwrite = true)
-                    from.deleteRecursively()
+        if (!copy) {
+            try {
+                Files.move(from.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+                return ok("moved ${from.path} -> ${target.path}")
+            } catch (failure: java.nio.file.AtomicMoveNotSupportedException) {
+                if (from.isDirectory) return fail("Directory move across filesystems is not supported")
+            }
+        }
+        if (from.isDirectory) {
+            require(!target.exists()) { "Destination directory already exists" }
+            val staged = Files.createTempDirectory(requireNotNull(target.parentFile).toPath(), ".pending-copy-").toFile()
+            try {
+                var count = 0
+                var total = 0L
+                Files.walk(from.toPath(), 64).use { stream ->
+                    for (entry in stream.iterator().asSequence()) {
+                        require(++count <= 20_000 && !Files.isSymbolicLink(entry)) { "Directory copy limit or unsupported entry" }
+                        val dest = staged.toPath().resolve(from.toPath().relativize(entry)).toFile()
+                        when {
+                            Files.isDirectory(entry, NOFOLLOW_LINKS) -> {
+                                require(entry == from.toPath() || from.toPath().relativize(entry).nameCount < 64) { "Directory copy depth limit" }
+                                Files.createDirectories(dest.toPath())
+                            }
+                            Files.isRegularFile(entry, NOFOLLOW_LINKS) -> {
+                                total += Files.newInputStream(entry, NOFOLLOW_LINKS).use { input ->
+                                    dest.outputStream().use { input.copyBounded(it, MAX_COPY_BYTES - total) }
+                                }
+                            }
+                            else -> error("Unsupported directory entry")
+                        }
+                    }
                 }
-            } else {
-                if (!from.renameTo(target)) {
-                    from.copyTo(target, overwrite = true)
-                    from.delete()
+                Files.move(staged.toPath(), target.toPath())
+            } finally { runCatching { deleteTreeNoFollow(staged) } }
+        } else {
+            require(Files.isRegularFile(from.toPath(), NOFOLLOW_LINKS)) { "Not a regular file" }
+            writeAtomicFile(target) { staged ->
+                Files.newInputStream(from.toPath(), NOFOLLOW_LINKS).use { input ->
+                    staged.outputStream().use { input.copyBounded(it, MAX_COPY_BYTES) }
                 }
             }
-            ok("moved ${from.path} -> ${target.path}")
         }
+        if (!copy && !Files.deleteIfExists(from.toPath())) return fail("Copied, but source was not removed: ${from.path}")
+        return ok("${if (copy) "copied" else "moved"} ${from.path} -> ${target.path}")
     }
 
     private fun fileRename(args: JsonObject): McpToolResult {
@@ -361,31 +465,32 @@ object BuiltInFileTools {
         return ok(sb.toString())
     }
 
-    /**
-     * 精确编辑（参考rikkahub TextReplacers三级回退）：
-     * 1) exact——精确子串匹配（非重叠）
-     * 2) line_trimmed——逐行trim后比较（容忍缩进/行尾空白/CRLF）
-     * 3) block_anchor——首尾两行锚定+中间任意（大块替换）
-     * replace_all=false时要求恰好1处命中（多处报错让模型缩小上下文）
-     */
+    private fun readEditableFile(file: File): ByteArray {
+        require(Files.isRegularFile(file.toPath(), NOFOLLOW_LINKS) && file.length() <= MAX_TEXT_FILE_BYTES) { "Not a regular text file or file too large" }
+        return Files.newInputStream(file.toPath(), NOFOLLOW_LINKS).use { it.readBounded(MAX_TEXT_FILE_BYTES) }
+    }
+
     private fun fileEdit(args: JsonObject): McpToolResult {
-        val f = safeFile(requireArg(args, "path"))
+        val path = requireArg(args, "path")
+        val file = safeFile(path)
         val oldText = requireArg(args, "old_text")
         val newText = arg(args, "new_text") ?: ""
         val replaceAll = arg(args, "replace_all")?.toBooleanStrictOrNull() ?: false
-        if (!f.isFile) return fail("not a file: ${f.path}")
-        val content = runCatching { f.readText() }.getOrElse { return fail("read failed: ${it.message}") }
+        val original = readEditableFile(file)
+        val content = Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(original)).toString()
         val plan = planTextEdit(content, oldText, newText, replaceAll)
         plan.error?.let { return fail(it) }
         if (plan.matches.isEmpty()) return fail("old_text produced no edit")
+        val length = content.length.toLong() + plan.matches.sumOf { it.replacement.length.toLong() - (it.endExclusive - it.start) }
+        require(length <= MAX_TEXT_FILE_BYTES) { "Edited text is too large" }
         val edited = StringBuilder(content)
-        plan.matches.asReversed().forEach { match ->
-            edited.replace(match.start, match.endExclusive, match.replacement)
-        }
-        return runCatching {
-            f.writeText(edited.toString())
-            ok("edited ${plan.matches.size} location(s) in ${f.path}")
-        }.getOrElse { fail("write failed: ${it.message}") }
+        plan.matches.asReversed().forEach { match -> edited.replace(match.start, match.endExclusive, match.replacement) }
+        val bytes = edited.toString().toByteArray(Charsets.UTF_8)
+        require(bytes.size <= MAX_TEXT_FILE_BYTES) { "Edited text is too large" }
+        writeAtomicFile(file, beforeCommit = {
+            require(safeFile(path) == file && readEditableFile(file).contentEquals(original)) { "File changed during edit" }
+        }) { it.writeBytes(bytes) }
+        return ok("edited ${plan.matches.size} location(s) in ${file.path}")
     }
 
     private fun fileInfo(args: JsonObject): McpToolResult {
@@ -415,6 +520,9 @@ object BuiltInFileTools {
         if (length <= maxChars) this
         else take(maxChars * 3 / 4) + "\n...[truncated ${length - maxChars * 3 / 4} chars]..."
 }
+
+private const val MAX_TEXT_FILE_BYTES = 2 * 1024 * 1024
+private const val MAX_COPY_BYTES = 128L * 1024 * 1024
 
 const val DEFAULT_MAX_READ_BYTES = 256 * 1024
 const val MAX_TOOL_OUTPUT_CHARS = 32 * 1024

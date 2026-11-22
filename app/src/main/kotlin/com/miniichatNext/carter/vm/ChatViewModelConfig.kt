@@ -204,16 +204,10 @@ internal fun ChatViewModel.updateUserProfile(transform: (UserProfile) -> UserPro
 }
 
 internal fun ChatViewModel.saveSkill(skill: Skill) {
-    viewModelScope.launch { skillStore.upsert(skill) }
-}
-
-internal fun ChatViewModel.saveSkillFiles(name: String, files: Map<String, ByteArray>) {
     viewModelScope.launch {
-        if (!skillStore.saveSkillFiles(name, files)) {
-            _error.value = getApplication<Application>().getString(com.miniichatNext.carter.R.string.skill_import_failed_empty)
-        } else {
-            skillStore.refresh()
-        }
+        try { skillStore.upsert(skill) }
+        catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+        catch (error: Exception) { setError(getApplication<Application>().getString(R.string.error_generic, error.message.orEmpty())) }
     }
 }
 

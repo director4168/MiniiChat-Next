@@ -18,7 +18,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 
 /**
- * 全局唯一JSON解析器（第一百二十一轮）。
+ * 全局唯一JSON解析器
  *
  * 之前每个文件各自`Json { ignoreUnknownKeys=true }`（15+处重复），配置漂移
  * （有的encodeDefaults=true有的false）。现在全项目统一从这里拿：

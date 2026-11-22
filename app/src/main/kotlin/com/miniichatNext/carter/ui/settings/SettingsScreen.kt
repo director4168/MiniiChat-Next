@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Hub
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Tune
@@ -97,6 +98,7 @@ fun SettingsScreen(
     onOpenMcp: () -> Unit = {},
     onOpenBuiltInTools: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
+    onOpenPermissions: () -> Unit = {},
     // 外部传入的滚动状态（AppRoot用rememberSaveable持有，跳转到关于再返回时保留位置）
     scrollState: ScrollState? = null,
     // 非空时滚到对应配置区（如"aux"=辅助模型区，从错误toast的"管理"按钮进入）
@@ -371,13 +373,6 @@ fun SettingsScreen(
                         providers = providers,
                         onPick = { ref -> onChange { it.copy(imageGenerationModel = ref) } },
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(stringResource(R.string.aux_image_prefer_conversation), modifier = Modifier.weight(1f))
-                        Switch(checked = settings.imageGenerationPreferConversation,
-                            onCheckedChange = { enabled -> onChange { it.copy(imageGenerationPreferConversation = enabled) } })
-                    }
-                    Text(stringResource(R.string.aux_image_prefer_hint), style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(8.dp))
                     // OCR触发模式三态：auto=仅纯文本模型/always=视觉模型也附加/off=禁用
                     Column(modifier = Modifier.padding(horizontal = 4.dp)) {
@@ -476,6 +471,13 @@ fun SettingsScreen(
                         title = stringResource(R.string.backup_title),
                         subtitle = stringResource(R.string.backup_subtitle),
                         onClick = onOpenBackup,
+                    )
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
+                    SettingsNavRow(
+                        icon = Icons.Default.Security,
+                        title = stringResource(R.string.permissions_title),
+                        subtitle = stringResource(R.string.permissions_settings_desc),
+                        onClick = onOpenPermissions,
                     )
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
                     // 用系统文件管理器直接打开应用私有目录（走本应用的DocumentsProvider）

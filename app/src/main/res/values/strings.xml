@@ -11,6 +11,7 @@
     <string name="hint_input">Message MiniiChat Next…</string>
     <string name="empty_title">Hi, I\'m MiniiChat Next</string>
     <string name="empty_subtitle">An open-source LLM client. You bring your own API key.</string>
+    <string name="message_more">More</string>
     <string name="copy">Copy</string>
     <string name="generic_delete_confirm">Delete \"%1$s\"? This action cannot be undone.</string>
     <string name="open_external_failed">Cannot open: %1$s</string>
@@ -432,6 +433,7 @@
     <string name="workspace_cat_execute_desc">Run shell commands in the workspace. Approval required by default.</string>
     <string name="workspace_terminal_unbound_reason">This conversation has no workspace bound. Bind one in + menu → Workspace first.</string>
     <string name="workspace_terminal_not_installed_reason">This workspace is not installed or is broken. Install or repair it first.</string>
+    <string name="workspace_rootfs_unsupported_abi">This build does not include a compatible workspace runtime.</string>
     <string name="workspace_shell_compat_mode">Compatibility mode (only if issues occur)</string>
     <string name="workspace_run">Run</string>
     <string name="workspace_hint">Install and manage workspaces</string>
@@ -477,8 +479,7 @@
 
     <!-- Built-in tool groups -->
     <string name="mcp_tools_count">%1$d tools</string>
-    <string name="builtin_group_ask_desc">Ask the user a question and wait for their choice</string>
-    <string name="builtin_group_shell_desc">Run shell commands in the app sandbox</string>
+    <string name="builtin_group_shell_desc">Run shell commands locally with normal or elevated privileges</string>
     <string name="builtin_group_file_io_desc">Read, write and precisely edit text files</string>
     <string name="builtin_group_file_manage_desc">List, move, copy, rename and delete files or directories</string>
     <string name="builtin_group_search_desc">Search file names, contents and look up file info</string>
@@ -488,13 +489,18 @@
     <string name="builtin_group_web_desc">Fetch web pages and return raw content to the AI</string>
     <string name="builtin_group_workspace">Workspace</string>
     <string name="builtin_group_workspace_desc">Tools operating in the assistant-bound workspace Rootfs (shell, files, search)</string>
-    <string name="builtin_group_ask">Ask user</string>
-    <string name="builtin_group_shell">Shell terminal</string>
+    <string name="builtin_group_shell">Shell</string>
     <string name="builtin_group_file_io">File read / write</string>
     <string name="builtin_group_file_manage">File &amp; directory management</string>
     <string name="builtin_group_search">Search &amp; info</string>
     <string name="builtin_group_special">Device tools</string>
     <string name="builtin_group_special_desc">Time, clipboard and calendar tools</string>
+    <string name="builtin_coarse_local">Local &amp; files</string>
+    <string name="builtin_coarse_local_desc">Shell, file read/write, file management and search</string>
+    <string name="builtin_coarse_extended">Extensions</string>
+    <string name="builtin_coarse_extended_desc">Workspace, browser, device tools and other capabilities</string>
+    <string name="builtin_group_other">Other</string>
+    <string name="builtin_group_other_desc">Image model calls, device tools and clarification</string>
     <string name="mcp_builtin_group_count">Built-in tools</string>
     <string name="mcp_builtin_search_hint">Search tools (name or description)</string>
     <string name="mcp_builtin_search_empty">No matching tools</string>
@@ -528,6 +534,10 @@
     <string name="workspace_name_invalid">Invalid or blank name</string>
     <string name="workspace_name_exists">A workspace with this name already exists</string>
     <string name="workspace_new">New workspace</string>
+    <string name="workspace_disabled_title">Disabled</string>
+    <string name="workspace_disabled_reason">This is a 32-bit build. The workspace PRoot runtime requires a 64-bit device and the 64-bit package.</string>
+    <string name="workspace_disabled_version">%1$s (%2$d) %3$s</string>
+    <string name="workspace_disabled_ribbon">Disabled</string>
     <string name="workspace_empty_title">No workspaces yet</string>
     <string name="workspace_status_ready">Environment ready</string>
     <string name="workspace_status_installing">Installing</string>
@@ -536,6 +546,16 @@
     <string name="workspace_install_done">Installed</string>
     <string name="workspace_install_failed">Install failed: %1$s</string>
     <string name="workspace_installing">Installing…</string>
+    <string name="workspace_rootfs_notification_channel">Rootfs download</string>
+    <string name="workspace_rootfs_notification_channel_desc">Workspace Rootfs download and extraction progress</string>
+    <string name="workspace_rootfs_notification_title">Installing workspace environment</string>
+    <string name="workspace_rootfs_notification_progress">Downloading %1$dMB / %2$dMB</string>
+    <string name="workspace_rootfs_notification_downloading">Downloading %1$dMB</string>
+    <string name="workspace_rootfs_notification_extracting">Extracting Rootfs…</string>
+    <string name="workspace_rootfs_notification_finished">Installation complete</string>
+    <string name="workspace_rootfs_notification_waiting">Preparing download…</string>
+    <string name="workspace_rootfs_download_dialog_title">Downloading Rootfs</string>
+    <string name="workspace_rootfs_download_dialog_message">Keep the app in the foreground; the download continues automatically. Closing this dialog cancels it.</string>
     <string name="workspace_downloading_total">Downloading %1$dMB / %2$dMB</string>
     <string name="workspace_downloading">Downloading %1$dMB</string>
     <string name="workspace_extracting">Extracting: %1$d entries  %2$s</string>
@@ -609,6 +629,7 @@
     <string name="update_cancel_download">Cancel download</string>
     <string name="update_nodes_enabled">Use download nodes</string>
     <string name="update_nodes_edit">Edit download nodes</string>
+    <string name="update_saved_nodes_invalid">Saved nodes are invalid. Edit or reset them to re-enable mirrors.</string>
     <string name="update_nodes_count">%1$d enabled / %2$d nodes</string>
     <string name="update_node_add">Add node</string>
     <string name="update_node_edit">Edit node</string>
@@ -672,7 +693,7 @@
     <string name="attachment_list_not_inlined">Not inlined: %1$s</string>
     <string name="common_enum_separator">", "</string>
     <string name="common_note_separator">"; "</string>
-    <string name="agent_tools_hint">\n\n# Agent Tools\nYou may call tools when appropriate. Rules:\n- Only call a tool when the user clearly needs it; don\'t call tools just to appear helpful\n- If the user\'s intent is unclear, ask first instead of blindly listing directories\n- Never call the same tool twice in one request\n- Always pass concrete argument values\n</string>
+    <string name="agent_tools_hint">\n\n# Agent Tools\nYou may call tools when appropriate. Rules:\n- Only call a tool when the user clearly needs it; don\'t call tools just to appear helpful\n- If the user\'s intent is unclear, ask first instead of blindly listing directories\n- Never call the same tool twice in one request\n- Always pass concrete argument values\n- When the user asks for an image, call the image_generate tool, which uses the configured image generation model\n</string>
     <string name="workspace_dialog_hint">Pick the workspace for this conversation; if none is selected, no workspace tools are offered to the model</string>
     <string name="workspace_dialog_empty">No workspaces yet — tap “Manage” to create one</string>
     <string name="mcp_dialog_hint">Choose which MCP servers this conversation enables; when off, the model no longer gets that server\'s tools</string>
@@ -692,6 +713,7 @@
     <string name="update_install_now">Install now</string>
     <string name="update_download_failed_title">Download failed</string>
     <string name="update_download">Download</string>
+    <string name="update_cache_publish_failed">Update package could not be saved</string>
     <string name="update_cancelled">Cancelled</string>
     <string name="update_sha_mismatch">Checksum mismatch: expected %1$s, got %2$s</string>
     <string name="update_package_missing">No update package is configured for device ABI %1$s.</string>
@@ -712,11 +734,50 @@
     <string name="provider_preset_siliconflow_hint">China-based aggregator, fast</string>
     <string name="workspace_preview_too_large">File too large to preview (%1$d bytes)</string>
 
+    <string name="permissions_settings_desc">Review and request app permissions</string>
+    <string name="shizuku_approval_disable_title">Disable Shizuku approval?</string>
+    <string name="shizuku_approval_disable_message">The Shizuku tool has elevated system privileges. Disabling approval lets the model call it directly; confirm the risk.</string>
+    <string name="root_approval_disable_title">Disable Root approval?</string>
+    <string name="root_approval_disable_message">The Root tool can run arbitrary system commands. Disabling approval lets the model invoke it without your confirmation. This is high risk.</string>
+    <string name="root_approval_disable_wait">Wait %1$d s</string>
+    <string name="root_approval_disable_confirm">Confirm disable</string>
+    <string name="permissions_title">Permissions</string>
+    <string name="permissions_subtitle">Review and manage permissions used by the app. System settings pages open when required.</string>
+    <string name="permissions_refresh">Refresh</string>
+    <string name="permissions_app_section">App permissions</string>
+    <string name="permissions_basic">Network and background tasks</string>
+    <string name="permissions_basic_desc">Network access, foreground downloads and wake locks are managed by the system.</string>
+    <string name="permissions_media">Photos, video and audio</string>
+    <string name="permissions_media_desc">Used to pick and read media attachments in chats.</string>
+    <string name="permissions_notification">Notifications</string>
+    <string name="permissions_notification_desc">Used for update progress, background tasks and important status alerts.</string>
+    <string name="permissions_calendar">Calendar</string>
+    <string name="permissions_calendar_desc">Allows calendar tools to read and create events.</string>
+    <string name="permissions_storage">All files access</string>
+    <string name="permissions_storage_desc">Lets built-in file tools read files in shared storage.</string>
+    <string name="permissions_install">Install unknown apps</string>
+    <string name="permissions_install_desc">Used to install downloaded app updates.</string>
+    <string name="permissions_overlay">Display over other apps</string>
+    <string name="permissions_overlay_desc">Used by the debug log floating ball.</string>
+    <string name="permissions_advanced_section">Advanced permissions</string>
+    <string name="permissions_high_risk">Shizuku / Root</string>
+    <string name="permissions_high_risk_desc">Advanced permissions for advanced operations.</string>
+    <string name="permissions_shizuku_desc">Run shell commands with system-level privileges through Shizuku.</string>
+    <string name="permissions_root_desc">Run shell commands as the superuser through root.</string>
+    <string name="permissions_granted">Granted</string>
+    <string name="permissions_not_granted">Not granted</string>
+    <string name="permissions_available">Available</string>
+    <string name="permissions_unavailable">Unavailable</string>
+    <string name="permissions_open_settings">Open settings</string>
+    <string name="permissions_request">Request</string>
+
     <!-- Built-in tool descriptions and schemas -->
     <string name="debug_log_truncated_head">> (log is too long; showing the tail)\n</string>
     <string name="attachment_binary_file">Binary file</string>
     <string name="builtin_tool_clarification_desc">Ask the user to confirm or clarify a request, preference or plan. Provide one question with up to 4 preset options, or several questions (up to 16) in one call. The user can choose one, choose several, or type a custom answer for each question.</string>
     <string name="builtin_tool_shell_desc">Run a shell (sh/bash) script or terminal command on this Android device; returns stdout and stderr.</string>
+    <string name="builtin_tool_shell_shizuku_desc">Run a shell command on this device with Shizuku privileges. Requires Shizuku authorization and approval.</string>
+    <string name="builtin_tool_shell_root_desc">Run a shell command on this device with root privileges. Requires a working root environment and approval.</string>
     <string name="builtin_tool_file_list_desc">List files and subdirectories under a directory. Returns name, type and size.</string>
     <string name="builtin_tool_file_read_desc">Read a text file. You can pass a max byte count; default 256KB.</string>
     <string name="builtin_tool_file_write_desc">Write text to a file (overwrite). Missing parent directories are created automatically.</string>
@@ -752,7 +813,11 @@
     <string name="builtin_shell_timeout">Execution timed out (over %1$d s)</string>
     <string name="builtin_shell_no_output">(succeeded with no output)</string>
     <string name="builtin_shell_exit">Exit code: %1$d\nOutput:\n%2$s</string>
+    <string name="builtin_shell_su_forbidden">su and sudo are blocked in normal Shell. Use the Shizuku or Root Shell tool instead.</string>
     <string name="builtin_shell_failed">Shell execution failed: %1$s</string>
+    <string name="builtin_shell_shizuku_unavailable">Shizuku is unavailable. Start Shizuku and retry.</string>
+    <string name="builtin_shell_shizuku_denied">Shizuku authorization is missing. Grant it on the Permissions page.</string>
+    <string name="builtin_shell_root_unavailable">Root is unavailable or authorization was denied.</string>
 
     <!-- Skill list actions -->
     <string name="skill_assistant_show_more">View more (%1$d)</string>
@@ -793,6 +858,7 @@
     <string name="about_export_logs_done_with_size">Logs saved to %1$s (%2$s)</string>
     <string name="about_log_level_title">Log level</string>
     <string name="about_log_level_sub">Current: %1$s</string>
+    <string name="editor_target_unavailable">This item is loading or is no longer available.</string>
     <string name="error_generic">Operation failed: %1$s</string>
 
     <!-- Workspace file viewer -->
@@ -801,6 +867,8 @@
     <string name="workspace_file_save_failed">Save failed: %1$s</string>
     <string name="workspace_file_load_failed">Load failed: %1$s</string>
     <string name="workspace_file_read_only">Read-only (Linux area is not editable)</string>
+    <string name="workspace_file_unsaved">Discard unsaved changes?</string>
+    <string name="workspace_file_discard">Discard</string>
     <string name="workspace_file_too_large">File is too large to edit (%1$s)</string>
     <string name="workspace_file_image_load_failed">Cannot decode image</string>
 
@@ -1056,6 +1124,8 @@
     <string name="debug_role_outline_variant">Outline variant</string>
     <string name="debug_role_error">Error</string>
     <string name="debug_role_on_error">On error</string>
+    <string name="debug_role_tool_shizuku_background">Shizuku tool call background</string>
+    <string name="debug_role_tool_root_background">Root tool call background</string>
     <string name="debug_role_warning">Warning</string>
     <string name="debug_role_warning_action">Warning and error actions</string>
 
@@ -1067,10 +1137,8 @@
     <string name="generated_image_failed">Image loading or saving failed</string>
     <string name="generated_image_loading">Loading image…</string>
     <string name="aux_model_image_generation">Image generation model</string>
-    <string name="aux_image_prefer_conversation">Prefer conversation model</string>
-    <string name="aux_image_prefer_hint">Use the conversation model when image output is enabled for it; otherwise use the image generation model.</string>
     <string name="model_supports_image_output">Image output</string>
-    <string name="builtin_tool_image_desc">Generate an image from a text prompt using the configured image generation model.</string>
+    <string name="builtin_tool_image_desc">Call the configured image generation model to create an image from the prompt.</string>
     <string name="builtin_tool_image_schema">{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;prompt&quot;:{&quot;type&quot;:&quot;string&quot;}},&quot;required&quot;:[&quot;prompt&quot;]}</string>
     <string name="image_generation_not_configured">Set an image generation model in Settings first.</string>
 

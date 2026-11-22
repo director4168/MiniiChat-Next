@@ -6,7 +6,7 @@
  */
 package com.miniichatNext.carter.ui.workspace
 
-import android.graphics.Typeface
+import android.view.KeyEvent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -39,6 +39,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -75,14 +76,16 @@ fun WorkspaceTerminalScreen(
     val context = LocalContext.current
     val root = workspaceRoot
 
-    var pendingCloseTabId by remember { mutableStateOf<Long?>(null) }
-    var sessionTitle by remember { mutableStateOf<String?>(null) }
+    var pendingCloseTabId by remember(root) { mutableStateOf<Long?>(null) }
 
     // 会话状态：manager为进程级单例，页面离开后shell与屏幕缓冲保持存活
-    val terminalState = remember { WorkspaceTerminalSessionManager.observeWorkspace(root.orEmpty()) }
-    val state by terminalState.collectAsState(initial = WorkspaceTerminalTabsState())
+    val state = key(root) {
+        val flow = remember(root) { WorkspaceTerminalSessionManager.observeWorkspace(root.orEmpty()) }
+        flow.collectAsState(initial = WorkspaceTerminalTabsState()).value
+    }
+    val selectedTab = state.tabs.firstOrNull { it.id == state.selectedTabId }
 
-    LaunchedEffect(root) {
+    LaunchedEffect(root, shellCompatibilityMode) {
         if (root != null) {
             WorkspaceTerminalSessionManager.init(context)
             WorkspaceTerminalSessionManager.ensureSession(root, shellCompatibilityMode)
@@ -109,7 +112,7 @@ fun WorkspaceTerminalScreen(
                     .windowInsetsPadding(WindowInsets.imeAnimationTarget)
             ) {
                 SettingsTopBar(
-                    title = sessionTitle
+                    title = selectedTab?.title
                         ?: workspaceName.ifBlank { stringResource(R.string.workspace_terminal_title) },
                     onBack = onBack,
                 )
@@ -169,7 +172,6 @@ fun WorkspaceTerminalScreen(
                     )
                 }
 
-                val selectedTab = state.tabs.firstOrNull { it.id == state.selectedTabId }
                 // finished不替换内容：保留终端最后画面可滚动查看，只是不能再输入
                 if (selectedTab == null) {
                     Box(
@@ -187,11 +189,9 @@ fun WorkspaceTerminalScreen(
                         )
                     }
                 } else {
-                    TerminalTabContent(
-                        tab = selectedTab,
-                        modifier = Modifier.weight(1f).fillMaxWidth(),
-                        onTitleChanged = { sessionTitle = it },
-                    )
+                    key(selectedTab.id) {
+                        TerminalTabContent(tab = selectedTab, modifier = Modifier.weight(1f).fillMaxWidth())
+                    }
                 }
             }
 
@@ -225,7 +225,6 @@ fun WorkspaceTerminalScreen(
 private fun TerminalTabContent(
     tab: WorkspaceTerminalTab,
     modifier: Modifier = Modifier,
-    onTitleChanged: (String?) -> Unit,
 ) {
     val context = LocalContext.current
     val terminalTextSizePx = with(LocalDensity.current) { 12.sp.roundToPx() }
@@ -297,7 +296,22 @@ private fun TerminalTabContent(
                             com.miniichatNext.carter.debug.DebugLog.i("Terminal", "CTRL toggled: " + controlDown)
                         },
             onAltToggle = { altDown = !altDown },
-            onSendText = { tab.session.writeText(it) },
+            onSendKey = { code ->
+                if (!tab.finished) {
+                    val modifiers = (if (controlDown) com.termux.terminal.KeyHandler.KEYMOD_CTRL else 0) or
+                        (if (altDown) com.termux.terminal.KeyHandler.KEYMOD_ALT else 0)
+                    val emulator = tab.session.emulator
+                    if (emulator != null) {
+                        com.termux.terminal.KeyHandler.getCode(code, modifiers, emulator.isCursorKeysApplicationMode(),
+                            emulator.isKeypadApplicationMode())?.let { tab.session.writeText(it) }
+                    }
+                }
+            },
+            onSendCharacter = { char ->
+                if (!tab.finished) {
+                    tab.client.terminalView?.inputCodePoint(char.code, controlDown, altDown)
+                }
+            },
         )
     }
 }
@@ -309,7 +323,8 @@ private fun TerminalExtraKeysBar(
     altDown: Boolean,
     onControlToggle: () -> Unit,
     onAltToggle: () -> Unit,
-    onSendText: (String) -> Unit,
+    onSendKey: (Int) -> Unit,
+    onSendCharacter: (Char) -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -320,19 +335,19 @@ private fun TerminalExtraKeysBar(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        TerminalExtraKey("ESC") { onSendText("\u001B") }
-        TerminalExtraKey("TAB") { onSendText("\t") }
+        TerminalExtraKey("ESC") { onSendKey(KeyEvent.KEYCODE_ESCAPE) }
+        TerminalExtraKey("TAB") { onSendKey(KeyEvent.KEYCODE_TAB) }
         TerminalExtraKey("CTRL", selected = controlDown, onClick = onControlToggle)
         TerminalExtraKey("ALT", selected = altDown, onClick = onAltToggle)
-        TerminalExtraKey("-") { onSendText("-") }
-        TerminalExtraKey("/") { onSendText("/") }
-        TerminalExtraKey("|") { onSendText("|") }
-        TerminalExtraKey("←") { onSendText("\u001B[D") }
-        TerminalExtraKey("↓") { onSendText("\u001B[B") }
-        TerminalExtraKey("↑") { onSendText("\u001B[A") }
-        TerminalExtraKey("→") { onSendText("\u001B[C") }
-        TerminalExtraKey("HOME") { onSendText("\u001B[H") }
-        TerminalExtraKey("END") { onSendText("\u001B[F") }
+        TerminalExtraKey("-") { onSendCharacter('-') }
+        TerminalExtraKey("/") { onSendCharacter('/') }
+        TerminalExtraKey("|") { onSendCharacter('|') }
+        TerminalExtraKey("←") { onSendKey(KeyEvent.KEYCODE_DPAD_LEFT) }
+        TerminalExtraKey("↓") { onSendKey(KeyEvent.KEYCODE_DPAD_DOWN) }
+        TerminalExtraKey("↑") { onSendKey(KeyEvent.KEYCODE_DPAD_UP) }
+        TerminalExtraKey("→") { onSendKey(KeyEvent.KEYCODE_DPAD_RIGHT) }
+        TerminalExtraKey("HOME") { onSendKey(KeyEvent.KEYCODE_MOVE_HOME) }
+        TerminalExtraKey("END") { onSendKey(KeyEvent.KEYCODE_MOVE_END) }
     }
 }
 

@@ -58,6 +58,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -105,7 +106,7 @@ internal fun DiagramPreviewCard(code: String, svg: Boolean, palette: InlinePalet
     val viewerDark = LocalDarkMode.current
     val dark = palette.codeBg.luminance() < 0.5f
     var source by remember { mutableStateOf(false) }
-    var fullscreen by remember { mutableStateOf(false) }
+    var fullscreen by rememberSaveable { mutableStateOf(false) }
     var everVisible by remember { mutableStateOf(false) }
     val heightPx = with(LocalDensity.current) { LocalConfiguration.current.screenHeightDp.dp.toPx() }
     val html = remember(code, svg, dark, palette.codeBg, palette.codeFg) {

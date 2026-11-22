@@ -97,13 +97,15 @@ fun McpServersScreen(
     onBack: () -> Unit,
     onAdd: () -> Unit,
     onOpenServerDetail: (String) -> Unit,
-    onOpenBuiltInTools: () -> Unit
+    onOpenBuiltInTools: () -> Unit,
+    scrollState: androidx.compose.foundation.lazy.LazyListState? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val servers by mcpStore.serversFlow.collectAsState(initial = emptyList())
     val tools by mcpStore.toolsFlow.collectAsState(initial = emptyList())
     var pendingDelete by remember { mutableStateOf<McpServerConfig?>(null) }
+    val listState = scrollState ?: androidx.compose.foundation.lazy.rememberLazyListState()
 
     Column(
         modifier = Modifier
@@ -114,6 +116,7 @@ fun McpServersScreen(
         SettingsTopBar(stringResource(R.string.mcp_title), onBack)
         Box(modifier = Modifier.fillMaxSize()) {
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(horizontal = 16.dp),

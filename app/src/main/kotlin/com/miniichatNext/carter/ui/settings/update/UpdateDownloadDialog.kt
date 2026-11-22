@@ -52,6 +52,8 @@ internal fun UpdateDownloadDialog(
                 UpdatePhase.PROBE_FAILED -> R.string.update_probe_failed_title
                 UpdatePhase.VERIFYING -> R.string.update_check_install_title
                 UpdatePhase.VERIFICATION_FAILED -> R.string.update_verification_failed_title
+                UpdatePhase.PUBLICATION_FAILED -> R.string.update_cache_publish_failed
+                UpdatePhase.CANCELLED -> R.string.update_cancelled
                 UpdatePhase.READY -> R.string.update_download_done_title
                 UpdatePhase.FAILED -> R.string.update_download_failed_title
                 UpdatePhase.CHECKING_CACHE -> R.string.update_checking_cache
@@ -66,7 +68,8 @@ internal fun UpdateDownloadDialog(
                         UpdatePhase.CHECKING_CACHE -> LinearProgressIndicator(Modifier.fillMaxWidth())
                         UpdatePhase.PROBING, UpdatePhase.PROBE_FAILED -> ProbeStage(state)
                         UpdatePhase.DOWNLOADING -> DownloadStage(state)
-                        UpdatePhase.VERIFYING, UpdatePhase.READY, UpdatePhase.VERIFICATION_FAILED -> InstallationStage(state)
+                        UpdatePhase.VERIFYING, UpdatePhase.READY, UpdatePhase.VERIFICATION_FAILED, UpdatePhase.PUBLICATION_FAILED -> InstallationStage(state)
+                        UpdatePhase.CANCELLED -> Text(stringResource(R.string.update_cancelled))
                         UpdatePhase.FAILED -> Text(state.message, color = MaterialTheme.colorScheme.error)
                     }
                 }
@@ -81,7 +84,7 @@ internal fun UpdateDownloadDialog(
                     }
                     Button(onClick = onRetry) { Text(stringResource(R.string.update_retry_download)) }
                 }
-                UpdatePhase.FAILED, UpdatePhase.PROBE_FAILED -> Button(onClick = onRetry) { Text(stringResource(R.string.update_retry_download)) }
+                UpdatePhase.FAILED, UpdatePhase.PROBE_FAILED, UpdatePhase.PUBLICATION_FAILED, UpdatePhase.CANCELLED -> Button(onClick = onRetry) { Text(stringResource(R.string.update_retry_download)) }
                 else -> TextButton(onClick = onHide) { Text(stringResource(R.string.update_hide_download)) }
             }
         },
@@ -135,7 +138,7 @@ private fun InstallationStage(state: UpdateDownloadSnapshot) {
             Text(stringResource(R.string.update_verified_package), style = MaterialTheme.typography.bodySmall)
             if (state.message.isNotBlank()) Text(state.message, color = MaterialTheme.colorScheme.error)
         }
-        UpdatePhase.VERIFICATION_FAILED -> Text(state.message, color = MaterialTheme.colorScheme.error)
+        UpdatePhase.VERIFICATION_FAILED, UpdatePhase.PUBLICATION_FAILED -> Text(state.message, color = MaterialTheme.colorScheme.error)
         else -> Unit
     }
 }

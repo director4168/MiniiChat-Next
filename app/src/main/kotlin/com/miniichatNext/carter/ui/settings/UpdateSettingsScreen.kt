@@ -203,7 +203,9 @@ fun UpdateSettingsScreen(onBack: () -> Unit) {
                     ) {
                         Column(Modifier.weight(1f)) {
                             Text(stringResource(R.string.update_nodes_edit), style = MaterialTheme.typography.titleMedium)
-                            Text(stringResource(R.string.update_nodes_count, settings.updateNodes.count { it.enabled }, settings.updateNodes.size),
+                            val detail = if (settings.updateNodesInvalid) stringResource(R.string.update_saved_nodes_invalid)
+                                else stringResource(R.string.update_nodes_count, settings.updateNodes.count { it.enabled }, settings.updateNodes.size)
+                            Text(detail,
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -303,7 +305,7 @@ fun UpdateSettingsScreen(onBack: () -> Unit) {
     if (nodesEditor) UpdateNodesEditor(
         initial = settings.updateNodes,
         onDismiss = { nodesEditor = false },
-        onSave = { nodes -> settingsRepo.update { it.copy(updateNodes = nodes) } },
+        onSave = { nodes -> settingsRepo.saveUpdateNodes(nodes) },
     )
 
 }

@@ -10,6 +10,7 @@ import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.util.AppJson
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runInterruptible
 import kotlinx.serialization.json.JsonArray
@@ -22,12 +23,17 @@ import kotlinx.serialization.json.put
 internal class ImageGenerationClient {
     suspend fun generate(provider: ProviderConfig, model: String, prompt: String): String = runInterruptible(Dispatchers.IO) {
         require(prompt.isNotBlank()) { "Image prompt is required" }
-        val path = provider.model(model)?.apiPath?.takeIf { it.contains("/images/") } ?: "/images/generations"
-        val endpoint = chatEndpoint(provider.effectiveBaseUrl(model), path)
+        val base = provider.effectiveBaseUrl(model).trimEnd('/')
+        val configured = provider.model(model)?.apiPath
+            ?.takeIf { it.contains("/images/", true) && !it.contains("/edits", true) }
+        val path = configured?.let { candidate ->
+            if (candidate.startsWith("/v1/") && base.endsWith("/v1")) candidate.removePrefix("/v1") else candidate
+        } ?: "/images/generations"
+        val endpoint = chatEndpoint(base, path)
         val connection = URL(endpoint).openConnection() as HttpURLConnection
         connection.requestMethod = "POST"
         connection.connectTimeout = 15_000
-        connection.readTimeout = 120_000
+        connection.readTimeout = 300_000
         connection.instanceFollowRedirects = false
         connection.doOutput = true
         connection.setRequestProperty("Content-Type", "application/json")
@@ -63,11 +69,18 @@ internal class ImageGenerationClient {
             }.orEmpty()
             check(ok) { "Image server returned HTTP ${connection.responseCode}: ${raw.take(300)}" }
             val response = AppJson.json.parseToJsonElement(raw) as? JsonObject ?: error("Invalid image response")
+            (response["error"] as? JsonObject)?.let { error ->
+                val message = (error["message"] as? JsonPrimitive)?.contentOrNull ?: error.toString()
+                error("Image server error: ${message.take(300)}")
+            }
+            val defaultFormat = (response["output_format"] as? JsonPrimitive)?.contentOrNull
             (response["data"] as? JsonArray).orEmpty().joinToString("") { value ->
                 val item = value as? JsonObject ?: return@joinToString ""
                 val url = (item["url"] as? JsonPrimitive)?.contentOrNull
                     ?: (item["b64_json"] as? JsonPrimitive)?.contentOrNull?.let { encoded ->
-                        val format = (item["output_format"] as? JsonPrimitive)?.contentOrNull ?: "png"
+                        val rawFormat = (item["output_format"] as? JsonPrimitive)?.contentOrNull ?: defaultFormat ?: "png"
+                        val format = rawFormat.lowercase(Locale.ROOT).removePrefix("image/")
+                            .takeIf { it in setOf("png", "jpeg", "jpg", "webp", "gif") } ?: "png"
                         "data:image/$format;base64,$encoded"
                     }
                 url?.let(::imageMarkdown).orEmpty()

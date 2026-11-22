@@ -72,3 +72,9 @@
 
 # intellij-markdown GFM解析器（元素类型注册表/惰性单例，混淆后AST类型比较可能失效）
 -keep class org.intellij.markdown.** { *; }
+
+# Shizuku用户服务通过类名反射启动，AIDL Stub与Binder描述符也必须保留
+-keep class com.miniichatNext.carter.data.tools.ShizukuShellService { *; }
+-keep class com.miniichatNext.carter.data.tools.IShizukuShellService { *; }
+-keep class com.miniichatNext.carter.data.tools.IShizukuShellService$Stub { *; }
+-keep class rikka.shizuku.** { *; }

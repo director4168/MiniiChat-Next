@@ -21,8 +21,8 @@ android {
         applicationId = "com.miniichatNext.carter"
         minSdk = 26
         targetSdk = 35
-        versionCode = 261119007
-        versionName = "v1.8.0"
+        versionCode = 261122013
+        versionName = "v1.9.0"
         vectorDrawables { useSupportLibrary = true }
         externalNativeBuild {
             cmake {
@@ -104,6 +104,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        aidl = true
     }
 
     sourceSets["main"].java.srcDirs("src/main/kotlin")
@@ -185,6 +186,8 @@ dependencies {
     // intellij-markdown GFM解析器
     implementation(libs.jetbrains.markdown)
     implementation("org.jsoup:jsoup:1.18.3")   // HTML解析
+    implementation(libs.shizuku.api)
+    implementation(libs.shizuku.provider)
 }
 
 val ansiColorEnabled = providers.environmentVariable("NO_COLOR").orNull == null &&

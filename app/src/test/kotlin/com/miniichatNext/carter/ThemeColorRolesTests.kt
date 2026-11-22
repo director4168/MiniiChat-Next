@@ -24,7 +24,7 @@ class ThemeColorRolesTests {
     }
 
     @Test fun statusGroupUsesOnlyReusableSemanticIds() {
-        assertEquals(listOf("warning", "error", "onError", "warningAction"), ThemeColorRoles.groups["status"])
+        assertEquals(listOf("warning", "error", "onError", "warningAction", "wrrning_2", "error_2"), ThemeColorRoles.groups["status"])
         assertFalse(ThemeColorRoles.allowedRoles.any { it.startsWith("workspace") || it.startsWith("toast") })
     }
 
@@ -101,6 +101,34 @@ class ThemeColorRolesTests {
         assertEquals("warning", ThemeColorRoles.canonicalId("workspaceWarning"))
         assertEquals("error", ThemeColorRoles.canonicalId("workspaceDanger"))
         assertEquals("warningAction", ThemeColorRoles.canonicalId("toastWarningAction"))
+        assertEquals("wrrning_2", ThemeColorRoles.canonicalId("toolShizukuBackground"))
+        assertEquals("error_2", ThemeColorRoles.canonicalId("toolRootBackground"))
         assertEquals("logSearchHighlight", ThemeColorRoles.canonicalId("logSearchHighlight"))
+    }
+
+    @Test fun sanitizesManualHexInputAsYouType() {
+        assertEquals("#AABBCC", ThemeColorRoles.sanitizeInput("#aabbcc"))
+        assertEquals("#AABBCCDD", ThemeColorRoles.sanitizeInput("aabbccdd"))
+        assertEquals("#12345678", ThemeColorRoles.sanitizeInput("zzz123456789"))
+        assertEquals("#", ThemeColorRoles.sanitizeInput("gh"))
+    }
+
+    @Test fun completesPartialHexForSaving() {
+        assertEquals("#000000", ThemeColorRoles.completeForSave("#"))
+        assertEquals("#123450", ThemeColorRoles.completeForSave("#12345"))
+        assertEquals("#123456", ThemeColorRoles.completeForSave("#123456"))
+        assertEquals("#12345670", ThemeColorRoles.completeForSave("#1234567"))
+        assertEquals("#12345678", ThemeColorRoles.completeForSave("#12345678"))
+        assertEquals("#12345678", ThemeColorRoles.completeForSave("#123456789"))
+    }
+
+    @Test fun migratedToolColorsBecomeNewIds() {
+        assertEquals(
+            mapOf("wrrning_2" to "#FBEACC", "error_2" to "#FFDAD6"),
+            ThemeColorRoles.normalize(mapOf(
+                "toolShizukuBackground" to "#fbeacc",
+                "toolRootBackground" to "#ffdad6",
+            ))
+        )
     }
 }

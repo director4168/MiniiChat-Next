@@ -103,7 +103,7 @@ private val tagRenderer = HtmlGenerator.DefaultTagRenderer(
         when {
             tag == "code" && node.type == MarkdownElementTypes.CODE_FENCE -> {
                 val closed = node.children.any { it.type == MarkdownTokenTypes.CODE_FENCE_END }
-                attributes + "data-closed=\"$closed\""
+                attributes + "data-closed=\"$closed\"" + "data-start=\"${node.startOffset}\""
             }
 
             tag == "table" -> attributes + "data-src=\"${node.startOffset},${node.endOffset}\""
@@ -272,6 +272,7 @@ private class DomConverter(
                 ?.removePrefix("language-")
                 ?.takeIf { it.isNotBlank() },
             closed = code?.attr("data-closed") != "false",
+            sourceOffset = code?.attr("data-start")?.toIntOrNull()?.takeIf { it in source.indices },
         )
     }
 

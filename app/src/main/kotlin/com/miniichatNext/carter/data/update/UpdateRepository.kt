@@ -11,14 +11,18 @@ import com.miniichatNext.carter.BuildConfig
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.util.AppJson
-import java.net.HttpURLConnection
-import java.net.URL
+import com.miniichatNext.carter.util.boundedGetClient
+import com.miniichatNext.carter.util.readTextBounded
+import io.ktor.client.plugins.timeout
+import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
+import io.ktor.http.HttpHeaders
+import java.net.URI
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.serialization.json.Json
 
 /**
  * 从固定URL拉取更新配置
- * 用JDK HttpURLConnection（不走Ktor客户端，避免再起一个engine）
  */
 object UpdateRepository {
 
@@ -56,49 +60,32 @@ object UpdateRepository {
         data class Failure(val message: String, val cause: Throwable? = null) : Result()
     }
 
-    /**
-     * 拉取更新配置。手动检查7秒超时（用户主动点=更长）（含DNS+连接+读取）。
-     * 超时返回Failure("timeout")，不抛异常。
-     */
-    suspend fun checkForUpdate(context: Context, url: String = DEFAULT_URL): Result =
-        withTimeoutOrNull(7_000L) {
-            withIo { doFetch(context, url) }
-        } ?: Result.Failure("timeout")
-
-    private fun doFetch(context: Context, url: String): Result {
-        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = 10_000
-            readTimeout = 10_000
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14; MiniiChat-Next/${BuildConfig.VERSION_NAME}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
-            setRequestProperty("Accept", "application/json")
-        }
-        return try {
-            if (conn.responseCode !in 200..299) {
-                Result.Failure("HTTP ${conn.responseCode}")
-            } else {
-                val body: String = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                if (body.isBlank()) {
-                    Result.Failure(context.getString(R.string.update_empty_response))
-                } else {
-                    // 容错：剥离整行//注释（与app的assets配置同款约定）。
-                    // 注意：旧版APP无此剥离逻辑，配置里加注释前须确认旧版本已淘汰。
-                    val cleaned = body.lineSequence()
-                        .filterNot { it.trimStart().startsWith("//") }
-                        .joinToString("\n")
-                    val info = json.decodeFromString(UpdateInfo.serializer(), cleaned)
-                    Result.Success(info)
+    suspend fun checkForUpdate(context: Context, url: String = DEFAULT_URL): Result = try {
+        val uri = URI(url)
+        require(uri.scheme in setOf("https", "http") && uri.host != null && uri.rawUserInfo == null && uri.rawFragment == null) { "Invalid update URL" }
+        withTimeoutOrNull(FETCH_TIMEOUT_MS) {
+            boundedGetClient.prepareGet(uri.toASCIIString()) {
+                header(HttpHeaders.UserAgent, "MiniiChat-Next/${BuildConfig.VERSION_NAME}")
+                header(HttpHeaders.Accept, "application/json")
+                timeout {
+                    requestTimeoutMillis = FETCH_TIMEOUT_MS
+                    connectTimeoutMillis = 5000
+                    socketTimeoutMillis = 7000
                 }
+            }.execute { response ->
+                if (response.status.value !in 200..299) return@execute Result.Failure("HTTP ${response.status.value}")
+                val (body, _) = response.readTextBounded(256 * 1024)
+                if (body.isBlank()) return@execute Result.Failure(context.getString(R.string.update_empty_response))
+                val cleaned = body.removePrefix("\uFEFF").lineSequence().filterNot { it.trimStart().startsWith("//") }.joinToString("\n")
+                Result.Success(json.decodeFromString(UpdateInfo.serializer(), cleaned))
             }
-        } catch (t: Throwable) {
-            DebugLog.w("Update", "check failed: ${t.message}")
-            val msg = t.message ?: t::class.java.simpleName ?: "unknown"
-            Result.Failure(msg, t)
-        } finally {
-            conn.disconnect()
-        }
+        } ?: Result.Failure("timeout")
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (timeout: io.ktor.client.plugins.HttpRequestTimeoutException) {
+        Result.Failure("timeout", timeout)
+    } catch (failure: Exception) {
+        DebugLog.w("Update", "check failed: ${failure.javaClass.simpleName}")
+        Result.Failure(failure.message ?: "Update check failed", failure)
     }
-
-    private suspend inline fun <T> withIo(crossinline block: () -> T): T =
-        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { block() }
 }

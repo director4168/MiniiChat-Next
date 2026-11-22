@@ -7,11 +7,14 @@
 package com.miniichatNext.carter.vm
 
 import com.miniichatNext.carter.data.model.ProviderConfig
+import com.miniichatNext.carter.data.store.COMPRESS_MODEL_CONVERSATION
 
 internal suspend fun ChatViewModel.resolveImageGenerationModel(cid: String): Pair<ProviderConfig, String>? {
-    val conv = store.snapshot().firstOrNull { it.id == cid }
-    val assistant = assistants.value.firstOrNull { it.id == conv?.assistantId } ?: activeAssistant()
-    val current = effectiveConversationModel(conv, assistant, settings.value, providers.value)
-    if (settings.value.imageGenerationPreferConversation && current?.first?.supportsImageOutput(current.second) == true) return current
-    return resolveModelRef(settings.value.imageGenerationModel)
+    val ref = settings.value.imageGenerationModel
+    if (ref == COMPRESS_MODEL_CONVERSATION) {
+        val conv = store.snapshot().firstOrNull { it.id == cid }
+        val assistant = assistants.value.firstOrNull { it.id == conv?.assistantId } ?: activeAssistant()
+        return effectiveConversationModel(conv, assistant, settings.value, providers.value)
+    }
+    return resolveModelRef(ref)
 }

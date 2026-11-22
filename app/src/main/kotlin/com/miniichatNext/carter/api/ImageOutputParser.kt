@@ -30,6 +30,10 @@ internal fun imageOutputMarkdown(value: JsonElement?): String = when (value) {
                             "data:$mime;base64,$data"
                         }
                     else -> null
+                } ?: (value["result"] as? JsonPrimitive)?.contentOrNull?.let { raw ->
+                    if (raw.startsWith("http://", true) || raw.startsWith("https://", true) ||
+                        raw.startsWith("data:image/", true)) raw
+                    else "data:image/png;base64,$raw"
                 }
                 url?.let(::imageMarkdown).orEmpty()
             }
@@ -54,7 +58,11 @@ internal fun normalizeOpenAiImageOutput(element: JsonElement): JsonElement {
                 val original = value["content"]
                 val content = imageOutputMarkdown(original)
                 val images = value["images"] as? JsonArray
-                val imageText = images?.joinToString("") { imageOutputMarkdown(it) }.orEmpty()
+                val imageText = images?.map(::imageOutputMarkdown).orEmpty()
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .filterNot { content.contains(it) }
+                    .joinToString("")
                 if (original is JsonArray || imageText.isNotEmpty()) {
                     JsonObject(value + ("content" to JsonPrimitive(content + imageText)))
                 } else value

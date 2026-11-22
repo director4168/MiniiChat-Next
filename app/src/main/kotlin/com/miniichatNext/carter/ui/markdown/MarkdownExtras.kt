@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -49,7 +50,6 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.Placeholder
@@ -151,6 +151,7 @@ internal fun MdCodeBlockCard(
     }
     val lineCount = highlightedLines.size
     val lineNumberWidth = lineCount.toString().length
+    val lineNumberGutterWidth = (lineNumberWidth * 9 + 18).dp
     val dark = LocalDarkMode.current
     val overrideVersion = AppThemeOverrides.version.intValue
     val foldActionColor = remember(overrideVersion, dark) {
@@ -190,7 +191,8 @@ internal fun MdCodeBlockCard(
                             style = codeStyle,
                             color = palette.lineNumberFg,
                             softWrap = false,
-                            modifier = Modifier.padding(start = 10.dp, end = 8.dp),
+                            textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                            modifier = Modifier.width(lineNumberGutterWidth).padding(start = 10.dp, end = 8.dp),
                         )
                         Text(
                             text = if (line.length == 0) AnnotatedString(" ") else line,
@@ -214,7 +216,9 @@ internal fun MdCodeBlockCard(
                     style = codeStyle,
                     color = palette.lineNumberFg,
                     softWrap = false,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.End,
                     modifier = Modifier
+                        .width(lineNumberGutterWidth)
                         .drawBehind {
                             val x = size.width - 0.5.dp.toPx()
                             drawLine(
@@ -308,25 +312,23 @@ internal fun MdMathBlock(formula: String) {
     }
 }
 
-/** 图片：无图片加载库，显示为可点击的替代文本小卡 */
+/** 图片：本地预览、全屏查看与替代文本卡片 */
 @Composable
 internal fun MdImageChip(image: MarkdownInline.Image, link: String?, palette: InlinePalette) {
-    val uriHandler = LocalUriHandler.current
-    val url = link ?: image.url
+    val imageUrl = image.url
     Surface(
-        onClick = { runCatching { uriHandler.openUri(url) } },
         shape = RoundedCornerShape(8.dp),
         color = palette.codeBg,
         modifier = Modifier.padding(vertical = 4.dp),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
             GeneratedImagePreview(
-                url = url,
-                description = image.alt ?: url,
+                url = imageUrl,
+                description = image.alt ?: image.url,
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                text = image.alt ?: url,
+                text = image.alt ?: image.url,
                 color = palette.link,
                 style = MaterialTheme.typography.labelMedium,
                 maxLines = 1,

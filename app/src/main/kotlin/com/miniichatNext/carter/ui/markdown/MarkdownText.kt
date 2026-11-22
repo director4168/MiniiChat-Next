@@ -18,6 +18,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.isSpecified
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -25,7 +27,13 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
+import com.miniichatNext.carter.data.model.GeneratedImageStore
 import com.miniichatNext.carter.ui.settings.LocalAppPreferences
+
+/** 含链接的消息不套SelectionContainer：Compose 1.7的选择注册器在链接文本长按重排时会取到已脱离层级的布局。 */
+private val MARKDOWN_LINK_PATTERN = Regex("""(?i)(?:https?://|www\.|\[[^\]]*\]\([^)]*\))""")
+
+internal fun containsMarkdownLink(text: String): Boolean = MARKDOWN_LINK_PATTERN.containsMatchIn(text)
 
 /**
  * Markdown渲染入口（对外签名与旧实现一致，调用方零改动）。
@@ -44,15 +52,24 @@ internal fun MarkdownText(
     palette: InlinePalette = BubblePalette,
     onFullscreen: ((String, Boolean) -> Unit)? = null,
     onLinkClick: ((String) -> Unit)? = null,
+    selectable: Boolean = false,
+    selectionColors: TextSelectionColors? = null,
 ) {
     val effColor = if (color.isSpecified) color else LocalContentColor.current
     val fontSize = LocalAppPreferences.current.fontSizeSp
     val style = MaterialTheme.typography.bodyLarge.copy(fontSize = fontSize.sp, lineHeight = (fontSize * 1.5f).sp)
+    // Markdown安全链接会拦file:，把本地生成图换成内部https地址后再解析。
+    val renderText = remember(text) { GeneratedImageStore.rewriteLocalMarkdownImages(text) }
     // 默认点链接先弹确认框，不直接跳转；调用方要自定义时传onLinkClick
     var pendingLink by remember { mutableStateOf<String?>(null) }
-    CompositionLocalProvider(LocalContentColor provides effColor) {
+    val defaultSelectionColors = LocalTextSelectionColors.current
+    CompositionLocalProvider(
+        LocalContentColor provides effColor,
+        LocalMarkdownSelectable provides selectable,
+        LocalTextSelectionColors provides (selectionColors ?: defaultSelectionColors),
+    ) {
         Markdown(
-            content = text,
+            content = renderText,
             modifier = modifier,
             style = style,
             theme = mdTheme(style, palette),

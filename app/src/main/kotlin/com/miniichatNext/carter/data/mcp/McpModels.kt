@@ -24,6 +24,7 @@ data class McpServerConfig(
     val createdAt: Long = System.currentTimeMillis(),
     val syncError: String? = null,
     val lastSyncAt: Long? = null,
+    val connectionRevision: String = "",
 ) {
     fun tp(): McpTransport = runCatching { McpTransport.valueOf(transport) }
         .getOrDefault(McpTransport.STREAMABLE_HTTP)

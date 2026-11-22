@@ -18,6 +18,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.miniichatNext.carter.data.model.TokenUsage
 import com.miniichatNext.carter.data.update.UpdateDownloadSources
+import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.data.update.UpdateMirrorNode
 import com.miniichatNext.carter.util.AppJson
 import kotlinx.coroutines.flow.Flow
@@ -26,6 +27,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 import kotlinx.serialization.builtins.ListSerializer
 
 const val COMPRESS_MODEL_CONVERSATION = "@conversation"
@@ -48,7 +50,7 @@ data class AppSettings(
     val temperature: Float = 0.7f,
     val stream: Boolean = true,
     val language: String = "system",
-    val dynamicColor: Boolean = false,
+    val dynamicColor: Boolean = true,
     val themeMode: String = "system",
     /** Markdown代码块是否自动换行 */
     val codeWrap: Boolean = true,
@@ -59,7 +61,6 @@ data class AppSettings(
     // 格式providerId::modelId
     val ocrModel: String = "",
     val imageGenerationModel: String = "",
-    val imageGenerationPreferConversation: Boolean = false,
     /** OCR触发模式：auto=仅纯文本模型/always=所有带图消息（视觉模型也附加文字）/off=禁用 */
     val ocrMode: String = "auto",
     val titleModel: String = COMPRESS_MODEL_CONVERSATION,
@@ -78,6 +79,7 @@ data class AppSettings(
     val updateNodes: List<UpdateMirrorNode> = UpdateDownloadSources.defaultNodes(),
     /** 用户已忽略的版本号集合（持久化为逗号分隔字符串） */
     val ignoredUpdateVersions: Set<String> = emptySet(),
+    @Transient val updateNodesInvalid: Boolean = false,
 )
 
 class SettingsRepository(private val context: Context) {
@@ -101,13 +103,13 @@ class SettingsRepository(private val context: Context) {
         val STREAM = booleanPreferencesKey("stream")
         val LANG = stringPreferencesKey("language")
         val DYNAMIC = booleanPreferencesKey("dynamic_color")
+        val DYNAMIC_DEFAULT_V2 = booleanPreferencesKey("dynamic_color_default_v2")
         val THEME = stringPreferencesKey("theme_mode")
         val CODE_WRAP = booleanPreferencesKey("code_wrap")
         val CODE_FOLD = booleanPreferencesKey("code_fold")
         val LATEX_ENABLED = booleanPreferencesKey("latex_enabled")
         val DEBUG_LOG_BALL = booleanPreferencesKey("debug_log_ball")
         val IMAGE_MODEL = stringPreferencesKey("image_generation_model")
-        val IMAGE_PREFER_CONVERSATION = booleanPreferencesKey("image_generation_prefer_conversation")
         val OCR_MODEL = stringPreferencesKey("ocr_model")
     val OCR_MODE = stringPreferencesKey("ocr_mode")
         val TITLE_MODEL = stringPreferencesKey("title_model")
@@ -127,50 +129,69 @@ class SettingsRepository(private val context: Context) {
 
     val settings: Flow<AppSettings> = context.settingsDataStore.data.map { p: Preferences -> read(p) }
 
-    private fun read(p: Preferences) = AppSettings(
-        launchCount = (p[Keys.LAUNCH_COUNT] ?: 0L).coerceAtLeast(0L),
-        autoNewChatOnLaunch = p[Keys.AUTO_NEW_CHAT] ?: true,
-        fontSizeSp = p[Keys.FONT_SIZE] ?: 15f,
-        showReasoningCard = p[Keys.SHOW_REASONING] ?: true,
-        showCardTokenUsage = p[Keys.SHOW_USAGE] ?: true,
-        sendOnEnter = p[Keys.SEND_ENTER] ?: false,
-        pasteAsAttachment = p[Keys.PASTE_ATTACHMENT] ?: false,
-        activeProviderId = p[Keys.PROVIDER] ?: "",
-        activeModel = p[Keys.MODEL] ?: "",
-        activeAssistantId = p[Keys.ASSISTANT] ?: "default",
-        systemPrompt = p[Keys.SYSTEM] ?: "You are a helpful assistant.",
-        temperature = p[Keys.TEMP] ?: 0.7f,
-        stream = p[Keys.STREAM] ?: true,
-        language = p[Keys.LANG] ?: "system",
-        dynamicColor = p[Keys.DYNAMIC] ?: false,
-        themeMode = p[Keys.THEME] ?: "system",
-        codeWrap = p[Keys.CODE_WRAP] ?: true,
-        codeFold = p[Keys.CODE_FOLD] ?: true,
-        latexEnabled = p[Keys.LATEX_ENABLED] ?: true,
-        ocrModel = p[Keys.OCR_MODEL] ?: "",
-        imageGenerationModel = p[Keys.IMAGE_MODEL] ?: "",
-        imageGenerationPreferConversation = p[Keys.IMAGE_PREFER_CONVERSATION] ?: false,
-        ocrMode = p[Keys.OCR_MODE] ?: "auto",
-        titleModel = p[Keys.TITLE_MODEL] ?: COMPRESS_MODEL_CONVERSATION,
-        compressModel = p[Keys.COMPRESS_MODEL] ?: COMPRESS_MODEL_CONVERSATION,
-        suggestionModel = p[Keys.SUGGESTION_MODEL] ?: COMPRESS_MODEL_CONVERSATION,
-        auxFallbackToActive = p[Keys.AUX_FALLBACK] ?: false,
-        debugLogBall = p[Keys.DEBUG_LOG_BALL] ?: false,
-        totalCachedTokens = p[Keys.TOTAL_CACHED] ?: 0L,
-        totalPromptTokens = p[Keys.TOTAL_PROMPT] ?: p[Keys.TOTAL_PROMPT_LEGACY]?.toLong() ?: 0L,
-        totalCompletionTokens = p[Keys.TOTAL_COMPLETION] ?: p[Keys.TOTAL_COMPLETION_LEGACY]?.toLong() ?: 0L,
-        autoCheckUpdate = p[Keys.AUTO_CHECK_UPDATE] ?: true,
-        updateNodesEnabled = p[Keys.UPDATE_NODES_ENABLED] ?: true,
-        updateNodes = p[Keys.UPDATE_NODES]?.let { raw ->
-            AppJson.json.decodeFromString(ListSerializer(UpdateMirrorNode.serializer()), raw)
-        } ?: UpdateDownloadSources.defaultNodes(),
-        ignoredUpdateVersions = (p[Keys.IGNORED_UPDATE_VERSIONS] ?: "")
-            .split(',').filter { it.isNotBlank() }.toSet(),
-    )
+    private fun read(p: Preferences): AppSettings {
+        val rawNodes = p[Keys.UPDATE_NODES]
+        val nodes = rawNodes?.let(::decodeNodes)
+        return AppSettings(
+            launchCount = (p[Keys.LAUNCH_COUNT] ?: 0L).coerceAtLeast(0L),
+            autoNewChatOnLaunch = p[Keys.AUTO_NEW_CHAT] ?: true,
+            fontSizeSp = p[Keys.FONT_SIZE] ?: 15f,
+            showReasoningCard = p[Keys.SHOW_REASONING] ?: true,
+            showCardTokenUsage = p[Keys.SHOW_USAGE] ?: true,
+            sendOnEnter = p[Keys.SEND_ENTER] ?: false,
+            pasteAsAttachment = p[Keys.PASTE_ATTACHMENT] ?: false,
+            activeProviderId = p[Keys.PROVIDER] ?: "",
+            activeModel = p[Keys.MODEL] ?: "",
+            activeAssistantId = p[Keys.ASSISTANT] ?: "default",
+            systemPrompt = p[Keys.SYSTEM] ?: "You are a helpful assistant.",
+            temperature = p[Keys.TEMP] ?: 0.7f,
+            stream = p[Keys.STREAM] ?: true,
+            language = p[Keys.LANG] ?: "system",
+            dynamicColor = if (p[Keys.DYNAMIC_DEFAULT_V2] == true) (p[Keys.DYNAMIC] ?: true) else true,
+            themeMode = p[Keys.THEME] ?: "system",
+            codeWrap = p[Keys.CODE_WRAP] ?: true,
+            codeFold = p[Keys.CODE_FOLD] ?: true,
+            latexEnabled = p[Keys.LATEX_ENABLED] ?: true,
+            ocrModel = p[Keys.OCR_MODEL] ?: "",
+            imageGenerationModel = p[Keys.IMAGE_MODEL] ?: "",
+            ocrMode = p[Keys.OCR_MODE] ?: "auto",
+            titleModel = p[Keys.TITLE_MODEL] ?: COMPRESS_MODEL_CONVERSATION,
+            compressModel = p[Keys.COMPRESS_MODEL] ?: COMPRESS_MODEL_CONVERSATION,
+            suggestionModel = p[Keys.SUGGESTION_MODEL] ?: COMPRESS_MODEL_CONVERSATION,
+            auxFallbackToActive = p[Keys.AUX_FALLBACK] ?: false,
+            debugLogBall = p[Keys.DEBUG_LOG_BALL] ?: false,
+            totalCachedTokens = p[Keys.TOTAL_CACHED] ?: 0L,
+            totalPromptTokens = p[Keys.TOTAL_PROMPT] ?: p[Keys.TOTAL_PROMPT_LEGACY]?.toLong() ?: 0L,
+            totalCompletionTokens = p[Keys.TOTAL_COMPLETION] ?: p[Keys.TOTAL_COMPLETION_LEGACY]?.toLong() ?: 0L,
+            autoCheckUpdate = p[Keys.AUTO_CHECK_UPDATE] ?: true,
+            updateNodesEnabled = p[Keys.UPDATE_NODES_ENABLED] ?: true,
+            updateNodes = nodes ?: if (rawNodes == null) UpdateDownloadSources.defaultNodes() else emptyList(),
+            ignoredUpdateVersions = (p[Keys.IGNORED_UPDATE_VERSIONS] ?: "")
+                .split(',').filter { it.isNotBlank() }.toSet(),
+            updateNodesInvalid = rawNodes != null && nodes == null,
+        )
+    }
+
+    private fun decodeNodes(raw: String): List<UpdateMirrorNode>? = runCatching {
+        require(raw.length <= 512 * 1024)
+        AppJson.json.decodeFromString(ListSerializer(UpdateMirrorNode.serializer()), raw).also(UpdateDownloadSources::validateNodes)
+    }.getOrElse { failure ->
+        if (failure !is IllegalArgumentException && failure !is java.net.URISyntaxException) throw failure
+        DebugLog.w("Update", "Update nodes invalid; original configuration retained")
+        null
+    }
+
+    suspend fun saveUpdateNodes(nodes: List<UpdateMirrorNode>) = updateMutex.withLock {
+        UpdateDownloadSources.validateNodes(nodes)
+        context.settingsDataStore.edit { p ->
+            p[Keys.UPDATE_NODES] = AppJson.json.encodeToString(ListSerializer(UpdateMirrorNode.serializer()), nodes)
+        }
+    }
 
     suspend fun update(transform: (AppSettings) -> AppSettings) = updateMutex.withLock {
         context.settingsDataStore.edit { p ->
-            val next = transform(read(p))
+            val current = read(p)
+            val next = transform(current)
             p[Keys.LAUNCH_COUNT] = next.launchCount.coerceAtLeast(0L)
             p[Keys.AUTO_NEW_CHAT] = next.autoNewChatOnLaunch
             p[Keys.FONT_SIZE] = next.fontSizeSp
@@ -186,13 +207,13 @@ class SettingsRepository(private val context: Context) {
             p[Keys.STREAM] = next.stream
             p[Keys.LANG] = next.language
             p[Keys.DYNAMIC] = next.dynamicColor
+            p[Keys.DYNAMIC_DEFAULT_V2] = true
             p[Keys.THEME] = next.themeMode
             p[Keys.CODE_WRAP] = next.codeWrap
             p[Keys.CODE_FOLD] = next.codeFold
             p[Keys.LATEX_ENABLED] = next.latexEnabled
             p[Keys.OCR_MODEL] = next.ocrModel
             p[Keys.IMAGE_MODEL] = next.imageGenerationModel
-            p[Keys.IMAGE_PREFER_CONVERSATION] = next.imageGenerationPreferConversation
             p[Keys.OCR_MODE] = next.ocrMode
             p[Keys.TITLE_MODEL] = next.titleModel
             p[Keys.COMPRESS_MODEL] = next.compressModel
@@ -202,9 +223,11 @@ class SettingsRepository(private val context: Context) {
             p[Keys.TOTAL_PROMPT] = next.totalPromptTokens
             p[Keys.TOTAL_COMPLETION] = next.totalCompletionTokens
             p[Keys.AUTO_CHECK_UPDATE] = next.autoCheckUpdate
-            UpdateDownloadSources.validateNodes(next.updateNodes)
             p[Keys.UPDATE_NODES_ENABLED] = next.updateNodesEnabled
-            p[Keys.UPDATE_NODES] = AppJson.json.encodeToString(ListSerializer(UpdateMirrorNode.serializer()), next.updateNodes)
+            if (next.updateNodes != current.updateNodes) {
+                UpdateDownloadSources.validateNodes(next.updateNodes)
+                p[Keys.UPDATE_NODES] = AppJson.json.encodeToString(ListSerializer(UpdateMirrorNode.serializer()), next.updateNodes)
+            }
             p[Keys.IGNORED_UPDATE_VERSIONS] = next.ignoredUpdateVersions.joinToString(",")
             p[Keys.DEBUG_LOG_BALL] = next.debugLogBall
         }

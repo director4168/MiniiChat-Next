@@ -11,8 +11,9 @@
     <string name="hint_input">发消息给MiniiChat Next…</string>
     <string name="empty_title">你好，我是MiniiChat Next</string>
     <string name="empty_subtitle">开源的LLM客户端，API Key由你自己提供</string>
+    <string name="message_more">更多</string>
     <string name="copy">复制</string>
-    <string name="generic_delete_confirm">删除"%1$s"？此操作无法撤销。</string>
+    <string name="generic_delete_confirm">删除"%1$s"？此操作无法撤销</string>
     <string name="open_external_failed">无法打开：%1$s</string>
     <string name="delete">删除</string>
     <string name="rename">重命名</string>
@@ -100,10 +101,10 @@
     <string name="error_no_provider">还没有配置服务商，请到设置里添加</string>
 
     <!-- 模型获取与选择 -->
-    <string name="example_prompt_1">用一段话解释什么是大语言模型。</string>
-    <string name="example_prompt_2">写一首关于 Android 开发的俳句。</string>
-    <string name="example_prompt_3">给我 5 条高效远程办公的建议。</string>
-    <string name="example_prompt_4">把「早上好」翻译成日语。</string>
+    <string name="example_prompt_1">用一段话解释什么是大语言模型</string>
+    <string name="example_prompt_2">写一首关于 Android 开发的俳句</string>
+    <string name="example_prompt_3">给我 5 条高效远程办公的建议</string>
+    <string name="example_prompt_4">把「早上好」翻译成日语</string>
     <string name="search_chats">搜索对话</string>
     <string name="search_models">搜索模型</string>
     <string name="fetch_models">获取模型</string>
@@ -228,7 +229,7 @@
     <string name="mermaid_show_preview">预览</string>
     <string name="mermaid_preview_action">全屏预览</string>
     <string name="mermaid_close">关闭</string>
-    <string name="compress_not_enough">保留最近消息时，可压缩的消息不足。</string>
+    <string name="compress_not_enough">保留最近消息时，可压缩的消息不足</string>
     <string name="suggestion_generate_hint">进入该页即生成候选</string>
     <string name="suggestion_generating">正在生成候选…</string>
 
@@ -247,7 +248,7 @@
     <string name="aux_model_suggestion">候选回复</string>
     <string name="aux_model_not_set">未设置</string>
     <string name="aux_fallback_to_active">辅助模型不可用时回退</string>
-    <string name="aux_fallback_to_active_hint">辅助模型无法使用时，改用当前正在使用的模型处理；关闭时保持失败提示</string>
+    <string name="aux_fallback_to_active_hint">辅助模型无法使用时，改用当前正在使用的模型处理。关闭时保持失败提示</string>
     <string name="compress_target_tokens">目标 token 数</string>
     <string name="compress_keep_recent">保留最近消息数</string>
     <string name="compress_additional_prompt">附加指令</string>
@@ -274,7 +275,7 @@
     <string name="models_count_configured">已配置 %1$d 个</string>
     <string name="server_sent_events">Server-Sent Events</string>
     <string name="stream_off_confirm_title">确定关闭流式回复吗？</string>
-    <string name="stream_off_confirm_message">流式回复是指模型边生成边把内容显示出来，可以边看边等；关闭后需要等整段回复生成完毕才一次性显示，长回复时容易看起来像卡住，甚至请求超时。通常建议保持开启。</string>
+    <string name="stream_off_confirm_message">流式回复是指模型边生成边把内容显示出来，可以边看边等。关闭后需要等整段回复生成完毕才一次性显示，长回复时容易看起来像卡住，甚至请求超时。通常建议保持开启</string>
     <string name="stream_off_confirm_confirm">仍然关闭</string>
 
 
@@ -376,7 +377,7 @@
     <string name="crash_copy">复制崩溃日志</string>
     <string name="crash_mail_subject">MiniiChat Next崩溃日志反馈</string>
     <string name="crash_mail_body">请描述你当时在做什么：\n\n（崩溃日志见附件）</string>
-    <string name="crash_mail_failed">没有可用的邮件应用，崩溃日志已复制到剪贴板。</string>
+    <string name="crash_mail_failed">没有可用的邮件应用，崩溃日志已复制到剪贴板</string>
     <string name="crash_ignore">忽略并继续</string>
     <string name="crash_empty">（崩溃日志为空）</string>
 
@@ -395,9 +396,9 @@
     <!-- 附件与工作区提示 -->
     <string name="attachment_duplicate">该文件已经添加过了</string>
     <string name="attachment_inline_note">附件提示：%1$s</string>
-    <string name="attachment_large_inline_hint">图片较大（%1$s），压缩后仍会整张发送。</string>
+    <string name="attachment_large_inline_hint">图片较大（%1$s），压缩后仍会整张发送</string>
     <string name="assistant_workspace_title">Agent 工作区</string>
-    <string name="assistant_workspace_hint">开启后模型可读写工作区文件、执行shell命令、使用MCP工具；关闭则不向模型提供任何工具</string>
+    <string name="assistant_workspace_hint">开启后模型可读写工作区文件、执行shell命令、使用MCP工具。关闭则不向模型提供任何工具</string>
     <string name="manage">管理</string>
     <string name="mcp_delete_confirm_message">确定删除“%1$s”吗？它已发现的工具与逐工具设置也会一起删除</string>
 
@@ -416,22 +417,23 @@
     <string name="workspace_terminal_title">终端</string>
     <string name="workspace_terminal_open">交互式终端</string>
     <string name="workspace_terminal_loading">正在启动shell...</string>
-    <string name="workspace_terminal_exited">shell已退出，重新进入可开启新会话。</string>
+    <string name="workspace_terminal_exited">shell已退出，重新进入可开启新会话</string>
     <string name="workspace_terminal_close_confirm_title">关闭终端 %1$d？</string>
-    <string name="workspace_terminal_close_confirm_message">该标签页中运行的shell将被终止。</string>
+    <string name="workspace_terminal_close_confirm_message">该标签页中运行的shell将被终止</string>
     <string name="workspace_terminal_close">关闭</string>
     <string name="workspace_terminal_not_installed">Rootfs尚未安装</string>
     <string name="workspace_terminal_menu">终端</string>
     <string name="workspace_terminal_unbound">还没有可用的工作区，请先在 设置-工作区 中创建</string>
     <string name="workspace_terminal_tab">终端 %1$d</string>
     <string name="workspace_cat_read">读取文件</string>
-    <string name="workspace_cat_read_desc">读取、列出与搜索文件。默认无需审批。</string>
+    <string name="workspace_cat_read_desc">读取、列出与搜索文件。默认无需审批</string>
     <string name="workspace_cat_write">写入或编辑文件</string>
-    <string name="workspace_cat_write_desc">写入、编辑、删除、移动、复制文件。默认无需审批。</string>
+    <string name="workspace_cat_write_desc">写入、编辑、删除、移动、复制文件。默认无需审批</string>
     <string name="workspace_cat_execute">执行 Shell 命令</string>
-    <string name="workspace_cat_execute_desc">在工作区内运行命令。默认需要审批。</string>
+    <string name="workspace_cat_execute_desc">在工作区内运行命令。默认需要审批</string>
     <string name="workspace_terminal_unbound_reason">当前对话未绑定工作区，请先在+菜单-工作区绑定</string>
     <string name="workspace_terminal_not_installed_reason">该工作区未安装或损坏，请先安装或修复</string>
+    <string name="workspace_rootfs_unsupported_abi">此构建未包含兼容的工作区运行环境</string>
     <string name="workspace_shell_compat_mode">兼容模式（仅出现问题是使用）</string>
     <string name="workspace_run">运行</string>
     <string name="workspace_hint">安装与管理工作区</string>
@@ -464,9 +466,9 @@
     <string name="mcp_all_files_title">未授予“所有文件访问”权限</string>
     <string name="mcp_all_files_message">内置文件工具读写内置存储需要该权限，点击前往系统设置授权</string>
     <string name="mcp_storage_title">未授予存储权限</string>
-    <string name="mcp_storage_message">内置文件工具读写内置存储需要该权限，点击即可申请授权。</string>
+    <string name="mcp_storage_message">内置文件工具读写内置存储需要该权限，点击即可申请授权</string>
     <string name="mcp_calendar_permission_title">未授予日历权限</string>
-    <string name="mcp_calendar_permission_message">日历工具需要该权限才能读取和创建事件，点击即可申请授权。</string>
+    <string name="mcp_calendar_permission_message">日历工具需要该权限才能读取和创建事件，点击即可申请授权</string>
     <string name="mcp_external_servers">外部MCP服务</string>
     <string name="mcp_count">共 %1$d 个</string>
     <string name="mcp_deleted">已删除MCP服务</string>
@@ -477,8 +479,7 @@
 
     <!-- 内置工具分组 -->
     <string name="mcp_tools_count">%1$d 个工具</string>
-    <string name="builtin_group_ask_desc">向用户提问并等待选择</string>
-    <string name="builtin_group_shell_desc">在应用沙箱内执行 shell 命令</string>
+    <string name="builtin_group_shell_desc">在本机以普通权限或高级权限执行shell命令</string>
     <string name="builtin_group_file_io_desc">读取、写入与精确编辑文本文件</string>
     <string name="builtin_group_file_manage_desc">列出、移动、复制、重命名与删除文件或目录</string>
     <string name="builtin_group_search_desc">搜索文件名、文件内容与查看文件信息</string>
@@ -488,20 +489,25 @@
     <string name="builtin_group_web_desc">抓取网页并把原始内容交给AI</string>
     <string name="builtin_group_workspace">工作区</string>
     <string name="builtin_group_workspace_desc">在助手绑定的工作区Rootfs内操作（Shell、文件读写、搜索）</string>
-    <string name="builtin_group_ask">向用户询问</string>
-    <string name="builtin_group_shell">Shell 终端</string>
+    <string name="builtin_group_shell">Shell</string>
     <string name="builtin_group_file_io">文件读写</string>
     <string name="builtin_group_file_manage">目录与文件管理</string>
     <string name="builtin_group_search">搜索与信息</string>
     <string name="builtin_group_special">设备工具</string>
     <string name="builtin_group_special_desc">时间、剪贴板和日历工具</string>
+    <string name="builtin_coarse_local">本机与文件</string>
+    <string name="builtin_coarse_local_desc">Shell、文件读写、目录管理与搜索</string>
+    <string name="builtin_coarse_extended">扩展能力</string>
+    <string name="builtin_coarse_extended_desc">工作区、浏览器、设备工具与其它能力</string>
+    <string name="builtin_group_other">其它</string>
+    <string name="builtin_group_other_desc">生图模型调用、设备工具与需求澄清</string>
     <string name="mcp_builtin_group_count">内置工具</string>
     <string name="mcp_builtin_search_hint">搜索工具（名称或介绍）</string>
     <string name="mcp_builtin_search_empty">没有匹配的工具</string>
 
     <!-- MCP编辑与工具设置 -->
     <string name="mcp_builtin_config_title">内置工具管理</string>
-    <string name="mcp_builtin_config_hint">在这里管理内置工具。关闭工具后AI不能调用；每个分组会显示对应的审批默认值。</string>
+    <string name="mcp_builtin_config_hint">在这里管理内置工具。关闭工具后AI不能调用。每个分组会显示对应的审批默认值</string>
     <string name="mcp_server_name">MCP服务</string>
     <string name="mcp_synced">已同步 %1$d 个工具</string>
     <string name="mcp_sync_failed">同步失败：%1$s</string>
@@ -528,6 +534,10 @@
     <string name="workspace_name_invalid">名称不能为空或非法</string>
     <string name="workspace_name_exists">同名工作区已存在</string>
     <string name="workspace_new">新建工作区</string>
+    <string name="workspace_disabled_title">禁用</string>
+    <string name="workspace_disabled_reason">当前软件为32位版本，工作区proot由于依赖库要求需要运行在64位设备64位安装包！</string>
+    <string name="workspace_disabled_version">%1$s (%2$d) %3$s</string>
+    <string name="workspace_disabled_ribbon">禁用</string>
     <string name="workspace_empty_title">还没有工作区</string>
     <string name="workspace_status_ready">环境已就绪</string>
     <string name="workspace_status_installing">正在安装</string>
@@ -536,6 +546,16 @@
     <string name="workspace_install_done">安装完成</string>
     <string name="workspace_install_failed">安装失败：%1$s</string>
     <string name="workspace_installing">安装中…</string>
+    <string name="workspace_rootfs_notification_channel">Rootfs下载</string>
+    <string name="workspace_rootfs_notification_channel_desc">工作区Rootfs下载与解压进度</string>
+    <string name="workspace_rootfs_notification_title">正在安装工作区环境</string>
+    <string name="workspace_rootfs_notification_progress">下载中 %1$dMB / %2$dMB</string>
+    <string name="workspace_rootfs_notification_downloading">下载中 %1$dMB</string>
+    <string name="workspace_rootfs_notification_extracting">正在解压Rootfs…</string>
+    <string name="workspace_rootfs_notification_finished">安装完成</string>
+    <string name="workspace_rootfs_notification_waiting">准备下载…</string>
+    <string name="workspace_rootfs_download_dialog_title">正在下载 Rootfs</string>
+    <string name="workspace_rootfs_download_dialog_message">请保持应用在前台，下载会自动继续。关闭弹窗会取消本次下载</string>
     <string name="workspace_downloading_total">下载中 %1$dMB / %2$dMB</string>
     <string name="workspace_downloading">下载中 %1$dMB</string>
     <string name="workspace_extracting">解压中：%1$d 项  %2$s</string>
@@ -589,8 +609,8 @@
     <string name="update_verification_failed_title">校验失败</string>
     <string name="update_transfer_complete">下载完成</string>
     <string name="update_checking_cache">正在检查已下载的安装包…</string>
-    <string name="update_apk_version_code_mismatch">APK版本码不匹配：配置要求%1$d，实际安装包为%2$d。下载地址和校验值应对应同一版本。</string>
-    <string name="update_apk_version_name_mismatch">APK版本名不匹配：配置要求%1$s，实际安装包为%2$s。</string>
+    <string name="update_apk_version_code_mismatch">APK版本码不匹配：配置要求%1$d，实际安装包为%2$d。下载地址和校验值应对应同一版本</string>
+    <string name="update_apk_version_name_mismatch">APK版本名不匹配：配置要求%1$s，实际安装包为%2$s</string>
     <string name="update_probe_list_title">下载节点测速结果</string>
     <string name="update_probe_waiting">等待测速</string>
     <string name="update_probe_testing">测速中</string>
@@ -602,21 +622,22 @@
     <string name="update_direct_download">原地址直连</string>
     <string name="update_using_node">选定节点：%1$s</string>
     <string name="update_verifying_package">正在核对安装包校验值、版本、架构和签名证书…</string>
-    <string name="update_reused_package">已复用校验通过的安装包，无需重复下载。</string>
-    <string name="update_verified_package">安装包已通过校验，可以申请安装。</string>
-    <string name="update_cached_invalid">已下载的安装包已丢失或与本次更新不匹配，请重新下载。</string>
+    <string name="update_reused_package">已复用校验通过的安装包，无需重复下载</string>
+    <string name="update_verified_package">安装包已通过校验，可以申请安装</string>
+    <string name="update_cached_invalid">已下载的安装包已丢失或与本次更新不匹配，请重新下载</string>
     <string name="update_hide_download">隐藏</string>
     <string name="update_cancel_download">取消下载</string>
     <string name="update_nodes_enabled">启用下载节点</string>
     <string name="update_nodes_edit">编辑下载节点</string>
+    <string name="update_saved_nodes_invalid">已保存的节点配置有误，编辑或重置后可重新使用</string>
     <string name="update_nodes_count">已启用%1$d个／共%2$d个节点</string>
     <string name="update_node_add">添加节点</string>
     <string name="update_node_edit">编辑节点</string>
     <string name="update_node_url">代理前缀／地址模板</string>
-    <string name="update_nodes_empty">未配置镜像节点，将使用原始下载地址。</string>
-    <string name="update_nodes_invalid">请检查节点名称和HTTPS地址；名称及地址不得重复，最多包含一个{url}，GitHub与Direct为保留名称。</string>
+    <string name="update_nodes_empty">未配置镜像节点，将使用原始下载地址</string>
+    <string name="update_nodes_invalid">请检查节点名称和HTTPS地址。名称及地址不得重复，最多包含一个{url}，GitHub与Direct为保留名称</string>
     <string name="update_nodes_save_failed">节点保存失败：%1$s</string>
-    <string name="update_nodes_reset_message">用内置节点替换当前编辑列表？需再点击保存才会生效。</string>
+    <string name="update_nodes_reset_message">用内置节点替换当前编辑列表？需再点击保存才会生效</string>
     <string name="update_view_download">查看更新下载／安装</string>
     <string name="update_package_info">%1$s %2$s</string>
     <string name="update_current_build">%1$s (%2$d)</string>
@@ -649,7 +670,7 @@
     <string name="clarify_custom_label">补充选项：手动输入自定义需求（可选）</string>
     <string name="clarify_summary_prefix">用户已确认选项：</string>
     <string name="clarify_summary_none">未勾选预设选项</string>
-    <string name="clarify_summary_custom">；自定义补充需求：</string>
+    <string name="clarify_summary_custom">。自定义补充需求：</string>
     <string name="clarify_submit">提交选择并继续</string>
     <string name="clarify_card_title">需求澄清</string>
     <string name="clarify_questions_count">%1$d个问题</string>
@@ -671,11 +692,11 @@
     <string name="attachment_list_truncated">已截断：%1$s</string>
     <string name="attachment_list_not_inlined">未内联：%1$s</string>
     <string name="common_enum_separator">、</string>
-    <string name="common_note_separator">；</string>
-    <string name="agent_tools_hint">\n\n# Agent Tools\n你可以在合适的时候调用工具。规则：\n- 只有用户明确需要时才调用工具，不要为了显得有用而乱调\n- 用户指向不明确时先问清楚，不要盲目列举目录来猜\n- 同一次请求里不要重复调用同一个工具\n- 工具参数必须传具体值\n</string>
-    <string name="workspace_dialog_hint">选择本次对话使用的工作区；都不选则本次对话不向模型提供工作区工具</string>
+    <string name="common_note_separator">。</string>
+    <string name="agent_tools_hint">\n\n# Agent Tools\n你可以在合适的时候调用工具。规则：\n- 只有用户明确需要时才调用工具，不要为了显得有用而乱调\n- 用户指向不明确时先问清楚，不要盲目列举目录来猜\n- 同一次请求里不要重复调用同一个工具\n- 工具参数必须传具体值\n- 用户要求生成图片时，调用 image_generate 工具，使用设置中的生图模型\n</string>
+    <string name="workspace_dialog_hint">选择本次对话使用的工作区。都不选则本次对话不向模型提供工作区工具</string>
     <string name="workspace_dialog_empty">还没有工作区，点右下角“管理”去创建</string>
-    <string name="mcp_dialog_hint">选择本次对话启用的MCP服务；关闭后本次对话不再向模型提供该服务的工具</string>
+    <string name="mcp_dialog_hint">选择本次对话启用的MCP服务。关闭后本次对话不再向模型提供该服务的工具</string>
     <string name="mcp_dialog_empty">还没有配置MCP服务，点右下角“管理”去添加</string>
     <string name="tool_override_reset">恢复为跟随助手设置</string>
     <string name="attachment_too_large_counted">附件过大（上限 %1$d MB）：%2$d 个</string>
@@ -692,9 +713,10 @@
     <string name="update_install_now">立即安装</string>
     <string name="update_download_failed_title">下载失败</string>
     <string name="update_download">下载</string>
+    <string name="update_cache_publish_failed">安装包保存失败</string>
     <string name="update_cancelled">已取消</string>
     <string name="update_sha_mismatch">校验失败：期望 %1$s，实际 %2$s</string>
-    <string name="update_package_missing">没有为设备架构%1$s配置更新包。</string>
+    <string name="update_package_missing">没有为设备架构%1$s配置更新包</string>
     <string name="update_empty_response">空响应</string>
 
     <!-- 助手与服务商预设 -->
@@ -712,23 +734,62 @@
     <string name="provider_preset_siliconflow_hint">国内聚合，速度快</string>
     <string name="workspace_preview_too_large">文件过大，无法预览（%1$d bytes）</string>
 
+    <string name="permissions_settings_desc">查看并申请应用权限</string>
+    <string name="shizuku_approval_disable_title">关闭Shizuku工具审批？</string>
+    <string name="shizuku_approval_disable_message">Shizuku权限较高，关闭审批后AI可随意调用Shizuku权限执行命令，存在一定风险！</string>
+    <string name="root_approval_disable_title">关闭ROOT工具审批？</string>
+    <string name="root_approval_disable_message">ROOT权限极高，关闭审批后AI可随意调用ROOT权限执行命令，存在较高风险！！！</string>
+    <string name="root_approval_disable_wait">请等待 %1$d 秒</string>
+    <string name="root_approval_disable_confirm">确认关闭</string>
+    <string name="permissions_title">权限</string>
+    <string name="permissions_subtitle">查看并管理应用需要的权限。系统设置类权限会跳转到对应页面</string>
+    <string name="permissions_refresh">刷新</string>
+    <string name="permissions_app_section">应用权限</string>
+    <string name="permissions_basic">网络与后台任务</string>
+    <string name="permissions_basic_desc">网络访问、前台下载服务与唤醒锁由系统自动管理</string>
+    <string name="permissions_media">照片、视频与音频</string>
+    <string name="permissions_media_desc">用于选择并读取聊天附件中的媒体文件</string>
+    <string name="permissions_notification">通知</string>
+    <string name="permissions_notification_desc">用于更新下载进度、后台任务与重要状态提醒</string>
+    <string name="permissions_calendar">日历</string>
+    <string name="permissions_calendar_desc">允许日历工具读取和创建日程</string>
+    <string name="permissions_storage">所有文件访问</string>
+    <string name="permissions_storage_desc">用于内置文件工具读取公共存储中的文件</string>
+    <string name="permissions_install">安装未知应用</string>
+    <string name="permissions_install_desc">用于下载并安装应用更新包</string>
+    <string name="permissions_overlay">显示在其他应用上层</string>
+    <string name="permissions_overlay_desc">用于调试日志悬浮球</string>
+    <string name="permissions_advanced_section">高级权限</string>
+    <string name="permissions_high_risk">Shizuku / Root</string>
+    <string name="permissions_high_risk_desc">高级权限，可用于进阶操作</string>
+    <string name="permissions_shizuku_desc">用于使用execute_shell_shizuku工具，以shizuku身份执行sjell</string>
+    <string name="permissions_root_desc">用于使用execute_shell_root工具，以root身份执行shell</string>
+    <string name="permissions_granted">已授权</string>
+    <string name="permissions_not_granted">未授权</string>
+    <string name="permissions_available">可用</string>
+    <string name="permissions_unavailable">不可用</string>
+    <string name="permissions_open_settings">去设置</string>
+    <string name="permissions_request">申请</string>
+
     <!-- 内置工具描述与Schema -->
     <string name="debug_log_truncated_head">> (日志过长，仅显示末尾部分)\n</string>
     <string name="attachment_binary_file">二进制文件</string>
-    <string name="builtin_tool_clarification_desc">当需要确认或进一步理解用户的需求、偏好或方案时调用此工具。可提出1个问题（最多4个预设选项），也可一次提出最多16个问题；用户可单选、多选，并可为每题补充自定义回答。</string>
-    <string name="builtin_tool_shell_desc">在安卓本机环境中执行 Shell (sh/bash) 脚本或终端命令，返回标准输出与错误输出。</string>
-    <string name="builtin_tool_file_list_desc">列出指定目录下的文件与子目录。返回名称、类型、大小。</string>
-    <string name="builtin_tool_file_read_desc">读取文本文件内容。可指定最大读取字节数，默认 256KB。</string>
-    <string name="builtin_tool_file_write_desc">把文本内容写入文件（覆盖）。父目录不存在会自动创建。</string>
-    <string name="builtin_tool_file_append_desc">把文本内容追加到文件末尾。文件不存在会创建。</string>
-    <string name="builtin_tool_file_delete_desc">删除文件或目录。目录会递归删除。</string>
-    <string name="builtin_tool_file_move_desc">把文件或目录移动到新位置。</string>
-    <string name="builtin_tool_file_copy_desc">复制文件或目录到新位置。</string>
-    <string name="builtin_tool_file_rename_desc">重命名文件或目录（同一目录内的改名）。</string>
-    <string name="builtin_tool_file_mkdir_desc">创建目录（含多级父目录）。</string>
-    <string name="builtin_tool_file_exists_desc">判断路径是否存在，并返回是文件还是目录。</string>
-    <string name="builtin_tool_file_search_desc">在指定目录下按文件名关键字递归搜索，返回匹配的路径列表。</string>
-    <string name="builtin_tool_file_info_desc">获取文件/目录的详细信息：大小、最后修改时间、是否目录。</string>
+    <string name="builtin_tool_clarification_desc">当需要确认或进一步理解用户的需求、偏好或方案时调用此工具。可提出1个问题（最多4个预设选项），也可一次提出最多16个问题。用户可单选、多选，并可为每题补充自定义回答</string>
+    <string name="builtin_tool_shell_desc">在本机使用普通应用权限执行Shell命令。禁止su和sudo命令</string>
+    <string name="builtin_tool_shell_shizuku_desc">在本机以Shizuku权限执行Shell命令，需要授予软件Shizuku权限</string>
+    <string name="builtin_tool_shell_root_desc">在本机以root权限执行Shell命令，需要授予软件root权限</string>
+    <string name="builtin_tool_file_list_desc">列出指定目录下的文件与子目录。返回名称、类型、大小</string>
+    <string name="builtin_tool_file_read_desc">读取文本文件内容。可指定最大读取字节数，默认 256KB</string>
+    <string name="builtin_tool_file_write_desc">把文本内容写入文件（覆盖）。父目录不存在会自动创建</string>
+    <string name="builtin_tool_file_append_desc">把文本内容追加到文件末尾。文件不存在会创建</string>
+    <string name="builtin_tool_file_delete_desc">删除文件或目录。目录会递归删除</string>
+    <string name="builtin_tool_file_move_desc">把文件或目录移动到新位置</string>
+    <string name="builtin_tool_file_copy_desc">复制文件或目录到新位置</string>
+    <string name="builtin_tool_file_rename_desc">重命名文件或目录（同一目录内的改名）</string>
+    <string name="builtin_tool_file_mkdir_desc">创建目录（含多级父目录）</string>
+    <string name="builtin_tool_file_exists_desc">判断路径是否存在，并返回是文件还是目录</string>
+    <string name="builtin_tool_file_search_desc">在指定目录下按文件名关键字递归搜索，返回匹配的路径列表</string>
+    <string name="builtin_tool_file_info_desc">获取文件/目录的详细信息：大小、最后修改时间、是否目录</string>
     <string name="builtin_tool_clarification_schema">{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"description\":\"需要向用户确认的问题或题目\"},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"选项列表，最多4个具体选项\"},\"allow_multiple\":{\"type\":\"boolean\",\"description\":\"是否允许多选\"},\"questions\":{\"type\":\"array\",\"maxItems\":16,\"items\":{\"type\":\"object\",\"properties\":{\"question\":{\"type\":\"string\",\"description\":\"需要向用户确认的问题\"},\"options\":{\"type\":\"array\",\"items\":{\"type\":\"string\"},\"description\":\"选项列表，最多4个具体选项\"},\"allow_multiple\":{\"type\":\"boolean\",\"description\":\"是否允许多选\"}},\"required\":[\"question\",\"options\"]},\"description\":\"一次提出多个问题，最多16个\"}}}</string>
     <string name="builtin_tool_browser_desc">抓取网页并返回原始内容。参数：url（必填）、ua（可选：mobile/desktop/custom:&lt;UA&gt;）、mode（可选：auto/http/render——render 用真实 WebView 渲染以绕过反爬）、timeout_seconds（可选，默认15）。当前默认UA模式：%1$s</string>
     <string name="builtin_tool_browser_schema">{\"type\":\"object\",\"properties\":{\"url\":{\"type\":\"string\",\"description\":\"要抓取的URL\"},\"ua\":{\"type\":\"string\",\"description\":\"UA模式：mobile / desktop / custom:&lt;自定义UA&gt;\"},\"timeout_seconds\":{\"type\":\"integer\",\"description\":\"请求超时秒数，默认15\"}},\"required\":[\"url\"]}</string>
@@ -743,7 +804,7 @@
     <string name="builtin_tool_file_rename_schema">{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"文件绝对路径\"},\"new_name\":{\"type\":\"string\",\"description\":\"新名称\"}},\"required\":[\"path\",\"new_name\"]}</string>
     <string name="builtin_tool_file_mkdir_schema">{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"目录绝对路径\"}},\"required\":[\"path\"]}</string>
     <string name="builtin_tool_file_exists_schema">{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"路径\"}},\"required\":[\"path\"]}</string>
-    <string name="builtin_tool_file_edit_desc">编辑文件：将 old_text 精确替换为 new_text。匹配回退：精确→行级trim（容忍缩进/行尾空白）→首尾行锚定。多处命中需 replace_all 或补充上下文。</string>
+    <string name="builtin_tool_file_edit_desc">编辑文件：将 old_text 精确替换为 new_text。匹配回退：精确→行级trim（容忍缩进/行尾空白）→首尾行锚定。多处命中需 replace_all 或补充上下文</string>
     <string name="builtin_tool_file_edit_schema">{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"要编辑的文件\"},\"old_text\":{\"type\":\"string\",\"description\":\"要替换的精确文本（从最近的 file_read 复制）\"},\"new_text\":{\"type\":\"string\",\"description\":\"替换为的文本（空串=删除）\"},\"replace_all\":{\"type\":\"boolean\",\"description\":\"替换全部命中（默认 false：要求恰好 1 处）\"}},\"required\":[\"path\",\"old_text\"]}</string>
     <string name="builtin_tool_file_search_schema">{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"搜索根目录\"},\"keyword\":{\"type\":\"string\",\"description\":\"关键字或正则表达式\"},\"regex\":{\"type\":\"boolean\",\"description\":\"将关键字按忽略大小写的正则处理（默认 false）\"},\"max_results\":{\"type\":\"integer\",\"description\":\"最大匹配数量\"}},\"required\":[\"path\",\"keyword\"]}</string>
     <string name="builtin_tool_file_info_schema">{\"type\":\"object\",\"properties\":{\"path\":{\"type\":\"string\",\"description\":\"路径\"}},\"required\":[\"path\"]}</string>
@@ -752,7 +813,11 @@
     <string name="builtin_shell_timeout">执行超时（超过 %1$d 秒）</string>
     <string name="builtin_shell_no_output">(执行成功，无输出)</string>
     <string name="builtin_shell_exit">执行退出代码: %1$d\n输出:\n%2$s</string>
+    <string name="builtin_shell_su_forbidden">普通Shell禁止执行su或sudo，请使用Shizuku/Root Shell工具</string>
     <string name="builtin_shell_failed">Shell执行失败: %1$s</string>
+    <string name="builtin_shell_shizuku_unavailable">Shizuku不可用，请启动Shizuku后重试</string>
+    <string name="builtin_shell_shizuku_denied">缺少Shizuku授权，请到权限页申请</string>
+    <string name="builtin_shell_root_unavailable">Root不可用或授权被拒绝</string>
 
     <!-- 技能列表操作 -->
     <string name="skill_assistant_show_more">查看更多 (%1$d 个)</string>
@@ -793,6 +858,7 @@
     <string name="about_export_logs_done_with_size">日志已保存到 %1$s（%2$s）</string>
     <string name="about_log_level_title">日志级别</string>
     <string name="about_log_level_sub">当前：%1$s</string>
+    <string name="editor_target_unavailable">正在读取此条目，或此条目已移除</string>
     <string name="error_generic">操作失败：%1$s</string>
 
     <!-- 工作区文件查看 -->
@@ -801,6 +867,8 @@
     <string name="workspace_file_save_failed">保存失败：%1$s</string>
     <string name="workspace_file_load_failed">读取失败：%1$s</string>
     <string name="workspace_file_read_only">只读（Linux 区不可编辑）</string>
+    <string name="workspace_file_unsaved">要放弃未保存的修改吗？</string>
+    <string name="workspace_file_discard">放弃修改</string>
     <string name="workspace_file_too_large">文件过大无法编辑（%1$s）</string>
     <string name="workspace_file_image_load_failed">无法解码图片</string>
 
@@ -824,9 +892,9 @@
     <string name="cache_ttl_1h">1 小时</string>
 
     <!-- 运行限制与更新结果 -->
-    <string name="compress_source_changed">压缩期间对话已变化，已保留原消息，请重试压缩。</string>
+    <string name="compress_source_changed">压缩期间对话已变化，已保留原消息，请重试压缩</string>
     <string name="update_saved_location">已保存到下载目录：%1$s</string>
-    <string name="builtin_path_outside_roots">路径不在允许的目录中。</string>
+    <string name="builtin_path_outside_roots">路径不在允许的目录中</string>
     <string name="update_saved_copy">已保存副本：%1$s</string>
     <string name="provider_clear_api_key">清除已保存的API Key</string>
 
@@ -859,15 +927,15 @@
     <string name="debug_crop_failed">图片裁剪失败</string>
 
     <!-- 特殊工具 -->
-    <string name="builtin_tool_time_desc">获取当前日期、时间和时区。可选传入timeZone（IANA时区id，如Asia/Shanghai、UTC）查询其他时区的时间。</string>
+    <string name="builtin_tool_time_desc">获取当前日期、时间和时区。可选传入timeZone（IANA时区id，如Asia/Shanghai、UTC）查询其他时区的时间</string>
     <string name="builtin_tool_time_schema">{\"type\":\"object\",\"properties\":{\"timeZone\":{\"type\":\"string\",\"description\":\"要查询的IANA时区id，如Asia/Shanghai、America/New_York、UTC（可选，默认使用设备时区）\"}}}</string>
-    <string name="builtin_tool_clipboard_read_desc">读取系统剪贴板中的文本。</string>
+    <string name="builtin_tool_clipboard_read_desc">读取系统剪贴板中的文本</string>
     <string name="builtin_tool_clipboard_read_schema">{\"type\":\"object\",\"properties\":{}}</string>
-    <string name="builtin_tool_clipboard_write_desc">向系统剪贴板写入文本。</string>
+    <string name="builtin_tool_clipboard_write_desc">向系统剪贴板写入文本</string>
     <string name="builtin_tool_clipboard_write_schema">{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;text&quot;:{&quot;type&quot;:&quot;string&quot;}},&quot;required&quot;:[&quot;text&quot;]}</string>
-    <string name="builtin_tool_calendar_list_desc">列出未来指定天数内的日历事件。</string>
+    <string name="builtin_tool_calendar_list_desc">列出未来指定天数内的日历事件</string>
     <string name="builtin_tool_calendar_list_schema">{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;days&quot;:{&quot;type&quot;:&quot;integer&quot;} }}</string>
-    <string name="builtin_tool_calendar_create_desc">创建日历事件，此操作需要审批。</string>
+    <string name="builtin_tool_calendar_create_desc">创建日历事件，此操作需要审批</string>
     <string name="builtin_tool_calendar_create_schema">{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;title&quot;:{&quot;type&quot;:&quot;string&quot;},&quot;begin_ms&quot;:{&quot;type&quot;:&quot;integer&quot;},&quot;end_ms&quot;:{&quot;type&quot;:&quot;integer&quot;},&quot;description&quot;:{&quot;type&quot;:&quot;string&quot;},&quot;location&quot;:{&quot;type&quot;:&quot;string&quot;}},&quot;required&quot;:[&quot;title&quot;,&quot;begin_ms&quot;]}</string>
 
     <!-- 首次启动简介 -->
@@ -927,7 +995,7 @@
     <string name="model_selection">模型选择</string>
     <string name="message_usage_live_stats">↑ %1$s tokens   ↓ %2$s tokens   速度 %3$s tokens/s   耗时 %4$.1fs</string>
     <string name="message_usage_live_context">上下文 %1$s tokens · %2$d 次请求</string>
-    <string name="message_usage_estimate_hint">≈表示本地文本估算，实际用量以服务商为准。</string>
+    <string name="message_usage_estimate_hint">≈表示本地文本估算，实际用量以服务商为准</string>
     <string name="message_usage_stats">↑ %1$d tokens   ↓ %2$d tokens   速度 %3$.1f tokens/s   耗时 %4$.1fs</string>
     <string name="message_usage_estimated">Token数量为估算值</string>
 
@@ -1054,10 +1122,12 @@
     <string name="debug_role_on_surface_variant">表面变体前景</string>
     <string name="debug_role_outline">轮廓线</string>
     <string name="debug_role_outline_variant">次级轮廓线</string>
-    <string name="debug_role_error">错误</string>
-    <string name="debug_role_on_error">错误前景</string>
+    <string name="debug_role_error">错误/风险</string>
+    <string name="debug_role_on_error">错误/风险前景</string>
+    <string name="debug_role_tool_shizuku_background">警告2</string>
+    <string name="debug_role_tool_root_background">错误/风险2</string>
     <string name="debug_role_warning">警告</string>
-    <string name="debug_role_warning_action">警告与错误操作</string>
+    <string name="debug_role_warning_action">toast按钮</string>
 
 
 
@@ -1067,12 +1137,10 @@
     <string name="generated_image_failed">图片加载或保存失败</string>
     <string name="generated_image_loading">正在加载图片…</string>
     <string name="aux_model_image_generation">生图模型</string>
-    <string name="aux_image_prefer_conversation">优先对话模型</string>
-    <string name="aux_image_prefer_hint">对话模型支持图片输出时优先使用，否则使用配置的生图模型。</string>
     <string name="model_supports_image_output">图片输出</string>
-    <string name="builtin_tool_image_desc">使用配置的生图模型，根据文字描述生成图片。</string>
+    <string name="builtin_tool_image_desc">调用已配置的生图模型，根据文字描述生成图片</string>
     <string name="builtin_tool_image_schema">{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;prompt&quot;:{&quot;type&quot;:&quot;string&quot;}},&quot;required&quot;:[&quot;prompt&quot;]}</string>
-    <string name="image_generation_not_configured">请先在设置中选择生图模型。</string>
+    <string name="image_generation_not_configured">请先在设置中选择生图模型</string>
 
     <!-- 图表预览与查看 -->
     <string name="diagram_view">查看图表</string>

@@ -7,6 +7,7 @@
 package com.miniichatNext.carter.ui.markdown
 
 import androidx.compose.foundation.text.InlineTextContent
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalTextStyle
@@ -39,6 +40,9 @@ internal val LocalMarkdownContext = staticCompositionLocalOf<MarkdownContext> {
     error("LocalMarkdownContext is only available inside Markdown()")
 }
 
+/** 消息气泡开启；每个InlineText单独套选择容器，避免整段Markdown多布局排序。 */
+internal val LocalMarkdownSelectable = staticCompositionLocalOf { false }
+
 /** 把一组行内节点渲染成一个Text */
 @Composable
 internal fun InlineText(content: List<MarkdownInline>, modifier: Modifier = Modifier) {
@@ -49,13 +53,20 @@ internal fun InlineText(content: List<MarkdownInline>, modifier: Modifier = Modi
     val rendered = remember(content, context, style, density, contentColor) {
         InlineTextBuilder(context, MarkdownInlineScope(style, density, contentColor)).build(content)
     }
-    Text(
-        text = rendered.text,
-        modifier = modifier,
-        inlineContent = rendered.inlineContent,
-        // 行内公式可能比一行文字高，固定行高会让它和上下行叠在一起
-        style = if (rendered.hasMathWidget) style.copy(lineHeight = TextUnit.Unspecified) else style,
-    )
+    val text: @Composable () -> Unit = {
+        Text(
+            text = rendered.text,
+            modifier = modifier,
+            inlineContent = rendered.inlineContent,
+            // 行内公式可能比一行文字高，固定行高会让它和上下行叠在一起
+            style = if (rendered.hasMathWidget) style.copy(lineHeight = TextUnit.Unspecified) else style,
+        )
+    }
+    if (LocalMarkdownSelectable.current) {
+        SelectionContainer { text() }
+    } else {
+        text()
+    }
 }
 
 private class RenderedInlineText(

@@ -19,6 +19,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 internal data class UpdateDownloadSnapshot(
     val info: UpdateInfo,
@@ -44,7 +46,7 @@ internal object UpdateDownloadSession {
     private val shown = MutableStateFlow(false)
     val visible = shown.asStateFlow()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    @Volatile private var restoring = false
+    private val restoreMutex = Mutex()
     @Volatile var serviceRunning = false
         internal set
 
@@ -70,23 +72,26 @@ internal object UpdateDownloadSession {
         UpdateDownloadService.requestCancel()
     }
 
-    @Synchronized
-    fun restore(context: Context) {
-        if (restoring || mutable.value != null || serviceRunning) return
-        restoring = true
+    fun restore(context: Context, remoteInfo: UpdateInfo? = null) {
+        if (mutable.value != null || serviceRunning) return
+        val app = context.applicationContext
         scope.launch {
-            try {
-                val cache = UpdateArtifactCache(context.applicationContext)
-                val saved = cache.read() ?: return@launch
-                if (saved.info.remoteVersionCode() <= localVersionCode(context)) return@launch
-                val selected = saved.info.packageForDevice()
-                val valid = cache.reusable(saved.info, selected) ?: return@launch
-                if (mutable.value == null && !serviceRunning) update(UpdateDownloadSnapshot(valid.info, phase = UpdatePhase.READY, file = cache.apk, reused = true))
-            } catch (cancel: CancellationException) {
-                throw cancel
-            } catch (failure: Exception) {
-                com.miniichatNext.carter.debug.DebugLog.w("Update", "restore cached update: ${failure.message}")
-            } finally { restoring = false }
+            restoreMutex.withLock {
+                if (mutable.value != null || serviceRunning) return@withLock
+                try {
+                    val cache = UpdateArtifactCache(app)
+                    val localCode = localVersionCode(app)
+                    val candidates = listOfNotNull(remoteInfo, cache.read()?.info)
+                        .distinct().filter { it.remoteVersionCode() > localCode }
+                    for (info in candidates) {
+                        if (serviceRunning || mutable.value != null) break
+                        val valid = cache.reusable(info, info.packageForDevice()) ?: continue
+                        mutable.compareAndSet(null, UpdateDownloadSnapshot(valid.info, phase = UpdatePhase.READY, file = cache.apk, reused = true))
+                        break
+                    }
+                } catch (cancel: CancellationException) { throw cancel }
+                catch (failure: Exception) { com.miniichatNext.carter.debug.DebugLog.w("Update", "restore cached update: ${failure.message}") }
+            }
         }
     }
 

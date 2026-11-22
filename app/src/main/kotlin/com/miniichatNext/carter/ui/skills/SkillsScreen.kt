@@ -73,11 +73,7 @@ import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.skills.Skill
 import com.miniichatNext.carter.data.skills.SkillFrontmatterParser
 import com.miniichatNext.carter.util.newId
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import java.io.ByteArrayInputStream
-import java.util.zip.ZipInputStream
 import com.miniichatNext.carter.ui.chat.EmptyState
 import com.miniichatNext.carter.ui.markdown.MarkdownText
 
@@ -91,7 +87,8 @@ fun SkillsScreen(
     onSetEnabled: (String, Boolean) -> Unit,
     onImportError: (String) -> Unit = {},
     onImportSuccess: (String) -> Unit = {},
-    onSaveFiles: (String, Map<String, ByteArray>) -> Unit = { _, _ -> }
+    onImportFile: suspend (android.net.Uri) -> String,
+    onImportUrl: suspend (String) -> String,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -103,69 +100,18 @@ fun SkillsScreen(
     var importUrlError by remember { mutableStateOf<String?>(null) }
     var importingUrl by remember { mutableStateOf(false) }
 
-    val importLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        scope.launch {
-            try {
-                val bytes = withContext(Dispatchers.IO) {
-                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                } ?: throw IllegalStateException(context.getString(R.string.skill_import_failed_read))
-                val text = bytes.toString(Charsets.UTF_8)
-                val isZip = bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()
-                if (isZip) {
-                    val files = linkedMapOf<String, ByteArray>()
-                    ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
-                        while (true) {
-                            val entry = zip.nextEntry ?: break
-                            if (!entry.isDirectory) {
-                                val path = entry.name.replace('\\', '/')
-                                    .trimStart('/')
-                                    .split('/')
-                                    .filter { it.isNotBlank() && it != "." }
-                                if (path.none { it == ".." } && path.isNotEmpty()) {
-                                    files[path.joinToString("/")] = zip.readBytes()
-                                }
-                            }
-                            zip.closeEntry()
-                        }
-                    }
-                    val skillPath = files.keys.firstOrNull {
-                        it.substringAfterLast('/').equals("SKILL.md", ignoreCase = true)
-                    } ?: throw IllegalStateException(context.getString(R.string.skill_import_failed_meta))
-                    val skillText = files.getValue(skillPath).toString(Charsets.UTF_8)
-                    val fallbackName = skillPath.substringBeforeLast('/', skillPath)
-                        .substringAfterLast('/')
-                    val parsed = SkillFrontmatterParser.parse(skillText, fallbackName)
-                        ?: throw IllegalStateException(context.getString(R.string.skill_import_failed_empty))
-                    if (parsed.name.isBlank() || parsed.description.isBlank()) {
-                        throw IllegalStateException(context.getString(R.string.skill_import_failed_meta))
-                    }
-                    onSaveFiles(parsed.name, files.mapKeys { (path, _) ->
-                        path.substringAfter("/", path)
-                    })
-                    onImportSuccess(parsed.name)
-                } else {
-                    val fallbackName = uri.lastPathSegment?.substringAfterLast('/')?.removeSuffix(".md")
-                        ?: "skill_${System.currentTimeMillis()}"
-                    val parsed = SkillFrontmatterParser.parse(text, fallbackName)
-                        ?: throw IllegalStateException(context.getString(R.string.skill_import_failed_empty))
-                    if (parsed.name.isBlank() || parsed.description.isBlank()) {
-                        throw IllegalStateException(context.getString(R.string.skill_import_failed_meta))
-                    }
-                    val skill = Skill(
-                        id = newId(),
-                        name = parsed.name,
-                        description = parsed.description,
-                        body = parsed.body,
-                        enabled = true
-                    )
-                    onSave(skill)
-                    onImportSuccess(parsed.name)
-                }
-            } catch (e: Exception) {
-                onImportError(context.getString(R.string.skill_import_failed, e.message ?: ""))
+    var importingFile by remember { mutableStateOf(false) }
+    val importLauncher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null && !importingFile) {
+            importingFile = true
+            scope.launch {
+                try {
+                    onImportSuccess(onImportFile(uri))
+                } catch (cancel: kotlinx.coroutines.CancellationException) {
+                    throw cancel
+                } catch (error: Exception) {
+                    onImportError(context.getString(R.string.skill_import_failed, error.message.orEmpty()))
+                } finally { importingFile = false }
             }
         }
     }
@@ -296,7 +242,7 @@ fun SkillsScreen(
     if (showImportUrlDialog) {
         var urlInput by remember { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { showImportUrlDialog = false },
+            onDismissRequest = { if (!importingUrl) showImportUrlDialog = false },
             title = { Text(stringResource(R.string.skills_import_url)) },
             text = {
                 Column {
@@ -336,55 +282,25 @@ fun SkillsScreen(
                     onClick = {
                         importingUrl = true
                         scope.launch {
-                            val result = kotlin.runCatching {
-                                val text = withContext(Dispatchers.IO) { fetchUrl(urlInput) }
-                                SkillFrontmatterParser.parse(text, "imported-skill")
-                                    ?: throw IllegalStateException("invalid frontmatter")
-                            }
-                            importingUrl = false
-                            result.fold(
-                                onSuccess = { parsed ->
-                                    if (parsed.name.isBlank() || parsed.description.isBlank()) {
-                                        importUrlError = context.getString(R.string.skill_import_failed_meta)
-                                    } else {
-                                        showImportUrlDialog = false
-                                        onSave(Skill(
-                                            id = newId(),
-                                            name = parsed.name,
-                                            description = parsed.description,
-                                            body = parsed.body,
-                                            enabled = true,
-                                        ))
-                                    }
-                                },
-                                onFailure = { ex ->
-                                    importUrlError = ex.message ?: context.getString(R.string.skill_import_failed)
-                                },
-                            )
+                            try {
+                                val name = onImportUrl(urlInput)
+                                showImportUrlDialog = false
+                                onImportSuccess(name)
+                            } catch (cancel: kotlinx.coroutines.CancellationException) {
+                                throw cancel
+                            } catch (error: Exception) {
+                                importUrlError = context.getString(R.string.skill_import_failed, error.message.orEmpty())
+                            } finally { importingUrl = false }
                         }
                     },
                 ) { Text(stringResource(R.string.action_save)) }
             },
             dismissButton = {
-                TextButton(onClick = { showImportUrlDialog = false }) {
+                TextButton(enabled = !importingUrl, onClick = { showImportUrlDialog = false }) {
                     Text(stringResource(R.string.action_cancel))
                 }
             },
         )
-    }
-}
-
-private fun fetchUrl(url: String): String {
-    val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
-        connectTimeout = 7_000
-        readTimeout = 10_000
-        requestMethod = "GET"
-        setRequestProperty("User-Agent", "MiniiChat-Next/1.0")
-    }
-    return try {
-        conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-    } finally {
-        conn.disconnect()
     }
 }
 

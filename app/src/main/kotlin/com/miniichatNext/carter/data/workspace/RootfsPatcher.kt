@@ -7,6 +7,7 @@
 package com.miniichatNext.carter.data.workspace
 
 import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.util.writeAtomicFile
 import java.io.File
 import java.nio.file.Files
 
@@ -16,74 +17,49 @@ class RootfsPatcher {
         options: RootfsPatchOptions = RootfsPatchOptions(),
     ) {
         val etcDir = File(linuxDir, "etc")
-        if (!etcDir.isDirectory) return
-
+        require(etcDir.isDirectory && !Files.isSymbolicLink(etcDir.toPath())) { "Rootfs is missing a regular etc directory" }
         ensureRootfsDns(etcDir, options.nameservers)
-        ensureHosts(etcDir, options.hostname)
-        ensureHostname(etcDir, options.hostname)
-        ensureLocale(etcDir, options.locale)
-        ensureGroupNames(etcDir, options.groupIds.ifEmpty { currentSupplementaryGroupIds() })
-        ensureRootUser(etcDir)
+        patchOptional("hosts") { ensureHosts(etcDir, options.hostname) }
+        patchOptional("hostname") { ensureHostname(etcDir, options.hostname) }
+        patchOptional("locale") { ensureLocale(etcDir, options.locale) }
+        patchOptional("groups") { ensureGroupNames(etcDir, options.groupIds.ifEmpty { currentSupplementaryGroupIds() }) }
+        patchOptional("passwd") { ensureRootUser(etcDir, RootfsLayout.shell(linuxDir)) }
         ensureTempDirs(linuxDir)
     }
 
-    /**
-     * 确保/etc/passwd有root条目（否则bash提示符显示"I have no name!"），
-     * 并清空/etc/shadow的root密码（su默认无密码）。
-     */
-    private fun ensureRootUser(etcDir: File) {
-        // passwd：bash按uid=0查用户名，缺root条目会显示"I have no name!"
-        val passwd = File(etcDir, "passwd")
-        try {
-            val content = if (passwd.isFile) passwd.readText() else ""
-            if (content.lineSequence().none { it.startsWith("root:") }) {
-                passwd.appendText((if (content.isEmpty() || content.endsWith("\n")) "" else "\n") + "root:x:0:0:root:/root:/bin/bash\n")
-            }
-            val ok = passwd.isFile && passwd.readText().lineSequence().any { it.startsWith("root:") }
-            val head = if (passwd.isFile) passwd.readText().lineSequence().take(3).joinToString(" | ") else "(missing)"
-            DebugLog.i("RootfsPatcher", "passwd root entry: " + if (ok) "ok" else "MISSING" + " head: " + head)
-        } catch (t: Throwable) {
-            DebugLog.e("RootfsPatcher", "ensure passwd failed", t)
+    private inline fun patchOptional(name: String, patch: () -> Unit) {
+        try { patch() } catch (error: java.io.IOException) { DebugLog.w("RootfsPatcher", "$name: ${error.message}") }
+    }
+
+    private fun regularPath(parent: File, name: String): File = File(parent, name).also { file ->
+        if (Files.isSymbolicLink(file.toPath()) || (file.exists() && !file.isFile)) {
+            throw java.io.IOException("Not a regular Rootfs file: $name")
         }
-        // shadow：root空密码位=su无需密码（文件不存在则创建）
-        val shadow = File(etcDir, "shadow")
-        try {
-            if (!shadow.isFile) {
-                shadow.writeText("root::0:99999:7:::\n")
-            } else {
-                val lines2 = shadow.readText().split("\n").toMutableList()
-                var replaced = false
-                for (i in lines2.indices) {
-                    if (lines2[i].startsWith("root:")) {
-                        lines2[i] = "root::0:99999:7:::"
-                        replaced = true
-                        break
-                    }
-                }
-                if (!replaced) {
-                    if (lines2.isNotEmpty() && lines2.last().isNotEmpty()) lines2.add("root::0:99999:7:::")
-                    else lines2.add(0, "root::0:99999:7:::")
-                }
-                shadow.writeText(lines2.joinToString("\n"))
-            }
-            val ok = shadow.isFile && shadow.readText().contains("root::")
-            DebugLog.i("RootfsPatcher", "shadow root passwordless: " + if (ok) "ok" else "FAILED")
-        } catch (t: Throwable) {
-            DebugLog.e("RootfsPatcher", "ensure shadow failed", t)
+        require(file.length() <= 1024 * 1024) { "Rootfs configuration file too large: $name" }
+    }
+
+    private fun ensureRootUser(etcDir: File, shell: String) {
+        val passwd = regularPath(etcDir, "passwd")
+        val content = if (passwd.exists()) passwd.readText() else ""
+        if (content.lineSequence().any { it.startsWith("root:") }) return
+        writeAtomicFile(passwd) { file ->
+            file.writeText(content + (if (content.isEmpty() || content.endsWith('\n')) "" else "\n") + "root:x:0:0:root:/root:$shell\n")
         }
     }
 
-    /** 照搬rikkahub：tmp/var/tmp/root目录创建与权限 */
     private fun ensureTempDirs(linuxDir: File) {
-        listOf("tmp", "var/tmp", "root").forEach { path ->
-            File(linuxDir, path).mkdirs()
+        fun directory(parent: File, name: String): File = File(parent, name).also { dir ->
+            require(!Files.isSymbolicLink(dir.toPath())) { "Not a regular Rootfs directory: $name" }
+            check(dir.isDirectory || dir.mkdirs()) { "Could not create Rootfs directory: $name" }
         }
-        listOf(File(linuxDir, "tmp"), File(linuxDir, "var/tmp")).forEach { dir ->
+        val tmp = directory(linuxDir, "tmp")
+        val varTmp = directory(directory(linuxDir, "var"), "tmp")
+        listOf(tmp, varTmp).forEach { dir ->
             dir.setReadable(true, false)
             dir.setWritable(true, false)
             dir.setExecutable(true, false)
         }
-        File(linuxDir, "root").apply {
+        directory(linuxDir, "root").apply {
             setReadable(true, true)
             setWritable(true, true)
             setExecutable(true, true)
@@ -99,7 +75,7 @@ class RootfsPatcher {
             Files.isSymbolicLink(resolvConf.toPath()) -> true
             !resolvConf.exists() -> true
             !resolvConf.isFile -> true
-            else -> resolvConf.readText()
+            else -> regularPath(etcDir, "resolv.conf").readText()
                 .lineSequence()
                 .filter { it.trimStart().startsWith("nameserver ") }
                 .none { line ->
@@ -109,25 +85,23 @@ class RootfsPatcher {
         }
         if (!shouldWrite) return
 
-        if (resolvConf.exists() || Files.isSymbolicLink(resolvConf.toPath())) resolvConf.delete()
-
         val servers = nameservers
             .filter { it.isNotBlank() }
             .distinct()
             .take(MAX_DNS_SERVERS)
             .ifEmpty { DEFAULT_DNS_SERVERS }
 
-        resolvConf.writeText(
-            buildString {
+        writeAtomicFile(resolvConf) { staged ->
+            staged.writeText(buildString {
                 appendLine("# Generated by MiniiChat Next workspace.")
                 servers.forEach { appendLine("nameserver $it") }
                 appendLine("options edns0 trust-ad")
-            }
-        )
+            })
+        }
     }
 
     private fun ensureHosts(etcDir: File, hostname: String) {
-        val hosts = File(etcDir, "hosts")
+        val hosts = regularPath(etcDir, "hosts")
         val lines = if (hosts.isFile) hosts.readLines() else emptyList()
         val hasIpv4Localhost = lines.any { line ->
             val normalized = line.substringBefore('#').trim().split(WHITESPACE_REGEX)
@@ -157,14 +131,15 @@ class RootfsPatcher {
     }
 
     private fun ensureHostname(etcDir: File, hostname: String) {
-        val target = File(etcDir, "hostname")
+        val target = regularPath(etcDir, "hostname")
         if (target.isFile && target.readText().trim().isNotBlank()) return
         target.writeText("${hostname.ifBlank { DEFAULT_HOSTNAME }}\n")
     }
 
     private fun ensureLocale(etcDir: File, locale: String) {
-        val defaultDir = File(etcDir, "default").apply { mkdirs() }
-        val target = File(defaultDir, "locale")
+        val defaultDir = File(etcDir, "default")
+        if (Files.isSymbolicLink(defaultDir.toPath()) || (!defaultDir.isDirectory && !defaultDir.mkdir())) return
+        val target = regularPath(defaultDir, "locale")
         val lines = if (target.isFile) target.readLines().toMutableList() else mutableListOf()
         if (lines.any { it.trim().startsWith("LANG=") }) return
         lines += "LANG=$locale"
@@ -172,7 +147,7 @@ class RootfsPatcher {
     }
 
     private fun ensureGroupNames(etcDir: File, groupIds: List<Long>) {
-        val target = File(etcDir, "group")
+        val target = regularPath(etcDir, "group")
         if (!target.exists()) target.writeText("root:x:0:\n")
         val lines = target.readLines().toMutableList()
         val existingIds = lines.mapNotNull { line -> line.split(':').getOrNull(2)?.toLongOrNull() }.toSet()

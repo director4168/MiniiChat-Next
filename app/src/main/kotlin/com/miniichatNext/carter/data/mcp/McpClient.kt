@@ -8,385 +8,288 @@ package com.miniichatNext.carter.data.mcp
 
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.util.AppJson
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import com.miniichatNext.carter.util.KeyedMutex
+import com.miniichatNext.carter.util.readBounded
+import java.io.IOException
 import java.net.HttpURLConnection
-import java.net.URL
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
+import kotlinx.coroutines.runInterruptible
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 
-/**
- * MCP JSON-RPC 2.0客户端，纯JDK HttpURLConnection，不依赖Ktor/OkHttp。
- * initialize->notifications/initialized->tools/list，session id走Mcp-Session-Id头。
- */
-class McpClient {
+class McpClient(private val isCurrent: (suspend (McpServerConfig) -> Boolean)? = null) {
+    private class Session(val server: McpServerConfig) {
+        private val connections = mutableSetOf<HttpURLConnection>()
+        @Volatile private var closed = false
+        var initialized = false
+        var version: String? = null
+        var id: String? = null
+        var endpoint: String? = null
+        @Volatile var stream: McpSseStream? = null
 
-    private val json get() = AppJson.jsonCompact
-    private val idGen = AtomicInteger(1)
-    private val sessions = ConcurrentHashMap<String, String>()
-    private val connectionConfigs = ConcurrentHashMap<String, McpServerConfig>()
-    private val operationLocks = ConcurrentHashMap<String, Mutex>()
-    private val initialized = ConcurrentHashMap.newKeySet<String>()
-    private val protocolVersions = ConcurrentHashMap<String, String>()
-    @Synchronized
-    private fun refreshConnection(server: McpServerConfig) {
-        val old = connectionConfigs.put(server.id, server)
-        if (old != null && (old.url != server.url || old.headers != server.headers || old.transport != server.transport)) {
-            initialized.remove(server.id)
-            protocolVersions.remove(server.id)
-            sessions.remove(server.id)
-            endpoints.remove(server.id)
-            sseUrls.remove(server.id)
-            sseChannels.remove(server.id)?.close()
+        @Synchronized
+        fun attach(connection: HttpURLConnection) {
+            check(!closed) { "MCP connection is closed" }
+            connections.add(connection)
         }
-    }
-    private val endpoints = ConcurrentHashMap<String, String>()
-    private val sseChannels = ConcurrentHashMap<String, SseChannel>()
-    private val sseUrls = ConcurrentHashMap<String, String>()
-    private val sseLocks = ConcurrentHashMap<String, Mutex>()
 
-    private suspend fun ensureInitialized(server: McpServerConfig) {
-        refreshConnection(server)
-        if (server.id in initialized) return
-        val initResult = rpc(server, "initialize", buildJsonObject {
-            put("protocolVersion", "2024-11-05")
-            put("capabilities", buildJsonObject { })
-            put("clientInfo", buildJsonObject {
-                put("name", "MiniiChat-Next")
-                put("version", "1.0")
-            })
-        })
-        (initResult["protocolVersion"] as? JsonPrimitive)?.contentOrNull?.let { protocolVersions[server.id] = it }
-        DebugLog.i("Mcp", "initialize ok server=${server.name} result=${initResult.toString().take(200)}")
+        fun release(connection: HttpURLConnection) {
+            synchronized(this) { connections.remove(connection) }
+            connection.disconnect()
+        }
 
-        notify(server, "notifications/initialized", buildJsonObject { })
-
-        initialized.add(server.id)
-    }
-
-    suspend fun listTools(server: McpServerConfig): List<McpTool> = withContext(Dispatchers.IO) {
-        operationLocks.getOrPut(server.id) { Mutex() }.withLock {
-        try {
-        ensureInitialized(server)
-        val tools = mutableListOf<McpTool>()
-        var cursor: String? = null
-        var pages = 0
-        while (pages++ < 100) {
-            val page = rpc(server, "tools/list", buildJsonObject {
-                cursor?.let { put("cursor", it) }
-            })
-            val toolsArr = page["tools"]?.jsonArray ?: JsonArray(emptyList())
-            toolsArr.forEach { el ->
-                val obj = el as? JsonObject ?: return@forEach
-                val name = obj["name"]?.jsonPrimitive?.contentOrNull ?: return@forEach
-                val desc = obj["description"]?.jsonPrimitive?.contentOrNull ?: ""
-                val schema = obj["inputSchema"]?.let { json.encodeToString(JsonElement.serializer(), it) } ?: ""
-                tools += McpTool(name = name, description = desc, inputSchema = schema)
+        fun close() {
+            val active = synchronized(this) {
+                closed = true
+                connections.toList().also { connections.clear() }
             }
-            val next = page["nextCursor"]?.jsonPrimitive?.contentOrNull
-                ?.takeIf { it.isNotBlank() && it != cursor }
-                ?: break
-            cursor = next
+            stream?.close()
+            active.forEach { runCatching { it.disconnect() } }
         }
-        tools.distinctBy { it.name }
+    }
+
+    private val idGen = AtomicInteger(1)
+    private val operations = KeyedMutex<String>()
+    private val sessions = mutableMapOf<String, Session>()
+    private var allowed: Map<String, McpServerConfig>? = null
+    private var closed = false
+
+    fun reconcile(servers: List<McpServerConfig>) {
+        val active = servers.filter { it.enabled }.associateBy { it.id }
+        val obsolete = synchronized(sessions) {
+            if (closed) return
+            allowed = active
+            sessions.values.filter { session -> active[session.server.id]?.let { sameMcpSession(it, session.server) } != true }
+                .also { entries -> entries.forEach { sessions.remove(it.server.id) } }
+        }
+        obsolete.forEach(Session::close)
+    }
+
+    fun close() {
+        val active = synchronized(sessions) {
+            closed = true
+            allowed = null
+            sessions.values.toList().also { sessions.clear() }
+        }
+        active.forEach(Session::close)
+    }
+
+    private fun session(server: McpServerConfig): Session {
+        var previous: Session? = null
+        val current = synchronized(sessions) {
+            check(!closed && server.enabled) { "MCP connection is disabled" }
+            allowed?.takeIf { isCurrent == null }?.let { configs ->
+                check(configs[server.id]?.let { sameMcpSession(it, server) } == true) { "MCP connection has changed" }
+            }
+            val existing = sessions[server.id]
+            if (existing != null && sameMcpSession(existing.server, server) &&
+                (server.tp() != McpTransport.SSE || existing.stream?.isOpen == true)) existing
+            else Session(server).also { previous = sessions.put(server.id, it) }
+        }
+        previous?.close()
+        return current
+    }
+
+    private suspend fun <T> withSession(server: McpServerConfig, block: (Session) -> T): T = operations.withKey(server.id) {
+        check(isCurrent?.invoke(server) != false) { "MCP connection has changed" }
+        var opened: Session? = null
+        try {
+            runInterruptible(Dispatchers.IO) {
+                val current = session(server).also { opened = it }
+                ensureInitialized(current)
+                block(current)
+            }
         } catch (error: Exception) {
-            forget(server.id)
+            opened?.let { current ->
+                synchronized(sessions) { sessions.remove(server.id, current) }
+                kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) { current.close() }
+            }
             throw error
         }
-        }
     }
 
-    suspend fun callTool(
-        server: McpServerConfig,
-        toolName: String,
-        argumentsJson: String
-    ): McpToolResult = withContext(Dispatchers.IO) {
-        operationLocks.getOrPut(server.id) { Mutex() }.withLock {
-        val args = runCatching {
-            json.parseToJsonElement(argumentsJson.ifBlank { "{}" }).jsonObject
-        }.getOrDefault(JsonObject(emptyMap()))
-        runCatching {
-            ensureInitialized(server)
-            val result = rpc(server, "tools/call", buildJsonObject {
-                put("name", toolName)
-                put("arguments", args)
-            })
-            val isError = result["isError"]?.jsonPrimitive?.contentOrNull?.toBooleanStrictOrNull() ?: false
-            val text = extractContent(result)
-            McpToolResult(ok = !isError, content = text)
-        }.getOrElse { e ->
-            forget(server.id)
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            DebugLog.e("Mcp", "callTool failed ${server.name}/$toolName: ${e.message}", e)
-            McpToolResult(ok = false, content = "", error = e.message ?: "unknown error")
+    private fun ensureInitialized(session: Session) {
+        if (session.initialized) return
+        val result = rpc(session, "initialize", buildJsonObject {
+            put("protocolVersion", "2024-11-05")
+            put("capabilities", buildJsonObject { })
+            put("clientInfo", buildJsonObject { put("name", "MiniiChat-Next"); put("version", "1.0") })
+        })
+        session.version = result.string("protocolVersion")
+        val endpoint = session.endpoint ?: session.server.url
+        usingConnection(session, endpoint, request("notifications/initialized", buildJsonObject { })) { connection ->
+            requireSuccess(connection)
         }
-    }
+        session.initialized = true
     }
 
-    private fun extractContent(result: JsonObject): String {
-        val content = result["content"] as? JsonArray ?: return result.toString()
-        val sb = StringBuilder()
-        for (c in content) {
-            val obj = c as? JsonObject ?: continue
-            when (obj["type"]?.jsonPrimitive?.contentOrNull) {
-                "text" -> obj["text"]?.jsonPrimitive?.contentOrNull?.let { sb.append(it) }
-                "resource" -> (obj["resource"] as? JsonObject)
-                    ?.get("text")?.jsonPrimitive?.contentOrNull?.let { sb.append(it) }
-                else -> obj["text"]?.jsonPrimitive?.contentOrNull?.let { sb.append(it) }
+    suspend fun listTools(server: McpServerConfig): List<McpTool> = withSession(server) { session ->
+        val tools = linkedMapOf<String, McpTool>()
+        val seenCursors = hashSetOf<String>()
+        var cursor: String? = null
+        var schemaChars = 0L
+        repeat(100) {
+            val page = rpc(session, "tools/list", buildJsonObject { cursor?.let { put("cursor", it) } })
+            (page["tools"] as? JsonArray).orEmpty().forEach { element ->
+                val obj = element as? JsonObject ?: return@forEach
+                val name = obj.string("name")?.takeIf { it.isNotBlank() && it.length <= 256 } ?: return@forEach
+                if (name in tools) return@forEach
+                val desc = obj.string("description").orEmpty().take(4096)
+                val schema = obj["inputSchema"]?.toString().orEmpty()
+                schemaChars += schema.length + name.length + desc.length
+                require(tools.size < 512 && schema.length <= 64 * 1024 && schemaChars <= 1024 * 1024) { "MCP tool list exceeds limit" }
+                tools[name] = McpTool(name = name, description = desc, inputSchema = schema)
             }
+            val next = page.string("nextCursor")?.takeIf { it.isNotBlank() } ?: return@withSession tools.values.toList()
+            require(next.length <= 4096 && seenCursors.add(next)) { "Invalid MCP tool pagination cursor" }
+            cursor = next
         }
-        return sb.toString().ifBlank { result.toString() }
+        error("MCP tool pagination exceeds limit")
     }
 
-    private suspend fun rpc(
-        server: McpServerConfig,
-        method: String,
-        params: JsonObject
-    ): JsonObject {
+    suspend fun callTool(server: McpServerConfig, toolName: String, argumentsJson: String): McpToolResult {
+        return try {
+            require(argumentsJson.length <= 256 * 1024) { "MCP tool arguments exceed limit" }
+            val args = requireNotNull(AppJson.parseObjectOrNull(argumentsJson.ifBlank { "{}" })) { "Invalid MCP tool arguments" }
+            withSession(server) { session ->
+                val result = rpc(session, "tools/call", buildJsonObject { put("name", toolName); put("arguments", args) })
+                val text = (result["content"] as? JsonArray).orEmpty().mapNotNull { part ->
+                    val obj = part as? JsonObject ?: return@mapNotNull null
+                    if (obj.string("type") == "resource") (obj["resource"] as? JsonObject)?.string("text") else obj.string("text")
+                }.joinToString("\n").ifBlank { result.toString() }
+                McpToolResult(ok = result.string("isError") != "true", content = if (text.length > MAX_RESULT_CHARS)
+                    text.take(MAX_RESULT_CHARS) + "\n...[truncated]" else text)
+            }
+        } catch (cancel: CancellationException) { throw cancel }
+        catch (error: Exception) {
+            DebugLog.w("Mcp", "Tool request failed: ${error.javaClass.simpleName}")
+            McpToolResult(false, "", error = error.message ?: "MCP request failed")
+        }
+    }
+
+    private fun request(method: String, params: JsonObject, id: Int? = null): String = buildJsonObject {
+        put("jsonrpc", "2.0")
+        id?.let { put("id", it) }
+        put("method", method)
+        put("params", params)
+    }.toString()
+
+    private fun rpc(session: Session, method: String, params: JsonObject): JsonObject {
         val id = idGen.getAndIncrement()
-        val body = buildJsonObject {
-            put("jsonrpc", "2.0")
-            put("id", id)
-            put("method", method)
-            put("params", params)
-        }.toString()
-        return when (server.tp()) {
-            McpTransport.STREAMABLE_HTTP -> streamableRpc(server, body, id)
-            McpTransport.SSE -> sseRpc(server, body, id)
-        }
-    }
-
-    private suspend fun notify(server: McpServerConfig, method: String, params: JsonObject) {
-        val body = buildJsonObject {
-            put("jsonrpc", "2.0")
-            put("method", method)
-            put("params", params)
-        }.toString()
-        val endpoint = if (server.tp() == McpTransport.SSE) endpoints[server.id] ?: server.url else server.url
-        val conn = openPost(server, endpoint, body)
-        try {
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                val detail = conn.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty()
-                throw IllegalStateException("MCP notification HTTP $code: ${detail.take(300)}")
-            }
-        } finally { conn.disconnect() }
-    }
-
-    private fun streamableRpc(server: McpServerConfig, body: String, id: Int): JsonObject {
-        val conn = openPost(server, server.url, body, acceptStream = true)
-        conn.getHeaderField("Mcp-Session-Id")?.let { sessions[server.id] = it }
-        val code = conn.responseCode
-        if (code !in 200..299) {
-            val err = runCatching { conn.errorStream?.bufferedReader()?.readText().orEmpty() }
-                .getOrDefault("")
-            conn.disconnect()
-            throw RuntimeException("HTTP $code: ${err.take(300)}")
-        }
-        val contentType = conn.contentType ?: ""
-        val result = if (contentType.contains("text/event-stream", ignoreCase = true)) {
-            readSseForResult(conn, id)
-        } else {
-            parseRpcResult(conn.inputStream.bufferedReader().use { it.readText() }, id)
-        }
-        conn.disconnect()
-        return result
-    }
-
-    private data class SseEvent(val event: String, val data: String)
-
-    private class SseChannel(private val connection: HttpURLConnection) {
-        private val queue = LinkedBlockingQueue<SseEvent>()
-        private val closed = AtomicBoolean(false)
-        private val readerThread = Thread {
-            runCatching {
-                connection.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
-                    var event = "message"
-                    val data = StringBuilder()
-                    while (!closed.get()) {
-                        val line = reader.readLine() ?: break
-                        when {
-                            line.startsWith("event:") -> event = line.removePrefix("event:").trim()
-                            line.startsWith("data:") -> {
-                                if (data.isNotEmpty()) data.append('\n')
-                                data.append(line.removePrefix("data:").trim())
-                            }
-                            line.isEmpty() && data.isNotEmpty() -> {
-                                queue.offer(SseEvent(event, data.toString()))
-                                event = "message"
-                                data.setLength(0)
-                            }
-                        }
-                    }
-                    if (data.isNotEmpty()) queue.offer(SseEvent(event, data.toString()))
+        val legacy = session.server.tp() == McpTransport.SSE
+        val endpoint = if (legacy) openSse(session) else session.server.url
+        return usingConnection(session, endpoint, request(method, params, id)) { connection ->
+            requireSuccess(connection)
+            if (!legacy) connection.getHeaderField("Mcp-Session-Id")?.let { session.id = it }
+            when {
+                legacy -> {
+                    val immediate = if (connection.responseCode == 202 || connection.responseCode == 204) "" else connection.readBody()
+                    if (immediate.isBlank()) readResult(requireNotNull(session.stream), id) else parseRpcResult(immediate, id)
                 }
-            }.onFailure { if (!closed.get()) queue.offer(SseEvent("error", it.message.orEmpty())) }
-        }.apply { isDaemon = true }
-
-        fun start() = readerThread.start()
-        fun next(timeoutMs: Long): SseEvent? = queue.poll(timeoutMs, TimeUnit.MILLISECONDS)
-        fun close() {
-            if (closed.compareAndSet(false, true)) {
-                runCatching { connection.disconnect() }
-                readerThread.interrupt()
+                connection.contentType?.substringBefore(';')?.trim()?.equals("text/event-stream", true) == true ->
+                    McpSseStream(connection).use { readResult(it, id) }
+                else -> parseRpcResult(connection.readBody(), id)
             }
         }
     }
 
-    private fun openSse(server: McpServerConfig): Pair<SseChannel, String> {
-        val existing = sseChannels[server.id]
-        if (existing != null && sseUrls[server.id] == server.url) {
-            return existing to endpoints.getValue(server.id)
+    private fun openSse(session: Session): String {
+        session.endpoint?.let { return it }
+        val connection = openConnection(session, session.server.url, post = false)
+        try {
+            requireSuccess(connection)
+            require(connection.contentType?.substringBefore(';')?.trim()?.equals("text/event-stream", true) == true) { "MCP SSE needs an event stream" }
+            val stream = McpSseStream(connection)
+            session.stream = stream
+            val event = stream.next(deadline(15))
+            require(event.name == "endpoint") { "MCP SSE did not advertise an endpoint" }
+            session.id = connection.getHeaderField("Mcp-Session-Id")
+            return resolveMcpEndpoint(connection.url.toString(), event.data).also { session.endpoint = it }
+        } catch (error: Exception) {
+            session.stream?.close()
+            session.release(connection)
+            throw error
         }
-        existing?.close()
-        sseChannels.remove(server.id)
-        sessions.remove(server.id)
-        endpoints.remove(server.id)
-        sseUrls.remove(server.id)
-        val conn = (URL(server.url).openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            setRequestProperty("Accept", "text/event-stream")
-            setRequestProperty("Cache-Control", "no-cache")
-            connectTimeout = 20_000
-            readTimeout = 0
-            for ((k, v) in server.headers) if (k.isNotBlank()) setRequestProperty(k, v)
-        }
-        val code = conn.responseCode
-        if (code !in 200..299) {
-            conn.disconnect()
-            throw RuntimeException("SSE connect HTTP $code")
-        }
-        conn.getHeaderField("Mcp-Session-Id")?.let { sessions[server.id] = it }
-        val channel = SseChannel(conn)
-        channel.start()
-        val endpointEvent = channel.next(15_000) ?: run {
-            channel.close()
-            throw RuntimeException("SSE endpoint not advertised")
-        }
-        if (endpointEvent.event == "error") {
-            channel.close()
-            throw RuntimeException("SSE endpoint error: ${endpointEvent.data}")
-        }
-        val endpoint = endpointEvent.data.trim()
-        val resolved = if (endpoint.startsWith("http")) endpoint
-        else "${baseRoot(server.url)}${if (endpoint.startsWith("/")) endpoint else "/$endpoint"}"
-        endpoints[server.id] = resolved
-        sseUrls[server.id] = server.url
-        sseChannels[server.id] = channel
-        return channel to resolved
     }
 
-    private suspend fun sseRpc(server: McpServerConfig, body: String, id: Int): JsonObject =
-        sseLocks.computeIfAbsent(server.id) { Mutex() }.withLock {
-            val (channel, endpoint) = openSse(server)
-            val conn = openPost(server, endpoint, body, acceptStream = false)
-            val code = conn.responseCode
-            if (code !in 200..299 && code != 202) {
-                val err = runCatching { conn.errorStream?.bufferedReader()?.readText().orEmpty() }.getOrDefault("")
-                conn.disconnect()
-                throw RuntimeException("HTTP $code: ${err.take(300)}")
-            }
-            val immediate = runCatching {
-                val text = conn.inputStream.bufferedReader().use { it.readText() }
-                if (text.isBlank()) null else parseRpcResult(text, id)
-            }.getOrElse { error ->
-                conn.disconnect()
-                throw error
-            }
-            conn.disconnect()
-            immediate ?: readSseForResult(channel, id)
-        }
-
-    private fun openPost(
-        server: McpServerConfig,
-        endpoint: String,
-        body: String,
-        acceptStream: Boolean = false
-    ): HttpURLConnection {
-        val conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            doOutput = true
+    private fun openConnection(session: Session, endpoint: String, post: Boolean): HttpURLConnection {
+        val url = checkedMcpUri(endpoint).toURL()
+        val connection = (url.openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = false
+            requestMethod = if (post) "POST" else "GET"
+            doOutput = post
             connectTimeout = 20_000
             readTimeout = 90_000
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty(
-                "Accept",
-                "application/json, text/event-stream"
-            )
-            sessions[server.id]?.let { setRequestProperty("Mcp-Session-Id", it) }
-            protocolVersions[server.id]?.let { setRequestProperty("MCP-Protocol-Version", it) }
-            for ((k, v) in server.headers) if (k.isNotBlank()) setRequestProperty(k, v)
+            for ((name, value) in session.server.headers) if (name.isNotBlank() && name.lowercase(java.util.Locale.ROOT) !in PROTOCOL_HEADERS) {
+                setRequestProperty(name, value)
+            }
+            setRequestProperty("Accept", if (post) "application/json, text/event-stream" else "text/event-stream")
+            if (post) setRequestProperty("Content-Type", "application/json")
+            session.id?.let { setRequestProperty("Mcp-Session-Id", it) }
+            session.version?.let { setRequestProperty("MCP-Protocol-Version", it) }
         }
-        conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-        return conn
+        session.attach(connection)
+        return connection
     }
 
-    private fun readSseForResult(connection: HttpURLConnection, id: Int): JsonObject {
-        val channel = SseChannel(connection)
-        channel.start()
-        return try { readSseForResult(channel, id) } finally { channel.close() }
+    private inline fun <T> usingConnection(session: Session, endpoint: String, body: String, block: (HttpURLConnection) -> T): T {
+        val connection = openConnection(session, endpoint, post = true)
+        return try {
+            connection.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            block(connection)
+        } finally { session.release(connection) }
     }
 
-    private fun readSseForResult(channel: SseChannel, id: Int): JsonObject {
-        val deadline = System.currentTimeMillis() + 90_000
-        while (System.currentTimeMillis() < deadline) {
-            val event = channel.next((deadline - System.currentTimeMillis()).coerceAtMost(2_000)) ?: continue
-            if (event.event == "error") throw RuntimeException("SSE error: ${event.data}")
-            if (event.data.isBlank()) continue
-            val response = runCatching { json.parseToJsonElement(event.data).jsonObject }.getOrNull() ?: continue
-            if (response["id"]?.jsonPrimitive?.intOrNull != id) continue
-            return parseRpcResult(event.data, id)
+    private fun requireSuccess(connection: HttpURLConnection) {
+        val code = connection.responseCode
+        if (code !in 200..299) {
+            val error = connection.errorStream?.use { input ->
+                runCatching { input.readBounded(8192).toString(Charsets.UTF_8).take(300) }.getOrDefault("")
+            }.orEmpty()
+            throw IOException("MCP HTTP $code${if (error.isBlank()) "" else ": $error"}")
         }
-        throw RuntimeException("SSE closed before result id=$id")
     }
 
-    private fun parseRpcResult(text: String, id: Int): JsonObject {
-        val obj = json.parseToJsonElement(text.trim()).jsonObject
-        val responseId = obj["id"]?.jsonPrimitive?.intOrNull
-            ?: throw RuntimeException("MCP response missing id (expected=$id)")
-        if (responseId != id) throw RuntimeException("MCP response id mismatch: expected=$id actual=$responseId")
-        obj["error"]?.takeUnless { it is JsonNull }?.let { err ->
-            val msg = (err as? JsonObject)?.get("message")?.jsonPrimitive?.contentOrNull ?: err.toString()
-            throw RuntimeException("MCP error: $msg")
+    private fun HttpURLConnection.readBody(): String = inputStream.use { it.readBounded(MAX_BODY_BYTES).toString(Charsets.UTF_8) }
+
+    private fun readResult(stream: McpSseStream, id: Int): JsonObject {
+        val deadline = deadline(90)
+        while (true) {
+            if (System.nanoTime() >= deadline) throw IOException("MCP SSE response timed out")
+            val event = stream.next(deadline)
+            if (event.name == "error") throw IOException("MCP SSE error: ${event.data.take(300)}")
+            val obj = AppJson.parseObjectOrNull(event.data) ?: continue
+            if ((obj["id"] as? JsonPrimitive)?.intOrNull != id) continue
+            return rpcResult(obj, id)
         }
-        return obj["result"]?.jsonObject
-            ?: throw RuntimeException("MCP response missing result (id=$id)")
     }
 
-    private fun baseRoot(url: String): String {
-        val u = URL(url)
-        val port = if (u.port > 0) ":${u.port}" else ""
-        return "${u.protocol}://${u.host}$port"
+    private fun parseRpcResult(text: String, id: Int): JsonObject =
+        rpcResult(requireNotNull(AppJson.parseObjectOrNull(text)) { "Invalid MCP response" }, id)
+
+    private fun rpcResult(obj: JsonObject, id: Int): JsonObject {
+        require((obj["id"] as? JsonPrimitive)?.intOrNull == id) { "MCP response ID mismatch" }
+        obj["error"]?.takeUnless { it is JsonNull }?.let { error ->
+            throw IOException("MCP error: ${((error as? JsonObject)?.string("message") ?: error.toString()).take(300)}")
+        }
+        return obj["result"] as? JsonObject ?: error("MCP response missing result")
     }
 
-    fun forget(serverId: String) {
-        initialized.remove(serverId)
-        protocolVersions.remove(serverId)
-        connectionConfigs.remove(serverId)
-        sessions.remove(serverId)
-        endpoints.remove(serverId)
-        sseUrls.remove(serverId)
-        sseChannels.remove(serverId)?.close()
-        sseLocks.remove(serverId)
+    private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+    private fun deadline(seconds: Long): Long = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds)
+
+    private companion object {
+        const val MAX_BODY_BYTES = 2 * 1024 * 1024
+        const val MAX_RESULT_CHARS = 32 * 1024
+        val PROTOCOL_HEADERS = setOf("accept", "content-type", "host", "mcp-session-id", "mcp-protocol-version")
     }
 }

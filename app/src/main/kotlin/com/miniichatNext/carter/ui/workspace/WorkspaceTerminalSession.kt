@@ -14,6 +14,7 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.inputmethod.InputMethodManager
+import com.miniichatNext.carter.data.workspace.RootfsLayout
 import com.miniichatNext.carter.data.workspace.RootfsPatcher
 import com.miniichatNext.carter.data.workspace.WorkspaceManager
 import com.miniichatNext.carter.data.workspace.WorkspaceRepository
@@ -35,7 +36,6 @@ internal fun buildWorkspaceTerminalCommand(
     val appContext = context.applicationContext
     val nativeLibraryDir = File(appContext.applicationInfo.nativeLibraryDir)
     val proot = File(nativeLibraryDir, "libproot_exec.so")
-    val workspaceDir = WorkspaceRepository.defaultManager(context).workspaceDir(root)
     val filesDir = WorkspaceRepository.defaultManager(context).filesDir(root)
     val linuxDir = WorkspaceRepository.defaultManager(context).linuxDir(root)
     val skillsDir = File(appContext.filesDir, "skills")
@@ -63,7 +63,7 @@ internal fun buildWorkspaceTerminalCommand(
     }
     val shell = WorkspaceManager.rootfsShell(linuxDir)
     args += listOf(
-        "/usr/bin/env",
+        requireNotNull(RootfsLayout.env(linuxDir)) { "Rootfs is missing env" },
         "-i",
         "HOME=/root",
         "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -91,7 +91,9 @@ internal fun prepareWorkspaceTerminalSession(context: Context, root: String) {
 }
 
 internal fun workspaceRootfsReady(context: Context, root: String): Boolean =
-    WorkspaceRepository.defaultManager(context).hasRootfs(root)
+    RootfsLayout.prootAbi(File(context.applicationInfo.nativeLibraryDir))?.let { abi ->
+        RootfsLayout.matchesAbi(WorkspaceRepository.defaultManager(context).linuxDir(root), abi)
+    } == true
 
 private fun Context.activeDnsServers(): List<String> {
     val connectivityManager =

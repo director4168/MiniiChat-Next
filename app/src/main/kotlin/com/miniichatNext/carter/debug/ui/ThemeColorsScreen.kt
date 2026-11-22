@@ -64,6 +64,7 @@ import com.miniichatNext.carter.ui.components.SectionCard
 import com.miniichatNext.carter.ui.components.SettingsTopBar
 import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.util.AppThemeOverrides
+import com.miniichatNext.carter.util.ThemeColorRoles
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 import kotlinx.serialization.Serializable
@@ -100,6 +101,8 @@ fun ThemeColorsScreen(onBack: () -> Unit) {
     var showResetConfirm by remember { mutableStateOf(false) }
 
     fun doSave() {
+        lightMap = lightMap.mapValues { (_, value) -> ThemeColorRoles.completeForSave(value) }
+        darkMap = darkMap.mapValues { (_, value) -> ThemeColorRoles.completeForSave(value) }
         AppThemeOverrides.save(context, lightMap, darkMap)
         notice = context.getString(R.string.debug_theme_saved)
     }
@@ -331,7 +334,7 @@ private fun RoleEditRow(
         Spacer(Modifier.width(4.dp))
         OutlinedTextField(
             value = lightHex,
-            onValueChange = onLightChange,
+            onValueChange = { onLightChange(ThemeColorRoles.sanitizeInput(it)) },
             modifier = Modifier.weight(1f),
             placeholder = { Text("-", style = MaterialTheme.typography.bodySmall) },
             textStyle = MaterialTheme.typography.bodySmall,
@@ -343,7 +346,7 @@ private fun RoleEditRow(
         Spacer(Modifier.width(8.dp))
         OutlinedTextField(
             value = darkHex,
-            onValueChange = onDarkChange,
+            onValueChange = { onDarkChange(ThemeColorRoles.sanitizeInput(it)) },
             modifier = Modifier.weight(1f),
             placeholder = { Text("-", style = MaterialTheme.typography.bodySmall) },
             textStyle = MaterialTheme.typography.bodySmall,
@@ -397,6 +400,8 @@ private fun roleDescriptionRes(role: String): Int? = when (role) {
     "onError" -> R.string.debug_role_on_error
     "warning" -> R.string.debug_role_warning
     "warningAction" -> R.string.debug_role_warning_action
+    "wrrning_2" -> R.string.debug_role_tool_shizuku_background
+    "error_2" -> R.string.debug_role_tool_root_background
     "messageJumperBackground" -> R.string.debug_message_jumper_background
     "messageJumperContent" -> R.string.debug_message_jumper_content
     "logSearchHighlight" -> R.string.debug_log_search_highlight

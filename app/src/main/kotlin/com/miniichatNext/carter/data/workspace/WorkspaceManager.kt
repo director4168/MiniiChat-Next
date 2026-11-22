@@ -6,6 +6,7 @@
  */
 package com.miniichatNext.carter.data.workspace
 
+import com.miniichatNext.carter.util.deleteTreeNoFollow
 import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
@@ -24,7 +25,8 @@ class WorkspaceManager(
     private val sortedBindMounts = bindMounts.sortedByDescending { it.target.trimEnd('/').length }
 
     init {
-        baseDir.mkdirs()
+        require(!java.nio.file.Files.isSymbolicLink(baseDir.toPath())) { "Invalid workspaces directory" }
+        check(baseDir.isDirectory || baseDir.mkdirs()) { "Could not create workspaces directory" }
     }
 
     fun ensureWorkspace(root: String): File {
@@ -37,18 +39,22 @@ class WorkspaceManager(
 
     fun workspaceDir(root: String): File {
         requireValidRoot(root)
-        return File(baseDir, root)
+        return childDirectory(baseDir, root)
     }
 
-    fun filesDir(root: String): File = File(workspaceDir(root), FILES_DIR)
+    fun filesDir(root: String): File = childDirectory(workspaceDir(root), FILES_DIR)
 
-    fun linuxDir(root: String): File = File(workspaceDir(root), LINUX_DIR)
+    fun linuxDir(root: String): File = childDirectory(workspaceDir(root), LINUX_DIR)
 
-    fun tempDir(root: String): File = File(workspaceDir(root), TEMP_DIR)
+    fun tempDir(root: String): File = childDirectory(workspaceDir(root), TEMP_DIR)
 
-    fun hasRootfs(root: String): Boolean = File(linuxDir(root), "bin/sh").isFile
+    private fun childDirectory(parent: File, name: String): File = File(parent, name).also {
+        require(!java.nio.file.Files.isSymbolicLink(it.toPath())) { "Workspace directory is a symbolic link" }
+    }
 
-    fun deleteWorkspace(root: String): Boolean = workspaceDir(root).deleteRecursively()
+    fun hasRootfs(root: String): Boolean = RootfsLayout.isUsable(linuxDir(root))
+
+    fun deleteWorkspace(root: String): Boolean = deleteTreeNoFollow(workspaceDir(root))
 
     fun listAllRoots(): List<String> =
         baseDir.listFiles().orEmpty().filter { it.isDirectory }.map { it.name }.filter { it.matches(ROOT_NAME_REGEX) }
@@ -105,7 +111,7 @@ class WorkspaceManager(
         val file = fileSystem.resolve(areaDir(root, area), path)
         require(file.exists()) { "File does not exist: $path" }
         require(file.isFile) { "Path is not a file: $path" }
-        outputStream.use { out -> file.inputStream().use { it.copyTo(out) } }
+        outputStream.use { out -> java.nio.file.Files.newInputStream(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS).use { it.copyTo(out) } }
     }
 
     /**
@@ -113,8 +119,11 @@ class WorkspaceManager(
      * bind mount的source本身是Android侧普通目录，可直接文件IO访问。
      */
     fun resolveRootfsPath(root: String, path: String): RootfsLocation {
-        val trimmed = path.trim().trimEnd('/').ifBlank { "/" }
-        require(trimmed.startsWith("/")) { "Rootfs path must be absolute: $path" }
+        val raw = path.replace('\\', '/').trim()
+        require(raw.startsWith('/') && '\u0000' !in raw) { "Rootfs path must be absolute" }
+        val parts = raw.split('/').filter { it.isNotEmpty() && it != "." }
+        require(".." !in parts) { "Rootfs path must not contain parent segments" }
+        val trimmed = parts.joinToString("/", prefix = "/")
 
         sortedBindMounts.forEach { mount ->
             val target = mount.target.trimEnd('/')
@@ -138,13 +147,22 @@ class WorkspaceManager(
         return RootfsLocation(linuxDir(root), trimmed.trimStart('/'))
     }
 
+    internal fun resolveRootfsWritePath(root: String, path: String): RootfsLocation {
+        val location = resolveRootfsPath(root, path)
+        require(location.rootDir == filesDir(root) || location.rootDir == linuxDir(root)) { "This mount is read-only in the file tools" }
+        return location
+    }
+
+    internal fun savePreviewText(root: String, path: String, expected: String, text: String): WorkspaceFileEntry =
+        fileSystem.replaceTextIfUnchanged(filesDir(root), path, expected, text)
+
     fun rootfsFileSize(root: String, path: String): Long =
         resolveRootfsFile(root, path).also { it.requireReadableFile(path) }.length()
 
     fun exportRootfsFile(root: String, path: String, outputStream: OutputStream) {
         val file = resolveRootfsFile(root, path)
         file.requireReadableFile(path)
-        outputStream.use { out -> file.inputStream().use { it.copyTo(out) } }
+        outputStream.use { out -> java.nio.file.Files.newInputStream(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS).use { it.copyTo(out) } }
     }
 
     private fun resolveRootfsFile(root: String, path: String): File {
@@ -182,8 +200,27 @@ class WorkspaceManager(
         regex: Boolean = false,
         ignoreCase: Boolean = true,
         includeGlob: String? = null,
+        maxResults: Int = config.maxSearchResults,
     ): List<WorkspaceSearchMatch> =
-        fileSystem.grep(filesDir(root), query, path, regex, ignoreCase, includeGlob)
+        fileSystem.grep(filesDir(root), query, path, regex, ignoreCase, includeGlob, maxResults)
+
+    fun copyFile(root: String, source: String, target: String, overwrite: Boolean): WorkspaceFileEntry =
+        fileSystem.copy(filesDir(root), source, target, overwrite)
+
+    fun mkdir(root: String, path: String): WorkspaceFileEntry = fileSystem.mkdir(filesDir(root), path)
+
+    fun readBytes(root: String, area: WorkspaceStorageArea, path: String, maxBytes: Int): ByteArray =
+        fileSystem.readBytes(areaDir(root, area), path, maxBytes)
+
+    fun readRootfsBytes(root: String, path: String, maxBytes: Int): ByteArray {
+        val (dir, relative) = resolveRootfsPath(root, path)
+        return fileSystem.readBytes(dir, relative, maxBytes)
+    }
+
+    fun editRootfsText(root: String, path: String, old: String, new: String, replaceAll: Boolean): Pair<WorkspaceFileEntry, ReplaceTextResult> {
+        val (dir, relative) = resolveRootfsWritePath(root, path)
+        return fileSystem.editText(dir, relative, old, new, replaceAll)
+    }
 
     fun executeCommand(
         root: String,
@@ -202,7 +239,7 @@ class WorkspaceManager(
             WorkspaceShellContext(
                 root = root,
                 command = command,
-                cwd = cwd,
+                cwd = workingDir.relativeTo(filesDir(root).canonicalFile).invariantSeparatorsPath,
                 filesDir = filesDir(root),
                 linuxDir = linuxDir(root),
                 tempDir = tempDir(root),
@@ -216,7 +253,7 @@ class WorkspaceManager(
     }
 
     private fun requireValidRoot(root: String) {
-        require(root.matches(ROOT_NAME_REGEX)) { "Invalid workspace root name: $root" }
+        require(root.matches(ROOT_NAME_REGEX) && root !in setOf(".", "..")) { "Invalid workspace root name: $root" }
     }
 
     private fun areaDir(root: String, area: WorkspaceStorageArea): File = when (area) {
@@ -242,14 +279,16 @@ class WorkspaceManager(
     fun exportFileInDir(dir: File, path: String, outputStream: OutputStream) {
         val file = fileSystem.resolve(dir, path)
         require(file.isFile) { "Not a file: $path" }
-        outputStream.use { out -> file.inputStream().use { it.copyTo(out) } }
+        outputStream.use { out -> java.nio.file.Files.newInputStream(file.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS).use { it.copyTo(out) } }
     }
 
     fun cleanupAllTempDirs() {
         for (root in listAllRoots()) {
-            tempDir(root).let { if (it.exists()) it.deleteRecursively() }
-            File(linuxDir(root), "tmp").let { if (it.exists()) it.deleteRecursively() }
-            File(linuxDir(root), "var/tmp").let { if (it.exists()) it.deleteRecursively() }
+            deleteTreeNoFollow(tempDir(root))
+            val linux = linuxDir(root)
+            deleteTreeNoFollow(File(linux, "tmp"))
+            val variable = File(linux, "var")
+            if (!java.nio.file.Files.isSymbolicLink(variable.toPath())) deleteTreeNoFollow(File(variable, "tmp"))
         }
     }
 
@@ -262,16 +301,7 @@ class WorkspaceManager(
         /** Rootfs内工作区文件区的挂载点 */
         const val ROOTFS_WORKSPACE_DIR = "/workspace"
 
-        /** Rootfs内使用的shell：优先bash，没有时（如Alpine minirootfs）回退/bin/sh（照搬rikkahub） */
-        fun rootfsShell(linuxDir: File): String =
-            if (linuxDir.hasRootfsEntry("bin/bash")) "/bin/bash" else "/bin/sh"
-
-        // Alpine等发行版的/bin/sh是指向/bin/busybox的绝对路径软链，宿主机解析不到目标，
-        // 软链本身存在即视为存在
-        private fun File.hasRootfsEntry(path: String): Boolean {
-            val entry = File(this, path)
-            return entry.isFile || java.nio.file.Files.isSymbolicLink(entry.toPath())
-        }
+        fun rootfsShell(linuxDir: File): String = RootfsLayout.shell(linuxDir)
 
         /** 由宿主机透传的内核伪文件系统，只能通过shell访问 */
         val KERNEL_FS_MOUNTS = listOf("/dev", "/proc", "/sys")

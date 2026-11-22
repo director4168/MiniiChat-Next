@@ -11,6 +11,9 @@ import android.net.Uri
 import com.miniichatNext.carter.BuildConfig
 import com.miniichatNext.carter.data.avatar.Avatar
 import com.miniichatNext.carter.data.mcp.McpStore
+import com.miniichatNext.carter.data.model.GeneratedImageStore
+import com.miniichatNext.carter.data.model.Message
+import com.miniichatNext.carter.data.model.MessageSegment
 import com.miniichatNext.carter.data.model.UserProfileStore
 import com.miniichatNext.carter.data.store.AssistantStore
 import com.miniichatNext.carter.data.store.ConversationStore
@@ -41,8 +44,8 @@ class BackupManager(
     private val mcp = McpStore(context)
 
     private suspend fun snapshot() = BackupSnapshot(
-        settings.settings.first(), providers.backupSnapshot(), assistants.snapshot(), conversations.snapshot(),
-        profile.snapshot(), mcp.exportFullJson(),
+        settings.settings.first(), providers.backupSnapshot(), assistants.snapshotForCleanup(), conversations.snapshot(),
+        profile.snapshotForCleanup(), mcp.exportFullJson(),
         context.getSharedPreferences("theme_overrides", Context.MODE_PRIVATE).getString("json", "").orEmpty(),
     )
 
@@ -65,7 +68,7 @@ class BackupManager(
                 val uri = Uri.parse(raw)
                 val privateFile = when (uri.scheme) {
                     null -> File(raw)
-                    "file" -> uri.path?.let(::File)
+                    "file" -> runCatching { File(java.net.URI(raw)) }.getOrNull()
                     else -> null
                 }
                 if (privateFile != null && privateFile.canonicalPath.startsWith(File(context.filesDir, "workspaces").canonicalPath + "/")) {
@@ -87,18 +90,30 @@ class BackupManager(
                     raw
                 }
             }
+            fun includeGenerated(reference: String): String {
+                val image = GeneratedImageStore.findLocal(context.filesDir, reference) ?: return reference
+                val ext = image.extension.lowercase(Locale.ROOT)
+                if (ext !in setOf("png", "jpg", "jpeg", "webp", "gif", "svg", "bmp")) return reference
+                val token = include(reference)
+                return if (token.startsWith("backup://assets/")) {
+                    "backup://generated/${token.substringAfterLast('/')}.${if (ext == "jpeg") "jpg" else ext}"
+                } else reference
+            }
             data = data.copy(
                 profile = data.profile.copy(avatar = (data.profile.avatar as? Avatar.Image)?.let { Avatar.Image(include(it.path)) } ?: data.profile.avatar),
                 assistants = data.assistants.map { a -> a.copy(avatarPath = a.avatarPath?.let { include(it) }, backgroundPath = a.backgroundPath?.let { include(it) }) },
-                conversations = data.conversations.map { c -> c.copy(messages = c.messages.map { msg -> msg.copy(attachments = msg.attachments.map { a ->
-                    a.copy(uri = include(a.uri), originalUri = "", persistedPermission = false)
-                }) }) },
+                conversations = data.conversations.map { conversation -> conversation.copy(messages = conversation.messages.map { message ->
+                    message.mapGeneratedImages(::includeGenerated).copy(attachments = message.attachments.map { attachment ->
+                        val generated = includeGenerated(attachment.uri)
+                        attachment.copy(uri = if (generated != attachment.uri) generated else include(attachment.uri), originalUri = "", persistedPermission = false)
+                    })
+                }) },
             )
             val skills = File(context.filesDir, "skills")
             if (skills.isDirectory) {
                 val canonical = skills.canonicalPath + File.separator
                 skills.walkTopDown().onEnter { dir ->
-                    !java.nio.file.Files.isSymbolicLink(dir.toPath()) && (dir == skills || dir.canonicalPath.startsWith(canonical))
+                    !java.nio.file.Files.isSymbolicLink(dir.toPath()) && (dir == skills || (!dir.name.startsWith('.') && dir.canonicalPath.startsWith(canonical)))
                 }.filter { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) }.forEach { source ->
                     require(source.canonicalPath.startsWith(canonical))
                     val target = File(stage, "data/skills/" + source.relativeTo(skills).invariantSeparatorsPath)
@@ -189,10 +204,14 @@ class BackupManager(
                 },
                 conversations = decoded.conversations.filter { mode == RestoreMode.REPLACE || it.id !in oldConversationIds }.map { conversation ->
                     conversation.copy(toolWorkspaceId = null, messages = conversation.messages.map { message ->
-                        message.copy(attachments = message.attachments.map { attachment ->
+                        message.mapGeneratedImages { reference ->
+                            val restored = assetRestore.generated(reference)
+                            if (restored == reference) reference else File(restored).toURI().toASCIIString()
+                        }.copy(attachments = message.attachments.map { attachment ->
                             val restored = assetRestore.attachment(attachment.uri, attachment.name)
                             if (attachment.uri.startsWith("backup://")) attachment.copy(
-                                uri = Uri.fromFile(File(restored)).toString(), originalUri = "", persistedPermission = false,
+                                uri = if (attachment.uri.startsWith("backup://generated/")) File(restored).toURI().toASCIIString() else Uri.fromFile(File(restored)).toString(),
+                                originalUri = "", persistedPermission = false,
                             ) else attachment
                         })
                     })
@@ -241,6 +260,14 @@ class BackupManager(
         } finally { work.deleteRecursively() }
     }
 
+    private fun Message.mapGeneratedImages(transform: (String) -> String): Message = copy(
+        content = GeneratedImageStore.mapReferences(content, transform),
+        orderedParts = orderedParts.map { part ->
+            if (part is MessageSegment.Text) part.copy(text = GeneratedImageStore.mapReferences(part.text, transform)) else part
+        },
+        toolInvocations = toolInvocations.map { it.copy(result = GeneratedImageStore.mapReferences(it.result, transform)) },
+    )
+
     private suspend fun apply(data: BackupSnapshot) {
         providers.save(data.providers)
         assistants.save(data.assistants)
@@ -252,11 +279,16 @@ class BackupManager(
     }
 
     private fun mergeMcp(current: String, incoming: String): String {
-        val a = json.parseToJsonElement(current) as JsonObject
-        val b = json.parseToJsonElement(incoming) as JsonObject
-        return JsonObject(a.mapValues { (key, value) ->
-            val old = value as? JsonArray ?: JsonArray(emptyList())
-            val added = b[key] as? JsonArray ?: JsonArray(emptyList())
+        val existing = json.parseToJsonElement(current) as JsonObject
+        val imported = json.parseToJsonElement(incoming) as JsonObject
+        val oldIds = (existing["servers"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.get("id") }.toSet()
+        return JsonObject(existing.mapValues { (key, value) ->
+            val old = (value as? JsonArray).orEmpty()
+            val added = (imported[key] as? JsonArray).orEmpty().filter { item ->
+                val entry = item as JsonObject
+                val serverId = entry[if (key == "servers") "id" else "serverId"]
+                serverId !in oldIds
+            }
             JsonArray((old + added).distinctBy { item ->
                 val obj = item as JsonObject
                 when (key) {

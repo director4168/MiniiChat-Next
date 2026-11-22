@@ -7,16 +7,30 @@
 package com.miniichatNext.carter.data.tools
 
 import android.content.Context
-import com.miniichatNext.carter.R
+import android.os.Handler
+import android.os.Looper
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import com.miniichatNext.carter.data.mcp.McpToolResult
-import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.util.AppJson
+import com.miniichatNext.carter.util.boundedGetClient
+import com.miniichatNext.carter.util.readTextBounded
+import io.ktor.client.request.header
+import io.ktor.client.request.prepareGet
+import io.ktor.http.HttpHeaders
+import java.net.URI
+import java.nio.charset.Charset
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.URL
-import java.util.concurrent.TimeUnit
 
 /**
  * 浏览器工具（browser_fetch）：AI抓取网页原始内容交付。
@@ -29,7 +43,7 @@ object BrowserTools {
     private const val KEY_UA_MODE = "ua_mode"      // mobile | desktop | custom
     private const val KEY_CUSTOM_UA = "custom_ua"
 
-    private val cookieHandlerInit = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val renderMutex = Mutex()
 
     const val UA_MOBILE = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
     const val UA_DESKTOP = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -61,136 +75,107 @@ object BrowserTools {
         return when {
             uaArg.equals("mobile", true) -> UA_MOBILE
             uaArg.equals("desktop", true) -> UA_DESKTOP
-            uaArg.startsWith("custom:", true) -> uaArg.removePrefix("custom:").trim().ifBlank { currentUa(context) }
+            uaArg.startsWith("custom:", true) -> uaArg.substringAfter(':').trim().ifBlank { currentUa(context) }
             else -> currentUa(context)
         }
     }
 
-    fun execute(context: Context, args: JsonObject): McpToolResult {
-        val urlStr = AppJson.str(args, "url").orEmpty().trim()
-        if (urlStr.isBlank()) return McpToolResult(false, "", error = "missing argument: url")
-        val url = runCatching {
-            // 无scheme时补https://
-            URL(if (urlStr.startsWith("http://") || urlStr.startsWith("https://")) urlStr else "https://$urlStr")
-        }.getOrElse { return McpToolResult(false, "", error = "invalid url: $urlStr") }
-        if (url.protocol !in setOf("http", "https")) {
-            return McpToolResult(false, "", error = "only http/https supported")
-        }
-        // mode: auto（默认，HTTP被反爬拦截自动升级WebView渲染）/render（强制）/http（强制直连）
-        val mode = AppJson.str(args, "mode").orEmpty().trim().lowercase()
-        val ua = uaFor(context, args)
-        val timeoutSec = (AppJson.int(args, "timeout_seconds") ?: 15).coerceIn(3, 60)
-        if (mode == "render") return renderFetch(context, url.toString(), ua, timeoutSec)
-        if (cookieHandlerInit.compareAndSet(false, true)) {
-            runCatching { java.net.CookieHandler.setDefault(java.net.CookieManager()) }
-        }
+    suspend fun execute(context: Context, args: JsonObject): McpToolResult {
         return try {
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                setRequestProperty("User-Agent", ua)
-                setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8")
-                setRequestProperty("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                // 反爬缓解：带上浏览器级请求头组合（缺这些是Java客户端被识别的常见原因）
-                setRequestProperty("Upgrade-Insecure-Requests", "1")
-                setRequestProperty("Cache-Control", "max-age=0")
-                setRequestProperty("Sec-Fetch-Dest", "document")
-                setRequestProperty("Sec-Fetch-Mode", "navigate")
-                setRequestProperty("Sec-Fetch-Site", "none")
-                setRequestProperty("Sec-Fetch-User", "?1")
-                connectTimeout = TimeUnit.SECONDS.toMillis(timeoutSec.toLong()).toInt()
-                readTimeout = TimeUnit.SECONDS.toMillis(timeoutSec.toLong()).toInt()
-                instanceFollowRedirects = true
-            }
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                conn.disconnect()
-                // 反爬拦截升级：403/429时用真实WebView渲染重试（借鉴OpenMinis；mode=http可禁用）
-                if ((code == 403 || code == 429) && mode != "http") {
-                    val rendered = renderFetch(context, url.toString(), ua, timeoutSec)
-                    if (rendered.ok) return rendered
-                    return McpToolResult(
-                        false, "",
-                        error = "HTTP $code (bot-blocked); render fallback: ${rendered.error ?: "blocked"}"
-                    )
-                }
-                val hint = when (code) {
-                    403 -> " (likely bot-blocked; try ua=desktop or custom:<ua>, or mode=render)"
-                    429 -> " (rate limited; retry later)"
-                    else -> ""
-                }
-                return McpToolResult(false, "", error = "HTTP $code$hint for $url")
-            }
-            // 内容类型限制：文本类才读（图片等直接报错，避免读二进制垃圾）
-            val contentType = (conn.contentType ?: "").substringBefore(';').trim().lowercase()
-            if (contentType.isNotEmpty() && contentType !in TEXT_TYPES) {
-                conn.disconnect()
-                return McpToolResult(false, "", error = "unsupported content-type: $contentType (only text/html etc.)")
-            }
-            // 从Content-Type头解析charset（contentEncoding是gzip之类压缩编码，不能当charset用）
-            val charset = Regex("charset=([\\w-]+)", RegexOption.IGNORE_CASE)
-                .find(conn.contentType ?: "")?.groupValues?.get(1) ?: "UTF-8"
-            val html = conn.inputStream.bufferedReader(charset(charset)).use { it.readText() }
-            conn.disconnect()
-            val title = Regex("<title[^>]*>(.*?)</title>", RegexOption.DOT_MATCHES_ALL)
-                .find(html)?.groupValues?.get(1)?.trim().orEmpty()
-            val text = buildString {
-                if (title.isNotBlank()) append("TITLE: $title\n\n")
-                append(html.ifBlank { "(empty page)" })
-            }
-            val capped = if (text.length > MAX_RESULT_CHARS)
-                text.take(MAX_RESULT_CHARS) + "\n\n...[truncated ${text.length - MAX_RESULT_CHARS} chars]"
-            else text
-            McpToolResult(true, capped)
-        } catch (e: Exception) {
-            DebugLog.w("BrowserTools", "fetch $url failed: ${e.message}")
-            McpToolResult(false, "", error = e.message ?: "fetch failed")
+            val raw = AppJson.str(args, "url").orEmpty().trim()
+            require(raw.isNotBlank()) { "Missing URL" }
+            val address = URI(if ("://" in raw) raw else "https://$raw")
+            require(address.scheme.lowercase() in setOf("http", "https") && address.host != null && address.rawUserInfo == null) { "Invalid HTTP URL" }
+            val url = address.toASCIIString()
+            val mode = AppJson.str(args, "mode").orEmpty().trim().lowercase()
+            val ua = uaFor(context, args)
+            val timeoutMs = (AppJson.int(args, "timeout_seconds") ?: 15).coerceIn(3, 60) * 1000L
+            withTimeoutOrNull(timeoutMs) {
+                if (mode == "render") return@withTimeoutOrNull renderFetch(context, url, ua)
+                val (status, result) = readHttp(url, ua)
+                if (mode != "http" && status in setOf(403, 429)) renderFetch(context, url, ua) else result
+            } ?: McpToolResult(false, "", error = "Page read timed out")
+        } catch (cancel: CancellationException) {
+            throw cancel
+        } catch (failure: Exception) {
+            McpToolResult(false, "", error = failure.message ?: "Page read failed")
         }
     }
 
-    private val TEXT_TYPES = setOf(
-        "text/html", "text/plain", "application/xhtml+xml", "text/xml",
-        "application/xml", "application/json", "text/markdown",
-    )
+    private suspend fun readHttp(url: String, ua: String): Pair<Int, McpToolResult> = boundedGetClient.prepareGet(url) {
+        header(HttpHeaders.UserAgent, ua)
+        header(HttpHeaders.Accept, "text/html,text/plain,application/xhtml+xml,application/json,application/xml,text/markdown")
+    }.execute { response ->
+        val code = response.status.value
+        if (code !in 200..299) return@execute code to McpToolResult(false, "", error = "HTTP $code")
+        val type = response.headers[HttpHeaders.ContentType].orEmpty()
+        val mime = type.substringBefore(';').trim().lowercase()
+        require(mime.isEmpty() || mime in TEXT_TYPES) { "Unsupported content type: $mime" }
+        val encoding = Regex("charset\\s*=\\s*\"?([\\w-]+)", RegexOption.IGNORE_CASE).find(type)?.groupValues?.get(1)
+            ?.let { runCatching { Charset.forName(it) }.getOrNull() } ?: Charsets.UTF_8
+        val (html, truncated) = response.readTextBounded(256 * 1024, encoding, allowTruncation = true)
+        val title = Regex("<title[^>]*>(.*?)</title>", RegexOption.DOT_MATCHES_ALL).find(html)?.groupValues?.get(1)?.trim().orEmpty()
+        val text = buildString {
+            if (title.isNotBlank()) append("TITLE: ${title.take(1024)}\n\n")
+            append(html.ifBlank { "(empty page)" })
+        }
+        val result = text.take(MAX_RESULT_CHARS) + if (truncated || text.length > MAX_RESULT_CHARS) "\n\n...[truncated]" else ""
+        code to McpToolResult(true, result)
+    }
+
+    private val TEXT_TYPES = setOf("text/html", "text/plain", "application/xhtml+xml", "text/xml", "application/xml", "application/json", "text/markdown")
     private const val MAX_RESULT_CHARS = 32_000
 
-    /**
-     * WebView渲染抓取（借鉴OpenMinis）：真实Chromium执行JS后提取可读正文。
-     * 反爬站点（JS挑战/指纹校验）多数能通过；复用单例WebView，Cookie走全局CookieManager。
-     * 仅文本提取——无截图/交互（完整浏览器自动化见OpenMinis BrowserTabPool体量）。
-     */
-    private fun renderFetch(context: Context, urlStr: String, ua: String, timeoutSec: Int): McpToolResult {
-        val deferred = kotlinx.coroutines.CompletableDeferred<McpToolResult>()
-        runCatching {
-            android.os.Handler(android.os.Looper.getMainLooper()).post {
-                runCatching {
-                    val wv = acquireWebView(context)
-                    wv.settings.userAgentString = ua
-                    var handled = false
-                    wv.webViewClient = object : android.webkit.WebViewClient() {
-                        override fun onPageFinished(view: android.webkit.WebView, url: String?) {
-                            if (handled) return
-                            handled = true
-                            // JS渲染等待后提取可读正文（OpenMinis BrowserUseJS.getReadable候选选择器链思路）
-                            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                                view.evaluateJavascript(READABLE_JS) { json ->
-                                    deferred.complete(parseReadable(json, urlStr))
-                                }
-                            }, 800L)
-                        }
-                    }
-                    wv.loadUrl(urlStr)
-                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                        if (!deferred.isCompleted) {
-                            deferred.complete(McpToolResult(false, "", error = "render timeout"))
-                        }
-                    }, TimeUnit.SECONDS.toMillis(timeoutSec.toLong()).coerceAtLeast(10_000L))
-                }.onFailure {
-                    deferred.complete(McpToolResult(false, "", error = it.message ?: "webview error"))
+    private suspend fun renderFetch(context: Context, url: String, ua: String): McpToolResult = renderMutex.withLock {
+        withContext(Dispatchers.Main.immediate) {
+            val result = CompletableDeferred<McpToolResult>()
+            val handler = Handler(Looper.getMainLooper())
+            val view = WebView(context.applicationContext)
+            var rendererGone = false
+            var requested = false
+            try {
+                view.settings.apply {
+                    javaScriptEnabled = true
+                    domStorageEnabled = true
+                    allowFileAccess = false
+                    allowContentAccess = false
+                    userAgentString = ua
                 }
+                view.webViewClient = object : WebViewClient() {
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                        request.url.scheme !in setOf("http", "https")
+
+                    override fun onPageFinished(view: WebView, url: String?) {
+                        if (requested || result.isCompleted) return
+                        requested = true
+                        handler.postDelayed({
+                            if (!result.isCompleted && !rendererGone) {
+                                runCatching { view.evaluateJavascript(READABLE_JS) { json ->
+                                    if (!result.isCompleted) result.complete(parseReadable(json.orEmpty()))
+                                } }.onFailure { result.complete(McpToolResult(false, "", error = "Page evaluation failed")) }
+                            }
+                        }, 600L)
+                    }
+
+                    override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
+                        if (request.isForMainFrame) result.complete(McpToolResult(false, "", error = "Page load failed"))
+                    }
+
+                    override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                        rendererGone = true
+                        result.complete(McpToolResult(false, "", error = "Web renderer stopped"))
+                        return true
+                    }
+                }
+                view.loadUrl(url)
+                result.await()
+            } finally {
+                result.cancel()
+                handler.removeCallbacksAndMessages(null)
+                if (!rendererGone) runCatching { view.stopLoading() }
+                runCatching { view.destroy() }
             }
-        }.onFailure { deferred.complete(McpToolResult(false, "", error = "no main thread")) }
-        return runCatching { kotlinx.coroutines.runBlocking { deferred.await() } }
-            .getOrElse { McpToolResult(false, "", error = it.message ?: "render failed") }
+        }
     }
 
     /** 可读正文提取JS：article/[role=main]/main/...候选链（OpenMinis getReadable思路） */
@@ -209,7 +194,7 @@ object BrowserTools {
     )
 
     /** evaluateJavascript回传的是JSON字符串字面量（外层再包一层引号），先解一层再取字段 */
-    private fun parseReadable(json: String, urlStr: String): McpToolResult {
+    private fun parseReadable(json: String): McpToolResult {
         val raw = runCatching {
             val el = AppJson.parse(json)
             (el as? kotlinx.serialization.json.JsonPrimitive)?.content ?: json
@@ -228,22 +213,4 @@ object BrowserTools {
         return McpToolResult(true, capped)
     }
 
-    /** 单例WebView（主线程创建；复用省去每请求起渲染进程的开销；Cookie走全局CookieManager） */
-    @Volatile
-    private var cachedWebView: android.webkit.WebView? = null
-
-    private fun acquireWebView(context: Context): android.webkit.WebView {
-        cachedWebView?.let { return it }
-        val wv = android.webkit.WebView(context)
-        wv.settings.apply {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            useWideViewPort = true
-            loadWithOverviewMode = true
-            builtInZoomControls = false
-        }
-        android.webkit.CookieManager.getInstance().setAcceptCookie(true)
-        cachedWebView = wv
-        return wv
-    }
 }

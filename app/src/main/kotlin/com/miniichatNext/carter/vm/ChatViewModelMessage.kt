@@ -17,10 +17,12 @@ import com.miniichatNext.carter.data.mcp.EffectiveToolPermission
 import com.miniichatNext.carter.data.mcp.McpServerConfig
 import com.miniichatNext.carter.data.mcp.exposedMcpToolName
 import com.miniichatNext.carter.data.mcp.resolveToolPermission
+import com.miniichatNext.carter.data.mcp.toolBinding
 import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.model.Attachment
 import com.miniichatNext.carter.data.model.Conversation
 import com.miniichatNext.carter.data.model.Message
+import com.miniichatNext.carter.data.model.MessageSegment
 import com.miniichatNext.carter.data.model.GeneratedImageStore
 import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.model.TokenUsage
@@ -52,7 +54,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -155,7 +156,7 @@ private fun ChatViewModel.launchGeneration(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            if (ownsSession(session)) _error.value = e.message ?: "Request failed"
+            if (ownsSession(session) && _activeId.value == cid) _error.value = e.message ?: "Request failed"
             DebugLog.e("ChatVM", "generation failed", e)
         } finally {
             if (ownsSession(session) && session.generationVersion == version) {
@@ -190,7 +191,7 @@ private suspend fun ChatViewModel.runGenerationRound(
     currentCoroutineContext().ensureActive()
     val assistant = assistantForConversation(conv)
     val (provider, model) = effectiveConversationModel(conv, assistant, settings.value, providers.value) ?: run {
-        _error.value = getApplication<Application>()
+        if (ownsSession(session) && _activeId.value == cid) _error.value = getApplication<Application>()
             .getString(com.miniichatNext.carter.R.string.error_no_provider)
         return null
     }
@@ -273,6 +274,7 @@ private suspend fun ChatViewModel.runGenerationRound(
                 existing?.content?.takeIf { it.isNotBlank() }
                     ?.let { add(com.miniichatNext.carter.data.model.MessageSegment.Text(it)) }
             }.toMutableList())
+    val previousParts = parts.toList()
     // 先在StringBuilder里聚合delta，避免每个token都复制整个末尾段字符串。
     val pendingText = StringBuilder()
     val pendingReasoning = StringBuilder()
@@ -350,14 +352,31 @@ private suspend fun ChatViewModel.runGenerationRound(
         thinking = conv.effectiveThinking())
         .catch { e ->
             DebugLog.e("ChatVM", "stream error", e)
-            _error.value = e.message ?: "Request failed"
+            if (ownsSession(session) && _activeId.value == cid) _error.value = e.message ?: "Request failed"
             if (text.isEmpty() && invocations.isEmpty()) {
-                text.append("(error: ${e.message ?: "unknown"})")
+                val detail = "(error: ${e.message ?: "unknown"})"
+                text.append(detail)
+                appendText(detail)
             }
         }
         .collect { delta ->
             if (firstChunkAt == null) firstChunkAt = SystemClock.elapsedRealtime()
             delta.usage?.let { usage = usage.merge(it) }
+            delta.outputSnapshot?.let { snapshot ->
+                text.setLength(0)
+                reasoning.setLength(0)
+                pendingText.setLength(0)
+                pendingReasoning.setLength(0)
+                parts.clear()
+                parts.addAll(previousParts.filterIsInstance<MessageSegment.Tool>())
+                snapshot.forEach { part ->
+                    when (part) {
+                        is MessageSegment.Text -> { text.append(part.text); appendText(part.text) }
+                        is MessageSegment.Reasoning -> { reasoning.append(part.text); appendReasoning(part.text) }
+                        is MessageSegment.Tool -> Unit
+                    }
+                }
+            }
             if (delta.text.isNotEmpty()) {
                 text.append(delta.text)
                 appendText(delta.text)
@@ -369,7 +388,7 @@ private suspend fun ChatViewModel.runGenerationRound(
                 publishOverlay()
             }
             delta.toolCalls.forEach { tc ->
-                taskSession?.takeIf { it.conversationId == cid }?.rememberTool(tc.id)
+                session.rememberTool(tc.id)
                 val idx = invocations.indexOfFirst { it.callId == tc.id }
                 if (idx >= 0) {
                     invocations[idx] = invocations[idx].copy(arguments = tc.argumentsJson)
@@ -390,6 +409,7 @@ private suspend fun ChatViewModel.runGenerationRound(
                             callId = tc.id,
                             toolName = tc.name,
                             arguments = tc.argumentsJson,
+                            mcpBinding = tools.firstOrNull { it.name == tc.name }?.mcpBinding,
                             state = if (needsAttention) ToolInvocationState.PENDING_APPROVAL
                             else ToolInvocationState.EXECUTING
                         )
@@ -466,11 +486,12 @@ private suspend fun ChatViewModel.persistAssistantStep(
     attachments: List<com.miniichatNext.carter.data.model.Attachment>? = null,
 ) {
     // IO期间计时快照仍在推进；持久化结束后再回写旧帧会让界面和计量倒退。
+    if (session.stopSettled) return
     if (canPublishStream(session)) {
         _streamingOverlay.value = StreamOverlay(msgId, content, reasoning, orderedParts, stats.usage, stats.generationTimeMs, stats.lastUsage, stats.stepCount, stats.finishedAt)
     }
-    if (session.stopSettled) return
     store.updateMessages(cid) { msgs ->
+        if (session.stopSettled) return@updateMessages msgs
         msgs.map { m ->
             if (m.id == msgId) m.copy(
                 content = content,
@@ -513,7 +534,7 @@ internal fun ChatViewModel.approveToolCall(cid: String, inv: ToolInvocation, cus
             } else if (!customResult.isNullOrBlank() && claimed.toolName == "interactive_clarification") {
                 true to customResult
             } else {
-                executeTool(cid, claimed.toolName, claimed.arguments)
+                executeTool(cid, claimed.toolName, claimed.arguments, claimed.mcpBinding, userApproved = true)
             }
             currentCoroutineContext().ensureActive()
             if (!ownsSession(session)) return@launchTool
@@ -542,7 +563,7 @@ internal fun ChatViewModel.rejectToolCall(cid: String, inv: ToolInvocation) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            if (ownsSession(session)) _error.value = e.message ?: "Tool failed"
+            if (ownsSession(session) && _activeId.value == cid) _error.value = e.message ?: "Tool failed"
             DebugLog.e("Tool", "reject failed", e)
         }
     }
@@ -640,7 +661,7 @@ private suspend fun ChatViewModel.updateToolInvocationState(
 
 private fun toolTargetsPublicStorage(toolName: String, argsJson: String): Boolean {
     if (toolName == "execute_shell") return true
-    if (toolName == "image_generate") return false
+    if (toolName in setOf("image_generate", "browser_fetch", "interactive_clarification")) return false
     if (toolName in SpecialTools.names) return false
     if (!BuiltInFileTools.isBuiltIn(toolName)) return false
     val args = runCatching { AppJson.parseObject(argsJson) }.getOrDefault(JsonObject(emptyMap()))
@@ -662,13 +683,14 @@ private data class AvailableTool(
     val permission: EffectiveToolPermission,
     val server: McpServerConfig? = null,
     val workspaceId: String? = null,
+    val remoteToolName: String? = null,
 )
 
 private suspend fun ChatViewModel.resolveAvailableTool(cid: String, name: String): AvailableTool {
     val disabled = AvailableTool(EffectiveToolPermission(false, true))
     val conv = store.snapshot().firstOrNull { it.id == cid } ?: return disabled
     val assistant = assistantForConversation(conv)
-    val perms = mcpStore.permsSnapshot()
+    val (configuredServers, registeredTools, perms) = mcpStore.toolSnapshot()
     if (isWorkspaceTool(name)) {
         val id = effectiveWorkspaceId(conv, assistant) ?: return disabled
         val workspace = workspaceStore.snapshot().firstOrNull { it.id == id } ?: return disabled
@@ -680,23 +702,32 @@ private suspend fun ChatViewModel.resolveAvailableTool(cid: String, name: String
         return AvailableTool(resolveToolPermission(name, "", perms, BuiltInFileTools.defaultRequireApproval(name)))
     }
     val ids = effectiveMcpServerIds(conv, assistant)
-    val servers = mcpStore.snapshot().filter { it.enabled && it.id in ids }
-    val allTools = mcpStore.toolsSnapshot().filter { tool -> servers.any { it.id == tool.serverId } }
-    val namespaced = allTools.firstOrNull { exposedMcpToolName(it.serverId, it.name) == name }
+    val servers = configuredServers.filter { it.enabled && it.id in ids }
+    val allTools = registeredTools.filter { tool -> servers.any { it.id == tool.serverId } }
+    val namespaced = allTools.filter { exposedMcpToolName(it.serverId, it.name) == name }
+    if (namespaced.size > 1) return disabled
     val rawMatches = allTools.filter { it.name == name }
-    val tool = namespaced ?: rawMatches.singleOrNull() ?: return disabled
+    val tool = namespaced.singleOrNull() ?: rawMatches.singleOrNull() ?: return disabled
     val server = servers.first { it.id == tool.serverId }
-    return AvailableTool(resolveToolPermission(tool.name, server.id, perms, server.requireApproval), server)
+    return AvailableTool(resolveToolPermission(tool.name, server.id, perms, server.requireApproval), server, remoteToolName = tool.name)
 }
 
 private suspend fun ChatViewModel.executeTool(
     cid: String,
     toolName: String,
-    argsJson: String
+    argsJson: String,
+    mcpBinding: String? = null,
+    userApproved: Boolean = false,
 ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
     currentCoroutineContext().ensureActive()
     val resolved = resolveAvailableTool(cid, toolName)
     if (!resolved.permission.enabled) return@withContext false to "Tool is disabled or not available in this conversation"
+    if (resolved.permission.requireApproval && !userApproved) return@withContext false to "Tool approval changed; request it again"
+    val server = resolved.server
+    if ((mcpBinding != null && server?.toolBinding() != mcpBinding) ||
+        (mcpBinding == null && !server?.connectionRevision.isNullOrEmpty())) {
+        return@withContext false to "MCP connection changed; request the tool again"
+    }
     if (toolTargetsPublicStorage(toolName, argsJson) && !hasAllFilesAccessPermission(getApplication())) {
         requestPermission(toolName)
         return@withContext false to getApplication<Application>().getString(R.string.permission_manage_storage_required)
@@ -707,7 +738,7 @@ private suspend fun ChatViewModel.executeTool(
                 ?: return@withContext false to getApplication<Application>().getString(R.string.image_generation_not_configured)
             val prompt = AppJson.parseObject(argsJson)["prompt"]?.jsonPrimitive?.contentOrNull.orEmpty()
             val markdown = com.miniichatNext.carter.api.ImageGenerationClient().generate(target.first, target.second, prompt)
-            val image = com.miniichatNext.carter.data.model.GeneratedImageStore.materialize(markdown, getApplication<Application>().filesDir)
+            val image = GeneratedImageStore.materialize(markdown, getApplication<Application>().filesDir)
             return@withContext true to image.content
         }
         if (isWorkspaceTool(toolName)) {
@@ -718,16 +749,15 @@ private suspend fun ChatViewModel.executeTool(
         }
 
         if (BuiltInFileTools.isBuiltIn(toolName)) {
-            val res = runInterruptible(Dispatchers.IO) { BuiltInFileTools.execute(getApplication(), toolName, argsJson) }
+            val res = BuiltInFileTools.execute(getApplication(), toolName, argsJson)
             return@withContext res.ok to (if (res.ok) res.content else (res.error ?: "unknown error"))
         }
 
-        val server = resolved.server
-            ?: return@withContext false to "No MCP server provides tool $toolName"
-        val rawName = mcpStore.toolsSnapshot().firstOrNull { exposedMcpToolName(it.serverId, it.name) == toolName }?.name ?: toolName
+        if (server == null) return@withContext false to "No MCP server provides tool $toolName"
+        val rawName = requireNotNull(resolved.remoteToolName)
         val res = mcpClient.callTool(server, rawName, argsJson)
         res.ok to (if (res.ok) res.content
-            else (res.error ?: getApplication<Application>().getString(R.string.common_execution_failed)))
+            else (res.error ?: res.content.takeIf { it.isNotBlank() } ?: getApplication<Application>().getString(R.string.common_execution_failed)))
     } catch (e: CancellationException) {
         throw e
     } catch (t: Throwable) {
@@ -763,7 +793,7 @@ private suspend fun ChatViewModel.executeAutoApprovedTools(
             continue
         }
         val claimed = claimPendingTool(cid, inv.callId, ToolInvocationState.RUNNING, from = inv.state) ?: continue
-        val (ok, output) = executeTool(cid, claimed.toolName, claimed.arguments)
+        val (ok, output) = executeTool(cid, claimed.toolName, claimed.arguments, claimed.mcpBinding)
         currentCoroutineContext().ensureActive()
         updateToolInvocationState(cid, inv.callId,
             if (ok) ToolInvocationState.SUCCESS else ToolInvocationState.ERROR, output)
@@ -836,7 +866,36 @@ internal fun ChatViewModel.continueGenerating() {
 internal fun ChatViewModel.deleteMessage(messageId: String) {
     viewModelScope.launch {
         val cid = findConvIdForMessage(messageId) ?: return@launch
+        val deleted = store.snapshot().firstOrNull { it.id == cid }?.messages?.firstOrNull { it.id == messageId } ?: return@launch
+        stopForMessageMutation(cid)
         store.updateMessages(cid) { it.filterNot { m -> m.id == messageId } }
+        cleanupGeneratedImages(listOf(deleted))
+    }
+}
+
+private fun Message.generatedImageRefs(): List<String> = buildList {
+    addAll(GeneratedImageStore.references(content))
+    orderedParts.forEach { part ->
+        if (part is MessageSegment.Text) addAll(GeneratedImageStore.references(part.text))
+    }
+    toolInvocations.forEach { addAll(GeneratedImageStore.references(it.result)) }
+    attachments.forEach { attachment ->
+        if (attachment.type == "image" && attachment.uri.isNotBlank()) add(attachment.uri)
+    }
+}
+
+/**
+ * 删除消息/会话后清理不再被任何消息引用的生成图；共享图片会在剩余引用里保留。
+ */
+internal suspend fun ChatViewModel.cleanupGeneratedImages(deleted: List<Message>) {
+    val deletedRefs = deleted.flatMap { it.generatedImageRefs() }.toSet()
+    if (deletedRefs.isEmpty()) return
+    val remaining = store.snapshot().flatMap { it.messages }.flatMap { it.generatedImageRefs() }.toSet()
+    val remove = deletedRefs - remaining
+    if (remove.isEmpty()) return
+    withContext(Dispatchers.IO) {
+        val filesDir = getApplication<Application>().filesDir
+        remove.forEach { reference -> GeneratedImageStore.deleteLocal(filesDir, reference) }
     }
 }
 
@@ -849,6 +908,7 @@ private suspend fun ChatViewModel.findConvIdForMessage(messageId: String): Strin
 internal fun ChatViewModel.editMessage(messageId: String, newContent: String) {
     viewModelScope.launch {
         val cid = findConvIdForMessage(messageId) ?: return@launch
+        stopForMessageMutation(cid)
         store.updateMessages(cid) { msgs ->
             msgs.map { m ->
                 if (m.id != messageId) m
@@ -863,6 +923,14 @@ internal fun ChatViewModel.editMessage(messageId: String, newContent: String) {
 }
 
 /** 编辑后重建orderedParts：Text段合并为新内容，Reasoning/Tool段原位保留 */
+private fun ChatViewModel.stopForMessageMutation(cid: String) {
+    stoppingSession?.takeIf { it.conversationId == cid }?.settleStop()
+    taskSession?.takeIf { it.conversationId == cid }?.let { session ->
+        session.settleStop()
+        stopTaskSession()
+    }
+}
+
 private fun rewriteTextSegments(
     parts: List<com.miniichatNext.carter.data.model.MessageSegment>,
     newText: String,
@@ -877,7 +945,7 @@ private fun rewriteTextSegments(
         }
         if (newText.isNotBlank()) add(com.miniichatNext.carter.data.model.MessageSegment.Text(newText))
     }
-    return if (result.isEmpty()) parts else result
+    return result
 }
 
 
@@ -904,22 +972,25 @@ internal suspend fun ChatViewModel.collectToolSpecs(
     assistant: Assistant?,
 ): List<ToolSpec> {
     val specs = mutableListOf<ToolSpec>()
-    val perms = mcpStore.permsSnapshot()
+    val (configuredServers, registeredTools, perms) = mcpStore.toolSnapshot()
     BuiltInFileTools.schema(getApplication())
         .filter { it.name != "image_generate" || conv?.id?.let { id -> resolveImageGenerationModel(id) } != null }
         .filter { resolveToolPermission(it.name, "", perms, BuiltInFileTools.defaultRequireApproval(it.name)).enabled }
         .forEach { specs += ToolSpec(it.name, it.description, it.inputSchema) }
 
     val enabledServerIds = effectiveMcpServerIds(conv, assistant)
-    val servers = mcpStore.snapshot().filter { server ->
+    val servers = configuredServers.filter { server ->
         server.enabled && server.id in enabledServerIds
     }
-    mcpStore.toolsSnapshot()
+    registeredTools
         .filter { tool -> servers.any { it.id == tool.serverId } }
         .filter { tool ->
             perms.firstOrNull { it.toolName == tool.name && it.serverId == tool.serverId }?.enabled ?: true
         }
-        .forEach { specs += ToolSpec(exposedMcpToolName(it.serverId, it.name), it.description, it.inputSchema) }
+        .forEach {
+            val server = servers.first { server -> server.id == it.serverId }
+            specs += ToolSpec(exposedMcpToolName(it.serverId, it.name), it.description, it.inputSchema, server.toolBinding())
+        }
 
     val wsId = effectiveWorkspaceId(conv, assistant)
     if (!wsId.isNullOrBlank()) {

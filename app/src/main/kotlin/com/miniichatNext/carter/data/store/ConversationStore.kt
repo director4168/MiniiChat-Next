@@ -57,23 +57,34 @@ class ConversationStore(private val context: Context) {
     /** 首次访问时把磁盘内容读进缓存，并把旧的单key格式迁移成per-conversation key */
     private suspend fun hydrateLocked() {
         if (hydrated) return
-        val prefs = context.conversationsDataStore.data.first()
-
-        val legacyRaw = prefs[legacyKey]
-        val loaded: List<Conversation> = if (legacyRaw != null) {
-            val migrated = decodeList(legacyRaw)
-            com.miniichatNext.carter.debug.DebugLog.i(
-                "Store", "conversation.migrate legacy blob -> per-key, count=${migrated.size}"
-            )
-            context.conversationsDataStore.edit { p ->
-                migrated.forEach { conv ->
-                    p[keyFor(conv.id)] = encodeOne(conv)
-                }
-                p.remove(legacyKey)
-            }
-            migrated
-        } else {
+        val dataStore = context.conversationsDataStore
+        val prefs = dataStore.data.first()
+        val loaded = if (prefs[legacyKey] == null) {
             readPerConversation(prefs)
+        } else {
+            val migrated = dataStore.edit { current ->
+                val raw = current[legacyKey] ?: return@edit
+                val legacy = try {
+                    json.decodeFromString(ListSerializer(Conversation.serializer()), raw)
+                } catch (_: IllegalArgumentException) {
+                    DebugLog.w("Store", "Legacy conversations could not be read; original retained")
+                    return@edit
+                }
+                if (legacy.map { it.id }.toSet().size != legacy.size) {
+                    DebugLog.w("Store", "Duplicate legacy conversation IDs; original retained")
+                    return@edit
+                }
+                if (legacy.any { current[keyFor(it.id)]?.let { stored -> decodeOne(stored) == null } == true }) {
+                    DebugLog.w("Store", "Conflicting conversation record; original retained")
+                    return@edit
+                }
+                legacy.forEach { conversation ->
+                    val key = keyFor(conversation.id)
+                    if (current[key] == null) current[key] = encodeOne(conversation)
+                }
+                current.remove(legacyKey)
+            }
+            readPerConversation(migrated)
         }
         _cache.value = loaded
         hydrated = true
@@ -176,13 +187,6 @@ class ConversationStore(private val context: Context) {
 
     private fun decodeOne(raw: String): Conversation? =
         runCatching { json.decodeFromString(Conversation.serializer(), raw) }.getOrNull()
-
-    private fun decodeList(raw: String?): List<Conversation> {
-        if (raw.isNullOrBlank()) return emptyList()
-        return runCatching {
-            json.decodeFromString(ListSerializer(Conversation.serializer()), raw)
-        }.getOrDefault(emptyList())
-    }
 
     companion object {
         private const val KEY_PREFIX = "conv_"

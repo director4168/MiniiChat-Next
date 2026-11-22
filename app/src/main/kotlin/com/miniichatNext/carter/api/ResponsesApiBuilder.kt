@@ -99,8 +99,8 @@ internal fun buildResponsesApiRequest(
                 })
             }
         })
-        provider.extraBody.forEach { (key, value) -> if (key.isNotBlank()) put(key, coerceToJson(value)) }
-        model?.extraBody.orEmpty().forEach { (key, value) -> if (key.isNotBlank()) put(key, coerceToJson(value)) }
+        provider.extraBody.forEach { (key, value) -> if (key.isNotBlank() && key != "stream") put(key, coerceToJson(value)) }
+        model?.extraBody.orEmpty().forEach { (key, value) -> if (key.isNotBlank() && key != "stream") put(key, coerceToJson(value)) }
     }
     return AppJson.jsonCompact.encodeToString(JsonObject.serializer(), request)
 }

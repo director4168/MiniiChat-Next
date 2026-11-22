@@ -56,27 +56,31 @@ fun ImageViewerScreen(
     path: String,
     onBack: () -> Unit,
 ) {
-    val context = LocalContext.current
-    var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var bitmap by remember(workspaceId, area, path) { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var error by remember(workspaceId, area, path) { mutableStateOf<String?>(null) }
     val fileName = path.substringAfterLast('/').ifBlank { path }
 
     LaunchedEffect(workspaceId, area, path) {
         runCatching {
             withContext(Dispatchers.IO) {
                 val bytes = repository.readBytes(workspaceId, area, path)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                require(bounds.outWidth > 0 && bounds.outHeight > 0) { "Invalid image dimensions" }
+                val sample = com.miniichatNext.carter.data.util.AttachmentLoader.calculateImageInSampleSize(bounds.outWidth, bounds.outHeight, 4096, 8_000_000L)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
             }
         }.onSuccess { bmp ->
             if (bmp == null) error = "decode returned null" else bitmap = bmp
         }.onFailure { t ->
+            if (t is kotlinx.coroutines.CancellationException) throw t
             error = t.message ?: t::class.simpleName
         }
     }
 
-    var scale by remember { mutableFloatStateOf(1f) }
-    var offsetX by remember { mutableFloatStateOf(0f) }
-    var offsetY by remember { mutableFloatStateOf(0f) }
+    var scale by remember(workspaceId, area, path) { mutableFloatStateOf(1f) }
+    var offsetX by remember(workspaceId, area, path) { mutableFloatStateOf(0f) }
+    var offsetY by remember(workspaceId, area, path) { mutableFloatStateOf(0f) }
 
     Column(
         modifier = Modifier

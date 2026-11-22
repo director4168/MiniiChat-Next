@@ -7,7 +7,9 @@
 package com.miniichatNext.carter.ui.workspace
 
 import android.content.Intent
+import android.os.Build
 import android.widget.Toast
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -20,6 +22,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -39,6 +42,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -53,19 +57,25 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.miniichatNext.carter.BuildConfig
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.data.workspace.RootfsDownloadService
 import com.miniichatNext.carter.data.workspace.RootfsInstallManager
 import com.miniichatNext.carter.data.workspace.RootfsInstallStage
 import com.miniichatNext.carter.data.workspace.RootfsInstallState
@@ -85,8 +95,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private const val DEFAULT_ROOTFS_URL =
-    "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-arm64.tar.gz"
+private fun defaultRootfsUrl(abi: String): String {
+    val releaseArch = when (abi) {
+        "arm64-v8a" -> "arm64"
+        "armeabi-v7a" -> "armhf"
+        "x86_64" -> "amd64"
+        else -> return ""
+    }
+    return "https://cdimage.ubuntu.com/ubuntu-base/releases/24.04/release/ubuntu-base-24.04.3-base-$releaseArch.tar.gz"
+}
 
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
@@ -96,10 +113,12 @@ fun WorkspaceListScreen(
     onCreate: () -> Unit,
     onWorkspaceClick: (String) -> Unit,
     onCreateNamed: (String) -> Unit = {},
+    scrollState: androidx.compose.foundation.lazy.LazyListState? = null,
 ) {
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val workspaces by repository.workspacesFlow.collectAsState(initial = emptyList())
+    val listState = scrollState ?: androidx.compose.foundation.lazy.rememberLazyListState()
 
     // 重命名/删除对话框状态（函数内remember，绝不能用顶层var——跨实例共享且不触发重组）
     var renaming by remember { mutableStateOf<WorkspaceEntity?>(null) }
@@ -107,60 +126,82 @@ fun WorkspaceListScreen(
     // 创建工作区：先命名（非空合法）再进创建流程
     var showCreateDialog by remember { mutableStateOf(false) }
 
-    Scaffold(
-        topBar = {
-            // Scaffold不给topBar加状态栏insets，手动补（其它页面在Column层已处理）
-            Box(
-                Modifier
-                    .fillMaxWidth()
-                    .windowInsetsPadding(WindowInsets.statusBars)
-            ) {
-                SettingsTopBar(stringResource(R.string.workspace_title), onBack)
+    val workspaceSupported by produceState<Boolean?>(null, repository) {
+        value = withContext(Dispatchers.IO) { runCatching { repository.rootfsAbi != null }.getOrDefault(false) }
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            topBar = {
+                // Scaffold不给topBar加状态栏insets，手动补（其它页面在Column层已处理）
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .windowInsetsPadding(WindowInsets.statusBars)
+                ) {
+                    SettingsTopBar(stringResource(R.string.workspace_title), onBack)
+                }
+            },
+            floatingActionButton = {
+                if (workspaceSupported == true) {
+                    FloatingActionButton(onClick = { showCreateDialog = true }) {
+                        Icon(Icons.Default.Add, contentDescription = stringResource(R.string.workspace_new))
+                    }
+                }
             }
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showCreateDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = stringResource(R.string.workspace_new))
-            }
-        }
-    ) { padding ->
-        if (workspaces.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(stringResource(R.string.workspace_empty_title), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        } else {
-            LazyColumn(modifier = Modifier.fillMaxSize().padding(padding)) {
-                items(workspaces, key = { it.id }) { ws ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
-                        shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { onWorkspaceClick(ws.id) }
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(ws.name, style = MaterialTheme.typography.titleMedium)
-                                Text(
-                                    statusLabel(LocalContext.current, ws.shellStatus),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = statusColor(ws.shellStatus),
-                                )
-                            }
-                            TextButton(onClick = { renaming = ws }) {
-                                Text(stringResource(R.string.rename))
-                            }
-                            IconButton(onClick = { pendingDelete = ws }) {
-                                Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete))
+        ) { padding ->
+            when (workspaceSupported) {
+                null -> Box(
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                    contentAlignment = Alignment.Center,
+                ) { CircularProgressIndicator() }
+
+                false -> DisabledWorkspaceContent(
+                    modifier = Modifier.fillMaxSize().padding(padding),
+                )
+
+                true -> if (workspaces.isEmpty()) {
+                    Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                        Text(stringResource(R.string.workspace_empty_title), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(padding)) {
+                        items(workspaces, key = { it.id }) { ws ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable { onWorkspaceClick(ws.id) }
+                                        .padding(16.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(ws.name, style = MaterialTheme.typography.titleMedium)
+                                        Text(
+                                            statusLabel(LocalContext.current, ws.shellStatus),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = statusColor(ws.shellStatus),
+                                        )
+                                    }
+                                    TextButton(onClick = { renaming = ws }) {
+                                        Text(stringResource(R.string.rename))
+                                    }
+                                    IconButton(onClick = { pendingDelete = ws }) {
+                                        Icon(Icons.Default.Delete, contentDescription = stringResource(R.string.delete))
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
+        }
+        if (workspaceSupported == false) {
+            DisabledWorkspaceRibbon(Modifier.align(Alignment.TopEnd))
         }
     }    // 重命名对话框（用InputDialog通用组件）
     renaming?.let { target ->
@@ -218,6 +259,68 @@ fun WorkspaceListScreen(
     }
 }
 
+@Composable
+private fun DisabledWorkspaceContent(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(horizontal = 32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            stringResource(R.string.workspace_disabled_title),
+            style = MaterialTheme.typography.displaySmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.error,
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            stringResource(R.string.workspace_disabled_reason),
+            style = MaterialTheme.typography.bodyLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(16.dp))
+        Text(
+            stringResource(
+                R.string.workspace_disabled_version,
+                BuildConfig.VERSION_NAME,
+                BuildConfig.VERSION_CODE,
+                Build.SUPPORTED_32_BIT_ABIS.firstOrNull() ?: Build.SUPPORTED_ABIS.firstOrNull().orEmpty(),
+            ),
+            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun DisabledWorkspaceRibbon(modifier: Modifier = Modifier) {
+    val ribbonColor = MaterialTheme.colorScheme.error
+    Box(
+        modifier = modifier.size(140.dp),
+        contentAlignment = Alignment.TopEnd,
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val edge = size.width
+            val path = Path().apply {
+                moveTo(size.width, 0f)
+                lineTo(size.width - edge, 0f)
+                lineTo(size.width, edge)
+                close()
+            }
+            drawPath(path, color = ribbonColor)
+        }
+        Text(
+            stringResource(R.string.workspace_disabled_ribbon),
+            modifier = Modifier.padding(top = 54.dp, end = 8.dp).rotate(45f),
+            color = MaterialTheme.colorScheme.onError,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun WorkspaceDetailScreen(
@@ -231,7 +334,10 @@ fun WorkspaceDetailScreen(
     val workspaces by repository.workspacesFlow.collectAsState(initial = emptyList())
     val workspace = workspaces.firstOrNull { it.id == workspaceId }
 
-    var rootfsUrl by remember { mutableStateOf(DEFAULT_ROOTFS_URL) }
+    val rootfsAbi by androidx.compose.runtime.produceState<String?>(null, repository) {
+        value = withContext(Dispatchers.IO) { repository.rootfsAbi }
+    }
+    var rootfsUrl by remember(workspaceId, rootfsAbi) { mutableStateOf(rootfsAbi?.let(::defaultRootfsUrl).orEmpty()) }
     // 安装任务由RootfsInstallManager进程级持有：离开页面不中断，回来还能接上进度
     val installStates by RootfsInstallManager.states.collectAsState()
     val installState = installStates[workspaceId]
@@ -293,7 +399,9 @@ fun WorkspaceDetailScreen(
                         color = statusColor(workspace?.shellStatus ?: WorkspaceShellStatus.DISABLED.name),
                     )
                     val isReady = workspace?.shellStatus?.equals(WorkspaceShellStatus.READY.name) == true
-                    if (!isReady) {
+                    if (rootfsAbi == null) {
+                        Text(stringResource(R.string.workspace_rootfs_unsupported_abi), style = MaterialTheme.typography.bodySmall)
+                    } else if (!isReady) {
                         Spacer(Modifier.height(8.dp))
                         OutlinedTextField(
                             value = rootfsUrl,
@@ -308,6 +416,7 @@ fun WorkspaceDetailScreen(
                             Button(
                                 enabled = !busy && rootfsUrl.isNotBlank(),
                                 onClick = {
+                                    RootfsDownloadService.start(context, workspaceId)
                                     RootfsInstallManager.start(repository, workspaceId, rootfsUrl.trim())
                                 }
                             ) { Text(if (busy) stringResource(R.string.workspace_installing) else stringResource(R.string.workspace_install)) }
@@ -333,6 +442,7 @@ fun WorkspaceDetailScreen(
                             Button(
                                 enabled = !busy && rootfsUrl.isNotBlank(),
                                 onClick = {
+                                    RootfsDownloadService.start(context, workspaceId)
                                     RootfsInstallManager.start(repository, workspaceId, rootfsUrl.trim())
                                 }
                             ) { Text(if (busy) stringResource(R.string.workspace_installing) else stringResource(R.string.workspace_install)) }
@@ -380,6 +490,7 @@ fun WorkspaceDetailScreen(
             )
                     TextButton(
                         onClick = onOpenTerminal,
+                        enabled = rootfsAbi != null && workspace?.shellStatus == WorkspaceShellStatus.READY.name,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Text(stringResource(R.string.workspace_terminal_open))
@@ -433,7 +544,7 @@ fun WorkspaceDetailScreen(
                             )
                         }
                         TextButton(
-                            enabled = command.isNotBlank() && !busy,
+                            enabled = rootfsAbi != null && workspace?.shellStatus == WorkspaceShellStatus.READY.name && command.isNotBlank() && !busy,
                             onClick = {
                                 val cmd = command
                                 command = ""

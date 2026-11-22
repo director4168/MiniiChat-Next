@@ -60,6 +60,10 @@ private suspend fun ChatViewModel.runAuxCompletionOnce(
             modelId = model,
             messages = listOf(ChatMessage("user", prompt))
         ).collect { delta ->
+            delta.outputSnapshot?.let { snapshot ->
+                sb.setLength(0)
+                snapshot.filterIsInstance<com.miniichatNext.carter.data.model.MessageSegment.Text>().forEach { sb.append(it.text) }
+            }
             if (delta.text.isNotEmpty()) sb.append(delta.text)
         }
         sb.toString().trim().ifBlank { null }
@@ -326,6 +330,10 @@ private suspend fun ChatViewModel.runOcrCompletion(
                 )
             ))
         ).collect { delta ->
+            delta.outputSnapshot?.let { snapshot ->
+                sb.setLength(0)
+                snapshot.filterIsInstance<com.miniichatNext.carter.data.model.MessageSegment.Text>().forEach { sb.append(it.text) }
+            }
             if (delta.text.isNotEmpty()) sb.append(delta.text)
         }
         sb.toString().trim().ifBlank { null }

@@ -29,7 +29,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Psychology
 import androidx.compose.material.icons.filled.Refresh
@@ -72,6 +73,7 @@ import com.miniichatNext.carter.data.avatar.Avatar
 import com.miniichatNext.carter.data.model.Message
 import com.miniichatNext.carter.ui.components.AvatarView
 import com.miniichatNext.carter.ui.components.clipDrawing
+import com.miniichatNext.carter.ui.markdown.GeneratedImagePreview
 import com.miniichatNext.carter.ui.markdown.MarkdownText
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -135,10 +137,17 @@ internal fun AssistantRow(
                 }
                 val parts = message.orderedParts
                 var i = 0
+                var previousCall: String? = null
+                val occurrences = mutableMapOf<String, Int>()
+                fun keyFor(anchor: String): String {
+                    val occurrence = occurrences.getOrDefault(anchor, 0)
+                    occurrences[anchor] = occurrence + 1
+                    return "$anchor:$occurrence"
+                }
                 while (i < parts.size) {
                     val seg = parts[i]
                     if (seg is com.miniichatNext.carter.data.model.MessageSegment.Text) {
-                        key("text:$i") {
+                        key(keyFor("text:${previousCall.orEmpty()}")) {
                             if (seg.text.isNotBlank()) {
                                 TextBubble(
                                     text = seg.text,
@@ -157,7 +166,10 @@ internal fun AssistantRow(
                         val clusterStart = i
                         while (i < parts.size && parts[i] !is com.miniichatNext.carter.data.model.MessageSegment.Text) i++
                         val cluster = parts.subList(clusterStart, i)
-                        key("cluster:$clusterStart") {
+                        val toolCalls = cluster.filterIsInstance<com.miniichatNext.carter.data.model.MessageSegment.Tool>()
+                        val anchor = toolCalls.firstOrNull()?.callId ?: previousCall.orEmpty()
+                        previousCall = toolCalls.lastOrNull()?.callId ?: previousCall
+                        key(keyFor("cluster:$anchor")) {
                         // 拆成(思考/澄清)和(工具/批)两组，分别渲染
                         val cotSteps = buildList<ThoughtStep> {
                             cluster.forEach { s ->
@@ -236,6 +248,28 @@ internal fun AssistantRow(
                     )
                 }
             }
+            // 附件是落盘结果的一部分；正文没有引用到它的旧消息/异常消息仍应可见。
+            val referenced = buildString {
+                append(message.content)
+                message.orderedParts.forEach { part ->
+                    if (part is com.miniichatNext.carter.data.model.MessageSegment.Text) {
+                        append('\n').append(part.text)
+                    }
+                }
+            }
+            val looseImages = message.attachments.filter { attachment ->
+                attachment.type == "image" && attachment.uri.isNotBlank() && !referenced.contains(attachment.uri)
+            }
+            if (looseImages.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                looseImages.forEach { attachment ->
+                    GeneratedImagePreview(
+                        url = attachment.uri,
+                        description = attachment.name,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
             if (isLastAssistant && isStreaming) {
                 TypingDots()
             }
@@ -255,7 +289,8 @@ internal fun AssistantRow(
             AssistantActionBar(
                 onCopy = { clipboard.setText(AnnotatedString(message.content)) },
                 onContinue = if (isLastAssistant) onContinue else null,
-                onEdit = if (isLastAssistant) onStartEdit else null
+                onEdit = if (isLastAssistant) onStartEdit else null,
+                onMore = onLongPress,
             )
         }
     }
@@ -265,7 +300,8 @@ internal fun AssistantRow(
 internal fun AssistantActionBar(
     onCopy: () -> Unit,
     onContinue: (() -> Unit)? = null,
-    onEdit: (() -> Unit)? = null
+    onEdit: (() -> Unit)? = null,
+    onMore: (() -> Unit)? = null,
 ) {
     Row(
         modifier = Modifier
@@ -280,6 +316,9 @@ internal fun AssistantActionBar(
         }
         if (onEdit != null) {
             ActionChip(Icons.Default.Edit, stringResource(R.string.edit), onEdit)
+        }
+        if (onMore != null) {
+            ActionChip(Icons.Default.MoreVert, stringResource(R.string.message_more), onMore)
         }
     }
 }
@@ -347,6 +386,7 @@ private fun TextBubble(
     // 流式生成期间关闭文本选择：内容高频重排，选择器会频繁注册/注销拖慢渲染
     selectable: Boolean = true,
 ) {
+    val hasLink = com.miniichatNext.carter.ui.markdown.containsMarkdownLink(text)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -357,24 +397,25 @@ private fun TextBubble(
                 bottomEnd = 18.dp
             ))
             .background(Color(0xFF1A1A1A))
-            .combinedClickable(
-                onClick = {},
-                onLongClick = onLongClick
+            .then(
+                if (hasLink) Modifier
+                else Modifier.combinedClickable(onClick = {}, onLongClick = onLongClick)
             )
             .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
-        val bubbleContent: @Composable () -> Unit = {
-            Column {
-                MarkdownText(
-                    text = text,
-                    color = Color(0xFFECECEC),
-                    modifier = Modifier.fillMaxWidth(),
-                    onFullscreen = onFullscreen,
-                )
-            }
+        Column {
+            MarkdownText(
+                text = text,
+                color = Color(0xFFECECEC),
+                modifier = Modifier.fillMaxWidth(),
+                onFullscreen = onFullscreen,
+                selectable = selectable,
+                selectionColors = TextSelectionColors(
+                    handleColor = Color(0xFFECECEC),
+                    backgroundColor = Color.White.copy(alpha = 0.26f),
+                ),
+            )
         }
-        // 与rikkahub一致：内容稳定后才套选择容器（流式时内容每帧重排，选择器会拖慢渲染）
-        if (selectable) SelectionContainer { bubbleContent() } else bubbleContent()
     }
 }
 
@@ -631,6 +672,7 @@ private fun StepCodeBlock(label: String, text: String) {
         lineHeight = 16.sp
     )
     val lines = androidx.compose.runtime.remember(text) { text.split('\n') }
+    val gutterWidth = ((lines.size.toString().length * 8) + 18).dp
     Column {
         Text(
             text = label,
@@ -652,6 +694,7 @@ private fun StepCodeBlock(label: String, text: String) {
             val gutterFg = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
             Column(
                 modifier = Modifier
+                    .width(gutterWidth)
                     .drawBehind {
                         val x = size.width - 0.5.dp.toPx()
                         drawLine(

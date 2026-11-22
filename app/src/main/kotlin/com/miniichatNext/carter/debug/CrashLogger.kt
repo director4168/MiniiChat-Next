@@ -84,7 +84,7 @@ object CrashLogger {
     fun crashZipFile(context: Context): File {
         val source = latestCrashFile(context)
         val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date())
-        val out = File(crashDir(context), ZIP_PREFIX + stamp + ".zip")
+        val out = File(crashDir(context), ZIP_PREFIX + stamp + "_" + java.util.UUID.randomUUID() + ".zip")
         ZipOutputStream(out.outputStream()).use { zip ->
             zip.putNextEntry(ZipEntry("crash.log"))
             if (source.isFile) source.inputStream().use { it.copyTo(zip) }
@@ -134,9 +134,9 @@ object CrashLogger {
             File(this, LATEST_NAME).writeText(text)
             // 只保留最新一份latest；历史按时间戳归档，最多5份
             val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-            File(this, "crash_$stamp.log").writeText(text)
+            File(this, "crash_${stamp}_${java.util.UUID.randomUUID()}.log").writeText(text)
             listFiles { f -> f.name.startsWith("crash_") }
-                ?.sortedByDescending { it.name }
+                ?.sortedByDescending { it.lastModified() }
                 ?.drop(5)
                 ?.forEach { it.delete() }
         }

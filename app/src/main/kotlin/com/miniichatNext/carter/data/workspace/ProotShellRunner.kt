@@ -7,6 +7,7 @@
 package com.miniichatNext.carter.data.workspace
 
 import java.io.File
+import java.util.UUID
 
 data class WorkspaceBindMount(
     val source: File,
@@ -22,7 +23,7 @@ class ProotShellRunner(
     private val patcher: RootfsPatcher = RootfsPatcher(),
 ) : WorkspaceShellRunner {
     override fun execute(context: WorkspaceShellContext): WorkspaceCommandResult {
-        if (!context.linuxDir.hasUsableRootfs()) {
+        if (!RootfsLayout.isUsable(context.linuxDir)) {
             return WorkspaceCommandResult(exitCode = 127, stdout = "", stderr = "Rootfs is not installed")
         }
 
@@ -45,7 +46,8 @@ class ProotShellRunner(
 
         context.tempDir.mkdirs()
         patcher.patch(context.linuxDir)
-        val process = ProcessBuilder(buildCommand(context, proot))
+        val pidFile = File(context.tempDir, "exec/${UUID.randomUUID()}.pid").also { it.parentFile?.mkdirs() }
+        val process = ProcessBuilder(buildCommand(context, proot, pidFile))
             .directory(context.filesDir)
             .redirectErrorStream(false)
             .apply {
@@ -60,13 +62,10 @@ class ProotShellRunner(
             }
             .start()
 
-        return process.readResult(context.timeoutMillis, context.stdin)
+        return try { process.readResult(context.timeoutMillis, context.stdin) { terminateProot(process, pidFile) } } finally { pidFile.delete() }
     }
 
-    private fun buildCommand(
-        context: WorkspaceShellContext,
-        proot: File,
-    ): List<String> {
+    private fun buildCommand(context: WorkspaceShellContext, proot: File, pidFile: File): List<String> {
         val command = mutableListOf(
             proot.absolutePath,
             "--root-id",
@@ -95,21 +94,22 @@ class ProotShellRunner(
         }
 
         command += listOf(
-            "/usr/bin/env",
+            requireNotNull(RootfsLayout.env(context.linuxDir)) { "Rootfs is missing env" },
             "-i",
             "HOME=/root",
             "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
             "TERM=xterm-256color",
             "LANG=C.UTF-8",
             "LC_ALL=C.UTF-8",
-            "/bin/bash",
+            WorkspaceManager.rootfsShell(context.linuxDir),
             "-l",
             "-c",
             // 命令通过位置参数传入，避免任何转义
-            "cd -- \"\$1\" && eval \"\$2\"",
+            "echo \"\$\$ \$PPID\" > \"\$3\"; cd -- \"\$1\" && eval \"\$2\"",
             "miniichat",
             context.prootCwd(),
             context.command,
+            "${pidFile.absolutePath}",
         )
         return command
     }
@@ -118,9 +118,6 @@ class ProotShellRunner(
         val normalized = cwd.trim().trim('/')
         return if (normalized.isBlank()) WORKSPACE_DIR else "$WORKSPACE_DIR/$normalized"
     }
-
-    private fun File.hasUsableRootfs(): Boolean =
-        isDirectory && File(this, "bin/sh").isFile
 
     private companion object {
         private const val PROOT_EXEC = "libproot_exec.so"

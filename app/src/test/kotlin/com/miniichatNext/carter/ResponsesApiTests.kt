@@ -11,6 +11,7 @@ import com.miniichatNext.carter.api.ChatPart
 import com.miniichatNext.carter.api.ResponsesApiStreamParser
 import com.miniichatNext.carter.api.parseResponsesApiBody
 import com.miniichatNext.carter.api.normalizeFunctionParameters
+import com.miniichatNext.carter.api.normalizeOpenAiImageOutput
 import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.model.ThinkingLevel
 import com.miniichatNext.carter.api.ToolSpec
@@ -156,11 +157,45 @@ class ResponsesApiTests {
     }
 
     @Test
+    fun nonStreamingResponseKeepsEveryTextBlockInOrder() {
+        val deltas = parseResponsesApiBody("""{"output":[{"type":"message","content":[{"type":"output_text","text":"first"},{"type":"output_text","text":"second"}]}]}""")
+        assertEquals(listOf("first", "second"), deltas.filter { it.text.isNotEmpty() }.map { it.text })
+    }
+
+    @Test
+    fun completedSnapshotFillsBlocksThatWereNotStreamed() {
+        val parser = ResponsesApiStreamParser()
+        parser.accept("""{"type":"response.output_text.delta","item_id":"msg","output_index":0,"content_index":0,"delta":"first"}""")
+        parser.accept("""{"type":"response.completed","response":{"output":[{"type":"message","id":"msg","content":[{"type":"output_text","text":"first"},{"type":"output_text","text":"second"}]} ]}}""")
+        assertEquals("firstsecond", parser.collectedText())
+    }
+
+    @Test
     fun incompleteResponsePreservesPartialTextAndUsage() {
         val parser = ResponsesApiStreamParser()
         val deltas = parser.accept("""{"type":"response.incomplete","response":{"status":"incomplete","usage":{"input_tokens":2,"output_tokens":1},"output":[{"type":"message","content":[{"type":"output_text","text":"partial"}]}]}}""")
         assertTrue(deltas.any { it.text == "partial" })
         assertTrue(deltas.any { it.usage?.let { usage -> usage.promptTokens + usage.completionTokens == 3 } == true })
+    }
+
+    @Test
+    fun imageGenerationResultBecomesMarkdown() {
+        val deltas = parseResponsesApiBody("""{"output":[{"type":"image_generation_call","result":"QUJD"}]}""")
+        assertTrue(deltas.any { it.text.contains("data:image/png;base64,QUJD") })
+    }
+
+    @Test
+    fun imageGenerationUrlResultPassesThrough() {
+        val deltas = parseResponsesApiBody("""{"output":[{"type":"image_generation_call","result":"https://example.com/a.png"}]}""")
+        assertTrue(deltas.any { it.text.contains("![image](https://example.com/a.png)") })
+    }
+
+    @Test
+    fun openAiImageOutputNormalizesContentAndDeduplicatesImages() {
+        val normalized = normalizeOpenAiImageOutput(json.parseToJsonElement("""{"choices":[{"message":{"content":[{"type":"text","text":"here"},{"type":"image_url","image_url":{"url":"https://example.com/a.png"}}],"images":[{"type":"image_url","image_url":{"url":"https://example.com/a.png"}}]}}]}"""))
+        val content = normalized.jsonObject["choices"]!!.jsonArray[0].jsonObject["message"]!!.jsonObject["content"]!!.jsonPrimitive.content
+        assertTrue(content.contains("here"))
+        assertEquals(1, content.split("example.com/a.png").size - 1)
     }
 
     @Test

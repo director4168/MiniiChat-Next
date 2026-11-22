@@ -58,8 +58,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.mcp.McpClient
-import com.miniichatNext.carter.data.model.Assistant
-import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.model.ProviderOverride
 import com.miniichatNext.carter.data.model.UserProfile
 import com.miniichatNext.carter.data.update.displayVersion
@@ -119,7 +117,6 @@ import com.miniichatNext.carter.vm.removeModel
 import com.miniichatNext.carter.vm.reorderProviders
 import com.miniichatNext.carter.vm.saveMcpServer
 import com.miniichatNext.carter.vm.saveSkill
-import com.miniichatNext.carter.vm.saveSkillFiles
 import com.miniichatNext.carter.vm.selectAssistant
 import com.miniichatNext.carter.vm.selectModel
 import com.miniichatNext.carter.vm.sendMessage
@@ -142,7 +139,7 @@ import kotlinx.coroutines.launch
 /** 路由表：新增页面只需在这里加一项（配合AppNavRegistry可自定义过渡动画） */
 internal enum class Screen {
     Chat, Settings, Providers, ProviderEdit, Assistants, AssistantEdit, Backup, Logs,
-    Skills, UserProfile, About, Debug, DebugCropTest, DialogTest, ThemeColors, MorePreferences, UpdateSettings, Acknowledgements,
+    Skills, UserProfile, About, Debug, DebugCropTest, DialogTest, ThemeColors, MorePreferences, UpdateSettings, Acknowledgements, Permissions,
     Workspace, WorkspaceDetail, WorkspaceTerminal,
     Mcp, McpDetail, McpEdit, McpBuiltIn,
     MermaidPreview
@@ -171,8 +168,6 @@ fun AppRoot(vm: ChatViewModel) {
     }
 
     var showModelPicker by rememberSaveable { mutableStateOf(false) }
-    var editingProvider by remember { mutableStateOf<ProviderConfig?>(null) }
-    var editingAssistant by remember { mutableStateOf<Assistant?>(null) }
     // 启动时auto-check触发的更新弹窗：监听全局UpdateState.pending，
     // 任意页面都能弹出（不依赖用户在AboutScreen里）。
     val pendingUpdate by com.miniichatNext.carter.data.update.UpdateState.pending.collectAsState()
@@ -188,7 +183,7 @@ fun AppRoot(vm: ChatViewModel) {
         }
         com.miniichatNext.carter.data.update.UpdateDownloadSession.start(context, info)
     }
-    LaunchedEffect(Unit) { com.miniichatNext.carter.data.update.UpdateDownloadSession.restore(context) }
+    LaunchedEffect(pendingUpdate) { com.miniichatNext.carter.data.update.UpdateDownloadSession.restore(context, pendingUpdate) }
     LaunchedEffect(updateDownloadState?.phase, updateDownloadState?.autoInstall) {
         if (updateDownloadState?.autoInstall == true && com.miniichatNext.carter.util.AppForeground.isForeground()) {
             com.miniichatNext.carter.data.update.UpdateDownloadSession.install(context, automatic = true)
@@ -204,6 +199,9 @@ fun AppRoot(vm: ChatViewModel) {
     val settingsScrollState = androidx.compose.runtime.saveable.rememberSaveable(
         saver = ScrollState.Saver
     ) { ScrollState(0) }
+    val providersScrollState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val mcpScrollState = androidx.compose.foundation.lazy.rememberLazyListState()
+    val workspaceScrollState = androidx.compose.foundation.lazy.rememberLazyListState()
     // 滚动位置恢复策略：只有从设置的子页面返回设置时才保留记忆位置，从聊天等非设置页进入一律回到顶部
     val gotoSettings: (Boolean) -> Unit = { restoreScroll ->
         if (!restoreScroll) scope.launch { settingsScrollState.scrollTo(0) }
@@ -253,10 +251,6 @@ fun AppRoot(vm: ChatViewModel) {
     // 忙碌态=生成中或存在等待用户操作的工具调用（审批/澄清）——输入栏按键在此期间保持"停止"
     val toolBusy by vm.hasPendingTools.collectAsState()
     val error by vm.error.collectAsState()
-    // 终端是全屏工具页：切换对话时自动退回聊天（否则用户无法从终端页切对话）
-    LaunchedEffect(activeId) {
-        if (nav.current.route == Screen.WorkspaceTerminal.name) nav.back()
-    }
 
     // 调试球信号（系统悬浮窗→MainActivity extra→这里消费）
     val openDebugRequest by com.miniichatNext.carter.debug.DebugNavRequest.openDebug.collectAsState()
@@ -545,7 +539,6 @@ fun AppRoot(vm: ChatViewModel) {
                                 },
                                 onPickModel = {
                                     if (providers.isEmpty()) {
-                                        editingProvider = null
                                         nav.push(Screen.ProviderEdit.name)
                                     } else showModelPicker = true
                                 }
@@ -560,7 +553,7 @@ fun AppRoot(vm: ChatViewModel) {
                             assistants = assistants,
                             skills = skills,
                             userProfile = userProfile,
-                            scrollTarget = nav.current.args["scrollTarget"],
+                            scrollTarget = key.args["scrollTarget"],
                             onBack = { nav.back() },
                             onChange = { vm.updateSettings(it) },
                             onOpenProviders = { nav.push(Screen.Providers.name) },
@@ -575,6 +568,7 @@ fun AppRoot(vm: ChatViewModel) {
                             onOpenMcp = { nav.push(Screen.Mcp.name) },
                             onOpenBuiltInTools = { nav.push(Screen.McpBuiltIn.name) },
                             onOpenBackup = { nav.push(Screen.Backup.name) },
+                            onOpenPermissions = { nav.push(Screen.Permissions.name) },
                             scrollState = settingsScrollState
                         )
                     }
@@ -585,6 +579,7 @@ fun AppRoot(vm: ChatViewModel) {
                             syncingIds = syncingMcpIds,
                             onRetry = { vm.syncMcpServer(it) },
                             onBack = { nav.back() },
+                            scrollState = mcpScrollState,
                             onAdd = { nav.push(Screen.McpEdit.name) },
                             onOpenServerDetail = { id ->
                                 nav.push(Screen.McpDetail.name, mapOf("serverId" to id))
@@ -594,7 +589,7 @@ fun AppRoot(vm: ChatViewModel) {
                     }
 
                     Screen.McpDetail -> {
-                        val serverId = nav.current.args["serverId"].orEmpty()
+                        val serverId = key.args["serverId"].orEmpty()
                         McpServerDetailScreen(
                             mcpStore = vm.mcpStore,
                             serverId = serverId,
@@ -607,7 +602,7 @@ fun AppRoot(vm: ChatViewModel) {
                     }
 
                     Screen.McpEdit -> {
-                        val editingId = nav.current.args["serverId"]
+                        val editingId = key.args["serverId"]
                         if (editingId == null || mcpServers.any { it.id == editingId }) McpServerEditorScreen(
                             initial = mcpServers.firstOrNull { it.id == editingId },
                             onBack = { nav.back() },
@@ -626,8 +621,8 @@ fun AppRoot(vm: ChatViewModel) {
 
                     Screen.MermaidPreview -> {
                         com.miniichatNext.carter.ui.markdown.MermaidPreviewScreen(
-                            code = nav.current.args["code"].orEmpty(),
-                            dark = nav.current.args["dark"] == "true",
+                            code = key.args["code"].orEmpty(),
+                            dark = key.args["dark"] == "true",
                             onBack = { nav.back() },
                         )
                     }
@@ -648,6 +643,7 @@ fun AppRoot(vm: ChatViewModel) {
                                     nav.push(Screen.WorkspaceDetail.name, mapOf("workspaceId" to ws.id))
                                 }
                             },
+                            scrollState = workspaceScrollState,
                             onWorkspaceClick = { id ->
                                 nav.push(Screen.WorkspaceDetail.name, mapOf("workspaceId" to id))
                             },
@@ -686,7 +682,7 @@ fun AppRoot(vm: ChatViewModel) {
                     }
 
                     Screen.WorkspaceTerminal -> {
-                        val terminalWs = workspaces.firstOrNull { it.id == nav.current.args["workspaceId"] }
+                        val terminalWs = workspaces.firstOrNull { it.id == key.args["workspaceId"] }
                         com.miniichatNext.carter.ui.workspace.WorkspaceTerminalScreen(
                             workspaceId = terminalWs?.id ?: "",
                             workspaceRoot = terminalWs?.root,
@@ -731,6 +727,9 @@ fun AppRoot(vm: ChatViewModel) {
                     Screen.Backup -> {
                         com.miniichatNext.carter.ui.settings.BackupScreen(vm = vm, onBack = { nav.back() })
                     }
+                    Screen.Permissions -> {
+                        com.miniichatNext.carter.ui.settings.PermissionsScreen(onBack = { nav.back() })
+                    }
                     Screen.Logs -> {
                         com.miniichatNext.carter.debug.ui.LogViewerScreen(onBack = { nav.back() })
                     }
@@ -760,15 +759,16 @@ fun AppRoot(vm: ChatViewModel) {
                             onUpsert = { vm.upsertAssistant(it) },
                             onDelete = { vm.deleteAssistant(it) },
                             onEdit = { a ->
-                                editingAssistant = a
-                                nav.push(Screen.AssistantEdit.name)
+                                nav.push(Screen.AssistantEdit.name, mapOf("assistantId" to a.id))
                             }
                         )
                     }
 
                     Screen.AssistantEdit -> {
-                        AssistantEditorScreen(
-                            initial = editingAssistant,
+                        val assistantId = key.args["assistantId"]
+                        val assistantToEdit = assistants.firstOrNull { it.id == assistantId }
+                        if (assistantId == null || assistantToEdit != null) AssistantEditorScreen(
+                            initial = assistantToEdit,
                             availableSkills = skills,
                             availableMcpServers = visibleMcpServers,
                             // 只暴露已就绪（rootfs已安装）的工作区给助手绑定
@@ -778,35 +778,32 @@ fun AppRoot(vm: ChatViewModel) {
                             onCancel = { nav.back() },
                             onSave = { a ->
                                 vm.upsertAssistant(a)
-                                editingAssistant = null
                                 nav.back()
                             },
                             onDelete = {
-                                editingAssistant?.let { vm.deleteAssistant(it.id) }
-                                editingAssistant = null
+                                assistantToEdit?.let { vm.deleteAssistant(it.id) }
                                 nav.back()
                             },
                             onManageSkills = { nav.push(Screen.Skills.name) },
                             onManageMcp = { nav.push(Screen.Mcp.name) },
                             onManageWorkspaces = { nav.push(Screen.Workspace.name) }
-                        )
+                        ) else MissingEditorTarget { nav.back() }
                     }
 
                     Screen.Providers -> {
                         ProvidersScreen(
                             onReorder = { ids -> vm.reorderProviders(ids) },
+                            scrollState = providersScrollState,
                             providers = providers,
                             fetchingId = fetchingId,
                             activeProviderId = settings.activeProviderId,
                             activeModel = settings.activeModel,
                             onBack = { nav.back() },
                             onCreate = {
-                                editingProvider = null
                                 nav.push(Screen.ProviderEdit.name)
                             },
                             onEdit = { p ->
-                                editingProvider = p
-                                nav.push(Screen.ProviderEdit.name)
+                                nav.push(Screen.ProviderEdit.name, mapOf("providerId" to p.id))
                             },
                             onDelete = { vm.deleteProvider(it) },
                             onFetchModels = { vm.fetchModels(it) },
@@ -818,18 +815,18 @@ fun AppRoot(vm: ChatViewModel) {
                     }
 
                     Screen.ProviderEdit -> {
-                        ProviderEditorScreen(
-                            initial = editingProvider,
+                        val providerId = key.args["providerId"]
+                        val providerToEdit = providers.firstOrNull { it.id == providerId }
+                        if (providerId == null || providerToEdit != null) ProviderEditorScreen(
+                            initial = providerToEdit,
                             onCancel = {
-                                editingProvider = null
                                 nav.back()
                             },
                             onSave = { p ->
                                 vm.upsertProvider(p)
-                                editingProvider = null
                                 nav.back()
                             }
-                        )
+                        ) else MissingEditorTarget { nav.back() }
                     }
 
                     Screen.Skills -> {
@@ -843,7 +840,13 @@ fun AppRoot(vm: ChatViewModel) {
                             onImportSuccess = { name ->
                                 vm.setToast(context.getString(R.string.skill_imported, name))
                             },
-                            onSaveFiles = { name, files -> vm.saveSkillFiles(name, files) }
+                            onImportFile = { uri ->
+                                vm.skillStore.import(uri.lastPathSegment.orEmpty().substringAfterLast('/')) {
+                                    context.contentResolver.openInputStream(uri)
+                                        ?: error(context.getString(R.string.skill_import_failed_read))
+                                }.name
+                            },
+                            onImportUrl = { url -> vm.skillStore.importUrl(url).name },
                         )
                     }
 
@@ -957,5 +960,13 @@ fun AppRoot(vm: ChatViewModel) {
             onCancel = { com.miniichatNext.carter.data.update.UpdateDownloadSession.cancel() },
             onHide = { com.miniichatNext.carter.data.update.UpdateDownloadSession.hide() },
         )
+    }
+}
+
+@Composable
+private fun MissingEditorTarget(onBack: () -> Unit) {
+    Column(Modifier.fillMaxSize()) {
+        com.miniichatNext.carter.ui.components.SettingsTopBar(stringResource(R.string.settings), onBack)
+        Text(stringResource(R.string.editor_target_unavailable), modifier = Modifier.padding(16.dp))
     }
 }

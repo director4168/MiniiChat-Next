@@ -9,16 +9,16 @@ package com.miniichatNext.carter.data.workspace
 import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.data.mcp.McpTool
 import com.miniichatNext.carter.data.mcp.McpToolResult
-import kotlinx.serialization.json.Json
+import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 const val WORKSPACE_SERVER_ID = "workspace"
 
 private const val SHELL_TIMEOUT_MAX_SECONDS = 600L
 private const val MAX_READ_FILE_BYTES = 8L * 1024 * 1024
+private const val MAX_TOOL_TEXT_CHARS = 32 * 1024
 
 /** 工作区工具三分类（202610162134：审批粒度从逐工具改为类别开关） */
 enum class WorkspaceToolCategory {
@@ -168,8 +168,7 @@ suspend fun executeWorkspaceTool(
     defaultCwd: String? = null,
 ): McpToolResult = runCatching {
     // 未安装rootfs（DISABLED/BROKEN/INSTALLING）的工作区不允许执行任何workspace工具
-    val ws = repository.getById(workspaceId)
-    if (ws == null || ws.shellStatus != WorkspaceShellStatus.READY.name) {
+    if (!repository.isReadyForTools(workspaceId)) {
         return@runCatching fail("workspace is not ready (rootfs not installed); install it in Settings > Workspace first")
     }
     val args = parseArgs(argumentsJson)
@@ -187,13 +186,13 @@ suspend fun executeWorkspaceTool(
         "workspace_grep" -> grep(args, workspaceId, repository)
         else -> fail("unknown workspace tool: $toolName")
     }
-}.getOrElse { fail(it.message ?: "error") }
+}.getOrElse { if (it is CancellationException || it is InterruptedException || it is Error) throw it else fail(it.message ?: "error") }
 
 
 private fun parseArgs(argumentsJson: String): Map<String, String> {
     if (argumentsJson.isBlank()) return emptyMap()
-    val obj = AppJson.parseObject(argumentsJson)
-    return obj.mapValues { (_, v) -> v.jsonPrimitive.contentOrNull ?: v.toString() }
+    val obj = requireNotNull(AppJson.parseObjectOrNull(argumentsJson)) { "Invalid tool arguments" }
+    return obj.mapNotNull { (key, value) -> (value as? JsonPrimitive)?.contentOrNull?.let { key to it } }.toMap()
 }
 
 private fun Map<String, String>.requireArg(name: String): String =
@@ -207,10 +206,10 @@ private fun Map<String, String>.absolutePath(name: String): String {
     return path
 }
 
-private fun workspaceRelativePath(path: String): String = when {
-    path == "/workspace" -> ""
-    path.startsWith("/workspace/") -> path.removePrefix("/workspace/")
-    else -> path.removePrefix("/")
+private fun workspaceRelativePath(raw: String): String {
+    val normalized = raw.replace('\\', '/').trim()
+    val path = normalized.split('/').filter { it.isNotEmpty() && it != "." }
+    return (if (normalized.startsWith('/') && path.firstOrNull() == "workspace") path.drop(1) else path).joinToString("/")
 }
 
 private suspend fun readFile(
@@ -220,13 +219,13 @@ private suspend fun readFile(
 ): McpToolResult {
     val path = args.absolutePath("path")
     val bytes = repository.readRootfsBytes(workspaceId, path, MAX_READ_FILE_BYTES)
-    return ok(
-        buildString {
-            append("{\"path\":\"").append(path.replace("\"", "\\\"")).append("\",\"text\":")
-            append(jsonString(String(bytes, Charsets.UTF_8)))
-            append('}')
-        }
-    )
+    val text = Charsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+    return ok(buildString {
+        append("{\"path\":").append(jsonString(path)).append(",\"text\":")
+        append(jsonString(text.take(MAX_TOOL_TEXT_CHARS)))
+        if (text.length > MAX_TOOL_TEXT_CHARS) append(",\"truncated\":true")
+        append('}')
+    })
 }
 
 private suspend fun writeFile(
@@ -239,7 +238,7 @@ private suspend fun writeFile(
     val overwrite = args["overwrite"]?.toBooleanStrictOrNull() ?: true
     val entry = repository.writeTextInRootfs(workspaceId, path, text, overwrite)
     return ok(
-        "{\"path\":\"${entry.path}\",\"sizeBytes\":${entry.sizeBytes},\"updatedAt\":${entry.updatedAt}}"
+        "{\"path\":${jsonString(entry.path)},\"sizeBytes\":${entry.sizeBytes},\"updatedAt\":${entry.updatedAt}}"
     )
 }
 
@@ -254,13 +253,10 @@ private suspend fun editFile(
     val replaceAll = args["replace_all"]?.toBooleanStrictOrNull() ?: false
     require(oldText.isNotEmpty()) { "old_text must not be empty" }
 
-    val original = repository.readTextInRootfs(workspaceId, path)
-    val result = runCatching { replaceText(original, oldText, newText, replaceAll) }
-        .getOrElse { error("${it.message} (path: $path)") }
-    val entry = repository.writeTextInRootfs(workspaceId, path, result.updated, overwrite = true)
+    val (entry, result) = repository.editRootfsText(workspaceId, path, oldText, newText, replaceAll)
     return ok(
         buildString {
-            append("{\"path\":\"").append(entry.path).append("\",\"replacements\":").append(result.replacements)
+            append("{\"path\":").append(jsonString(entry.path)).append(",\"replacements\":").append(result.replacements)
             if (result.strategy != ExactReplacer.name) append(",\"matchStrategy\":\"").append(result.strategy).append('"')
             append(",\"sizeBytes\":").append(entry.sizeBytes)
             append(",\"updatedAt\":").append(entry.updatedAt)
@@ -276,9 +272,7 @@ private suspend fun shell(
     defaultCwd: String?,
 ): McpToolResult {
     val command = args.requireArg("command")
-    val cwd = (args["cwd"] ?: defaultCwd.orEmpty())
-        .removePrefix("/workspace/")
-        .removePrefix("/workspace")
+    val cwd = workspaceRelativePath(args["cwd"] ?: defaultCwd.orEmpty())
     val timeoutMillis = args["timeout"]?.toLongOrNull()
         ?.coerceIn(1L, SHELL_TIMEOUT_MAX_SECONDS)
         ?.times(1_000L)
@@ -317,181 +311,59 @@ private fun jsonString(value: String): String = buildString {
 private fun ok(text: String) = McpToolResult(ok = true, content = text)
 private fun fail(msg: String) = McpToolResult(ok = false, content = "", error = msg)
 
-private suspend fun entryDir(workspaceId: String, repository: WorkspaceRepository, area: String?): java.io.File {
-    val ws = repository.getById(workspaceId) ?: error("workspace not found")
-    val dir = if (area == "linux") repository.manager.linuxDir(ws.root) else repository.manager.filesDir(ws.root)
-    return dir
+private fun Map<String, String>.area(): WorkspaceStorageArea = when (this["area"]) {
+    null, "files" -> WorkspaceStorageArea.FILES
+    "linux" -> WorkspaceStorageArea.LINUX
+    else -> error("Invalid workspace storage area")
 }
 
-private suspend fun listFiles(
-    args: Map<String, String>,
-    workspaceId: String,
-    repository: WorkspaceRepository,
-): McpToolResult {
+private fun relativePath(path: String, area: WorkspaceStorageArea): String =
+    if (area == WorkspaceStorageArea.FILES) workspaceRelativePath(path) else path.trimStart('/')
+
+private suspend fun listFiles(args: Map<String, String>, id: String, repository: WorkspaceRepository): McpToolResult {
     val path = args.absolutePath("path")
-    val area = args["area"] ?: "files"
-    val dir = entryDir(workspaceId, repository, area)
-    val relativePath = when {
-        area == "files" && (path == "/workspace" || path.startsWith("/workspace/")) ->
-            path.removePrefix("/workspace").trimStart('/')
-        area == "linux" && path == "/" -> ""
-        else -> path.removePrefix("/")
-    }
-    val target = if (relativePath.isBlank()) dir else java.io.File(dir, relativePath)
-    if (!target.isDirectory) return fail("not a directory: $path")
-    val entries = target.listFiles()?.sortedBy { it.name } ?: emptyList()
-    val sb = StringBuilder()
-    sb.append(entries.size).append(" entr").append(if (entries.size == 1) "y" else "ies").append(" in $path\n")
-    entries.forEach { f ->
-        val type = if (f.isDirectory) "dir " else "file"
-        sb.append(type).append(' ').append(f.name)
-        if (f.isFile) sb.append("  (").append(f.length()).append(" bytes)")
-        sb.append('\n')
-    }
-    return ok(sb.toString())
-}
-
-private suspend fun deleteFile(
-    args: Map<String, String>,
-    workspaceId: String,
-    repository: WorkspaceRepository,
-): McpToolResult {
-    val path = args.absolutePath("path")
-    val area = args["area"] ?: "files"
-    val recursive = args["recursive"]?.toBooleanStrictOrNull() ?: false
-    val dir = entryDir(workspaceId, repository, area)
-    val target = java.io.File(dir, workspaceRelativePath(path))
-    if (!target.exists()) return fail("not found: $path")
-    if (target.isDirectory && !recursive && target.listFiles()?.isNotEmpty() == true) {
-        return fail("directory not empty; pass recursive=true")
-    }
-    val okDel = target.deleteRecursively()
-    return if (okDel) ok("deleted $path") else fail("delete failed: $path")
-}
-
-private suspend fun moveFile(
-    args: Map<String, String>,
-    workspaceId: String,
-    repository: WorkspaceRepository,
-): McpToolResult {
-    val src = args.absolutePath("source")
-    val dst = args.absolutePath("target")
-    val overwrite = args["overwrite"]?.toBooleanStrictOrNull() ?: false
-    val dir = entryDir(workspaceId, repository, "files")
-    val from = java.io.File(dir, workspaceRelativePath(src))
-    val to = java.io.File(dir, workspaceRelativePath(dst))
-    if (!from.exists()) return fail("not found: $src")
-    if (to.exists() && !overwrite) return fail("target exists: $dst (pass overwrite=true)")
-    if (from.renameTo(to)) return ok("moved $src -> $dst")
-    // renameTo跨文件系统可能失败→copy+delete兜底
-    if (from.isDirectory) return fail("move directory failed; use shell mv")
-    to.parentFile?.mkdirs()
-    from.copyTo(to, overwrite = true)
-    from.delete()
-    return ok("moved $src -> $dst (copy fallback)")
-}
-
-private suspend fun copyFile(
-    args: Map<String, String>,
-    workspaceId: String,
-    repository: WorkspaceRepository,
-): McpToolResult {
-    val src = args.absolutePath("source")
-    val dst = args.absolutePath("target")
-    val overwrite = args["overwrite"]?.toBooleanStrictOrNull() ?: false
-    val dir = entryDir(workspaceId, repository, "files")
-    val from = java.io.File(dir, workspaceRelativePath(src))
-    val to = java.io.File(dir, workspaceRelativePath(dst))
-    if (!from.isFile) return fail("not a file: $src")
-    if (to.exists() && !overwrite) return fail("target exists: $dst (pass overwrite=true)")
-    to.parentFile?.mkdirs()
-    from.copyTo(to, overwrite = true)
-    return ok("copied $src -> $dst (${to.length()} bytes)")
-}
-
-private suspend fun mkdir(
-    args: Map<String, String>,
-    workspaceId: String,
-    repository: WorkspaceRepository,
-): McpToolResult {
-    val path = args.absolutePath("path")
-    val dir = entryDir(workspaceId, repository, "files")
-    val target = java.io.File(dir, workspaceRelativePath(path))
-    if (target.isDirectory) return ok("already exists: $path")
-    val made = target.mkdirs()
-    return if (made || target.isDirectory) ok("created $path") else fail("mkdir failed: $path")
-}
-
-private suspend fun glob(
-    args: Map<String, String>,
-    workspaceId: String,
-    repository: WorkspaceRepository,
-): McpToolResult {
-    val pattern = args.requireArg("pattern")
-    val base = args["path"]?.let(::workspaceRelativePath) ?: ""
-    val dir = entryDir(workspaceId, repository, "files")
-    val rootDir = if (base.isBlank()) dir else java.io.File(dir, base)
-    if (!rootDir.isDirectory) return fail("not a directory: ${base.ifBlank { "/" }}")
-    // 简化glob：双星跨任意深度、单星只跨一层；转正则
-    val regex = buildString {
-        var i = 0
-        while (i < pattern.length) {
-            when (val c = pattern[i]) {
-                '*' -> if (i + 1 < pattern.length && pattern[i + 1] == '*') {
-                    append(".*"); i += 2
-                    if (i < pattern.length && pattern[i] == '/') i++ // 双星后面那个斜杠已被上面追加的点星吃掉
-                } else { append("[^/]*"); i++ }
-                '?' -> { append("[^/]"); i++ }
-                else -> { if ("\\.[]{}()^$+".contains(c)) append('\\'); append(c); i++ }
-            }
-        }
-    }
-    val re = Regex(regex)
-    val relRoot = rootDir.relativeTo(dir).invariantSeparatorsPath
-    val out = mutableListOf<String>()
-    dir.walkTopDown()
-        .filter { it.isFile }
-        .forEach { f ->
-            val rel = f.relativeTo(dir).invariantSeparatorsPath
-            val matchTarget = if (rel.startsWith(relRoot) && relRoot.isNotBlank()) rel.removePrefix("$relRoot/") else rel
-            if (out.size < 200 && re.matches(matchTarget)) out.add(rel)
-        }
+    val area = args.area()
+    val entries = repository.listFiles(id, area, relativePath(path, area))
     return ok(buildString {
-        append(out.size).append(" match(es) for \"$pattern\"\n")
-        out.forEach { append(it).append('\n') }
-    })
+        appendLine("${entries.size} entries in $path")
+        entries.forEach { appendLine(if (it.isDirectory) "dir ${it.name}" else "file ${it.name} (${it.sizeBytes} bytes)") }
+    }.take(32 * 1024))
 }
 
-private suspend fun grep(
-    args: Map<String, String>,
-    workspaceId: String,
-    repository: WorkspaceRepository,
-): McpToolResult {
+private suspend fun deleteFile(args: Map<String, String>, id: String, repository: WorkspaceRepository): McpToolResult {
+    val path = args.absolutePath("path")
+    val area = args.area()
+    return if (repository.deleteFile(id, area, relativePath(path, area), args["recursive"] == "true")) ok("deleted $path") else fail("not found: $path")
+}
+
+private suspend fun moveFile(args: Map<String, String>, id: String, repository: WorkspaceRepository): McpToolResult {
+    val source = args.absolutePath("source")
+    val target = args.absolutePath("target")
+    repository.moveFile(id, workspaceRelativePath(source), workspaceRelativePath(target), args["overwrite"] == "true")
+    return ok("moved $source -> $target")
+}
+
+private suspend fun copyFile(args: Map<String, String>, id: String, repository: WorkspaceRepository): McpToolResult {
+    val source = args.absolutePath("source")
+    val target = args.absolutePath("target")
+    val file = repository.copyFile(id, workspaceRelativePath(source), workspaceRelativePath(target), args["overwrite"] == "true")
+    return ok("copied $source -> $target (${file.sizeBytes} bytes)")
+}
+
+private suspend fun mkdir(args: Map<String, String>, id: String, repository: WorkspaceRepository): McpToolResult {
+    val path = args.absolutePath("path")
+    repository.mkdir(id, workspaceRelativePath(path))
+    return ok("directory ready: $path")
+}
+
+private suspend fun glob(args: Map<String, String>, id: String, repository: WorkspaceRepository): McpToolResult {
     val pattern = args.requireArg("pattern")
-    val base = args["path"]?.let(::workspaceRelativePath) ?: ""
-    val useRegex = args["regex"]?.toBooleanStrictOrNull() ?: false
-    val max = args["max_results"]?.toIntOrNull() ?: 100
-    val dir = entryDir(workspaceId, repository, "files")
-    val rootDir = java.io.File(dir, base)
-    if (!rootDir.isDirectory) return fail("not a directory: ${base.ifBlank { "/" }}")
-    val re = if (useRegex) runCatching { Regex(pattern) }.getOrElse { return fail("invalid regex: ${it.message}") } else null
-    val out = mutableListOf<String>()
-    rootDir.walkTopDown()
-        .filter { it.isFile && it.length() < 1L * 1024 * 1024 } // 1MB以内文本
-        .forEach { f ->
-            if (out.size >= max) return@forEach
-            runCatching {
-                f.useLines { lines ->
-                    lines.forEachIndexed { idx, line ->
-                        if (out.size >= max) return@forEachIndexed
-                        val hit = if (re != null) re.containsMatchIn(line) else line.contains(pattern, ignoreCase = true)
-                        if (hit) out.add("${f.relativeTo(dir).invariantSeparatorsPath}:${idx + 1}: ${line.take(200)}")
-                    }
-                }
-            }
-        }
-    return ok(buildString {
-        append(out.size).append(" match(es) for \"$pattern\"\n")
-        out.forEach { append(it).append('\n') }
-    })
+    val entries = repository.glob(id, pattern, workspaceRelativePath(args["path"].orEmpty()))
+    return ok(entries.joinToString("\n", "${entries.size} match(es)\n") { it.path }.take(32 * 1024))
+}
+
+private suspend fun grep(args: Map<String, String>, id: String, repository: WorkspaceRepository): McpToolResult {
+    val entries = repository.grep(id, args.requireArg("pattern"), workspaceRelativePath(args["path"].orEmpty()),
+        args["regex"] == "true", args["max_results"]?.toIntOrNull() ?: 100)
+    return ok(entries.joinToString("\n", "${entries.size} match(es)\n") { "${it.path}:${it.line}: ${it.text}" }.take(32 * 1024))
 }

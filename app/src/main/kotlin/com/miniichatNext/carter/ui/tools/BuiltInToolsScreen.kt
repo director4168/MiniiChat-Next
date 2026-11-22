@@ -30,7 +30,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -45,6 +47,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -86,12 +89,8 @@ fun BuiltInToolsScreen(
     val groups = remember(allTools) {
         listOf(
             Triple(
-                R.string.builtin_group_ask, R.string.builtin_group_ask_desc,
-                listOf("interactive_clarification")
-            ),
-            Triple(
                 R.string.builtin_group_shell, R.string.builtin_group_shell_desc,
-                listOf("execute_shell")
+                listOf("execute_shell", "execute_shell_shizuku", "execute_shell_root")
             ),
             Triple(
                 R.string.builtin_group_file_io, R.string.builtin_group_file_io_desc,
@@ -119,10 +118,31 @@ fun BuiltInToolsScreen(
                 R.string.builtin_group_special, R.string.builtin_group_special_desc,
                 SpecialTools.names
             ),
+            Triple(
+                R.string.builtin_group_other, R.string.builtin_group_other_desc,
+                listOf("image_generate", "interactive_clarification")
+            ),
         )
     }
-    var openGroupRes by remember { mutableStateOf<Int?>(null) }
-    var query by remember { mutableStateOf("") }
+    val coarseGroups = remember {
+        listOf(
+            Triple(
+                R.string.builtin_coarse_local, R.string.builtin_coarse_local_desc,
+                listOf(R.string.builtin_group_shell, R.string.builtin_group_file_io,
+                    R.string.builtin_group_file_manage, R.string.builtin_group_search)
+            ),
+            Triple(
+                R.string.builtin_coarse_extended, R.string.builtin_coarse_extended_desc,
+                listOf(R.string.builtin_group_workspace, R.string.builtin_group_web,
+                    R.string.builtin_group_special, R.string.builtin_group_other)
+            ),
+        )
+    }
+    var openGroupRes by rememberSaveable { mutableStateOf<Int?>(null) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val topListState = rememberLazyListState()
+    val groupListState = rememberLazyListState()
+    val listState: LazyListState = if (openGroupRes == null) topListState else groupListState
 
     // 权限状态：11+要在系统设置里开所有文件访问，10及以下申请运行时存储权限
     var allFilesGranted by remember { mutableStateOf(com.miniichatNext.carter.util.hasStorageAccess(context)) }
@@ -190,6 +210,7 @@ fun BuiltInToolsScreen(
             onBack = { if (openGroupRes != null) { openGroupRes = null; query = "" } else onBack() }
         )
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 16.dp),
@@ -219,7 +240,11 @@ fun BuiltInToolsScreen(
             }
 
             if (openGroupRes == null) {
-                items(groups, key = { it.first }) { (res, descRes, names) ->
+                coarseGroups.forEach { (coarseRes, coarseDescRes, sectionIds) ->
+                    item(key = "coarse:$coarseRes") {
+                        CoarseGroupHeader(coarseRes, coarseDescRes)
+                    }
+                    items(groups.filter { it.first in sectionIds }, key = { it.first }) { (res, descRes, names) ->
                     val title = stringResource(res)
                     val desc = stringResource(descRes)
                     // 自动计数：组内名字在allTools（内置+工作区）里实际存在的数量
@@ -258,6 +283,7 @@ fun BuiltInToolsScreen(
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
                     }
                 }
             } else {
@@ -331,6 +357,23 @@ fun BuiltInToolsScreen(
         }
     }
 }
+@Composable
+private fun CoarseGroupHeader(titleRes: Int, descRes: Int) {
+    Column(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 2.dp)) {
+        Text(
+            stringResource(titleRes),
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.primary,
+        )
+        Text(
+            stringResource(descRes),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 /** 权限未授予时的提示卡，点击后去申请 */
 @Composable
 private fun PermissionWarningCard(title: String, message: String, onClick: () -> Unit) {

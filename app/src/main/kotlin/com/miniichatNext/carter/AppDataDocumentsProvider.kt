@@ -18,6 +18,7 @@ import android.provider.DocumentsContract.Document
 import android.provider.DocumentsContract.Root
 import android.provider.DocumentsProvider
 import android.webkit.MimeTypeMap
+import com.miniichatNext.carter.util.deleteTreeNoFollow
 import java.io.File
 import java.io.FileNotFoundException
 import java.util.Base64
@@ -104,6 +105,13 @@ class AppDataDocumentsProvider : DocumentsProvider() {
         val cols = projection ?: defaultDocumentProjection
         return MatrixCursor(cols).apply {
             parent.listFiles()
+                ?.filter { child ->
+                    runCatching {
+                        val canonical = child.canonicalFile
+                        ensureInside(canonical)
+                        canonical.parentFile == parent && !java.nio.file.Files.isSymbolicLink(child.toPath())
+                    }.getOrDefault(false)
+                }
                 ?.sortedWith(compareBy<File> { !it.isDirectory }.thenBy { it.name.lowercase() })
                 ?.forEach { includeFile(it, cols) }
         }
@@ -166,7 +174,7 @@ class AppDataDocumentsProvider : DocumentsProvider() {
         if (target == appDataRoot.canonicalFile) {
             throw FileNotFoundException("Refusing to delete the root")
         }
-        val deleted = if (target.isDirectory) target.deleteRecursively() else target.delete()
+        val deleted = deleteTreeNoFollow(target)
         if (!deleted) throw FileNotFoundException("Failed to delete: $documentId")
     }
 
@@ -265,7 +273,7 @@ class AppDataDocumentsProvider : DocumentsProvider() {
             documentId == ROOT_DOCUMENT_ID -> root
             documentId.startsWith(DOCUMENT_PREFIX) -> {
                 val encoded = documentId.removePrefix(DOCUMENT_PREFIX)
-                val relative = decodePath(encoded)
+                val relative = try { decodePath(encoded) } catch (_: IllegalArgumentException) { throw FileNotFoundException("Invalid document ID") }
                 // 显式拒绝绝对路径与上跳段，避免绕过canonical校验
                 if (relative.startsWith("/") || relative.split('/').any { it == ".." }) {
                     throw FileNotFoundException("Blocked document id: $documentId")

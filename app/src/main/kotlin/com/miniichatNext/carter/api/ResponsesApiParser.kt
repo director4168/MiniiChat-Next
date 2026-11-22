@@ -6,18 +6,17 @@
  */
 package com.miniichatNext.carter.api
 
+import com.miniichatNext.carter.data.model.MessageSegment
 import com.miniichatNext.carter.data.model.TokenUsage
 import com.miniichatNext.carter.util.AppJson
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
 
 internal data class ResponsesToolCall(
     val outputIndex: Int,
@@ -34,44 +33,48 @@ internal class ResponsesApiStreamParser {
         val arguments: StringBuilder = StringBuilder(),
     )
 
-    private val content = StringBuilder()
-    private val reasoning = StringBuilder()
+    private enum class Kind { TEXT, REASONING, SUMMARY, IMAGE }
+    private data class Block(val output: Int, val content: Int, val kind: Kind)
+    private val blocks = linkedMapOf<Block, StringBuilder>()
+    private val sent = mutableListOf<Block>()
+    private var missingOrder = false
+    private val itemIndices = mutableMapOf<String, Int>()
     private val calls = linkedMapOf<Int, PendingCall>()
     private var latestUsage: TokenUsage? = null
     private var emittedCalls = false
     private val imageItems = mutableSetOf<String>()
+    var finalized = false
+        private set
 
     fun accept(data: String): List<StreamDelta> {
         if (data.isBlank() || data == "[DONE]") return emptyList()
         val event = runCatching { AppJson.json.parseToJsonElement(data).jsonObject }
             .getOrElse { throw IllegalStateException("Invalid Responses API event", it) }
-        val type = event["type"]?.jsonPrimitive?.contentOrNull.orEmpty()
-        val outputIndex = event["output_index"]?.jsonPrimitive?.intOrNull ?: -1
+        if (finalized) return emptyList()
+        val type = event.string("type").orEmpty()
+        val itemId = event.string("item_id") ?: (event["item"] as? JsonObject)?.string("id")
+        val outputIndex = event.int("output_index") ?: itemId?.let(itemIndices::get) ?: -1
+        if (itemId != null && outputIndex >= 0) itemIndices[itemId] = outputIndex
         val emitted = mutableListOf<StreamDelta>()
         when (type) {
-            "response.output_text.delta" -> {
-                val delta = event["delta"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                if (delta.isNotEmpty()) {
-                    content.append(delta)
-                    emitted += StreamDelta(text = delta)
+            "response.output_text.delta", "response.reasoning_text.delta", "response.reasoning_summary_text.delta",
+            "response.output_text.done", "response.reasoning_text.done", "response.reasoning_summary_text.done" -> {
+                val kind = when {
+                    type.contains("summary") -> Kind.SUMMARY
+                    type.contains("reasoning") -> Kind.REASONING
+                    else -> Kind.TEXT
                 }
-            }
-            "response.reasoning_text.delta", "response.reasoning_summary_text.delta" -> {
-                val delta = event["delta"]?.jsonPrimitive?.contentOrNull.orEmpty()
-                if (delta.isNotEmpty()) {
-                    reasoning.append(delta)
-                    emitted += StreamDelta(reasoning = delta)
-                }
+                val index = event.int(if (kind == Kind.SUMMARY) "summary_index" else "content_index") ?: 0
+                val block = Block(outputIndex.coerceAtLeast(0), index, kind)
+                if (type.endsWith(".delta")) event.string("delta")?.let { appendBlock(block, it, emitted) }
+                else event.string("text")?.let { completeBlock(block, it, emitted) }
             }
             "response.output_item.added", "response.output_item.done" -> {
                 val item = event["item"] as? JsonObject
                 if (type == "response.output_item.done" && item?.string("type") == "image_generation_call") {
-                    val id = item.string("id") ?: outputIndex.toString()
-                    if (imageItems.add(id)) item.string("result")?.let {
-                        emitted += StreamDelta(text = imageMarkdown("data:image/png;base64,$it"))
-                    }
+                    emitImage(itemId, outputIndex, item.string("result"), emitted)
                 }
-                if (item?.get("type")?.jsonPrimitive?.contentOrNull == "function_call" && outputIndex >= 0) {
+                if (item?.string("type") == "function_call" && outputIndex >= 0) {
                     val call = calls.getOrPut(outputIndex) { PendingCall() }
                     call.callId = item.string("call_id") ?: call.callId
                     call.name = item.string("name") ?: call.name
@@ -84,7 +87,7 @@ internal class ResponsesApiStreamParser {
                 }
             }
             "response.image_generation_call.completed" -> {
-                event.string("result")?.let { result -> emitted += StreamDelta(text = imageMarkdown("data:image/png;base64,$result")) }
+                emitImage(itemId, outputIndex, event.string("result"), emitted)
             }
             "response.function_call_arguments.delta" -> {
                 if (outputIndex >= 0) {
@@ -104,23 +107,36 @@ internal class ResponsesApiStreamParser {
                 if (usage != null) {
                     latestUsage = parseResponsesTokenUsage(usage)
                 }
-                response?.get("output")?.let { output ->
-                    val items = output as? JsonArray ?: JsonArray(emptyList())
+                (response?.get("output") as? JsonArray)?.let { items ->
                     readOutputItems(items)
                     items.forEachIndexed { index, value ->
-                        val image = value as? JsonObject
-                        if (image?.string("type") == "image_generation_call" && imageItems.add(image.string("id") ?: index.toString())) {
-                            image.string("result")?.let { emitted += StreamDelta(text = imageMarkdown("data:image/png;base64,$it")) }
+                        val item = value as? JsonObject ?: return@forEachIndexed
+                        val id = item.string("id")
+                        val position = id?.let(itemIndices::get) ?: index
+                        when (item.string("type")) {
+                            "message" -> completeBlocks(position, Kind.TEXT, item["content"], emitted)
+                            "reasoning" -> {
+                                completeBlocks(position, Kind.REASONING, item["content"], emitted)
+                                completeBlocks(position, Kind.SUMMARY, item["summary"], emitted)
+                            }
+                            "image_generation_call" -> emitImage(id, position, item.string("result"), emitted)
                         }
                     }
-                    if (content.isEmpty()) readOutputText(items, emitted, reasoning = false)
-                    if (reasoning.isEmpty()) readOutputText(items, emitted, reasoning = true)
+                }
+                val ordered = blocks.keys.sortedWith(compareBy<Block>({ it.output }, { it.kind.ordinal }, { it.content }))
+                if (missingOrder || sent != ordered) {
+                    val snapshot = ordered.map { block ->
+                        val text = blocks.getValue(block).toString()
+                        if (block.kind == Kind.TEXT || block.kind == Kind.IMAGE) MessageSegment.Text(text) else MessageSegment.Reasoning(text)
+                    }
+                    emitted += StreamDelta(outputSnapshot = snapshot)
                 }
                 latestUsage?.let { emitted += StreamDelta(usage = it) }
+                finalized = true
             }
             "response.failed", "error" -> {
                 val error = event["error"] as? JsonObject
-                val detail = error?.string("message") ?: event["message"]?.jsonPrimitive?.contentOrNull
+                val detail = error?.string("message") ?: event.string("message")
                     ?: event.toString()
                 throw IllegalStateException("Responses API $type: ${detail.take(500)}")
             }
@@ -129,23 +145,46 @@ internal class ResponsesApiStreamParser {
     }
 
 
-    private fun readOutputText(items: JsonArray, output: MutableList<StreamDelta>, reasoning: Boolean) {
-        items.forEach { value ->
-            val item = value as? JsonObject ?: return@forEach
-            if (reasoning && item.string("type") == "reasoning") {
-                (item["summary"] as? JsonArray).orEmpty().forEach { blockValue ->
-                    val text = (blockValue as? JsonObject)?.string("text") ?: return@forEach
-                    if (text.isNotEmpty()) output += StreamDelta(reasoning = text)
-                }
-            } else if (!reasoning && item.string("type") == "message") {
-                (item["content"] as? JsonArray).orEmpty().forEach { blockValue ->
-                    val block = blockValue as? JsonObject ?: return@forEach
-                    if (block.string("type") in setOf("output_text", "text")) {
-                        block.string("text")?.takeIf { it.isNotEmpty() }?.let { output += StreamDelta(text = it) }
-                    }
-                }
+    private fun appendBlock(block: Block, text: String, output: MutableList<StreamDelta>) {
+        if (text.isEmpty()) return
+        val buffer = blocks.getOrPut(block) { StringBuilder() }
+        if (buffer.isEmpty()) sent += block
+        else if (sent.lastOrNull() != block) missingOrder = true
+        buffer.append(text)
+        output += if (block.kind == Kind.TEXT || block.kind == Kind.IMAGE) StreamDelta(text = text) else StreamDelta(reasoning = text)
+    }
+
+    private fun completeBlock(block: Block, text: String, output: MutableList<StreamDelta>) {
+        val previous = blocks[block]
+        when {
+            previous == null -> appendBlock(block, text, output)
+            text.startsWith(previous) -> appendBlock(block, text.substring(previous.length), output)
+            text.isNotEmpty() -> {
+                previous.replace(0, previous.length, text)
+                missingOrder = true
             }
         }
+    }
+
+    private fun completeBlocks(index: Int, kind: Kind, value: JsonElement?, output: MutableList<StreamDelta>) {
+        (value as? JsonArray).orEmpty().forEachIndexed { contentIndex, element ->
+            val block = element as? JsonObject ?: return@forEachIndexed
+            if (kind == Kind.TEXT && block.string("type") !in setOf("output_text", "text")) return@forEachIndexed
+            block.string("text")?.let { completeBlock(Block(index, contentIndex, kind), it, output) }
+        }
+    }
+
+    private fun emitImage(id: String?, index: Int, result: String?, output: MutableList<StreamDelta>) {
+        if (result.isNullOrBlank()) return
+        val digestKey = if (id == null || index < 0) "image:${result.length}:${result.hashCode()}" else null
+        val idKey = id?.let { "id:$it" }
+        val indexKey = index.takeIf { it >= 0 }?.let { "index:$it" }
+        val duplicate = listOfNotNull(idKey, indexKey, digestKey).any { it in imageItems }
+        imageItems.addAll(listOfNotNull(idKey, indexKey, digestKey))
+        if (duplicate) return
+        val position = index.takeIf { it >= 0 } ?: (Int.MAX_VALUE - 1024)
+        val block = Block(position, if (index >= 0) 0 else blocks.size, Kind.IMAGE)
+        appendBlock(block, imageResultMarkdown(result), output)
     }
 
     private fun readOutputItems(items: JsonArray) {
@@ -170,7 +209,8 @@ internal class ResponsesApiStreamParser {
         return if (toolCalls.isEmpty()) emptyList() else listOf(StreamDelta(toolCalls = toolCalls))
     }
 
-    fun collectedText(): String = content.toString()
+    fun collectedText(): String = blocks.keys.filter { it.kind == Kind.TEXT }
+        .sortedWith(compareBy({ it.output }, { it.content })).joinToString("") { blocks.getValue(it) }
 }
 
 internal fun parseResponsesApiBody(text: String): List<StreamDelta> {
@@ -191,9 +231,8 @@ internal fun parseResponsesApiBody(text: String): List<StreamDelta> {
                 blocks.forEach { blockValue ->
                     val block = blockValue as? JsonObject ?: return@forEach
                     when (block.string("type")) {
-                        "output_text", "text" -> if (deltas.none { it.text.isNotEmpty() }) {
-                            block.string("text")?.takeIf { it.isNotEmpty() }?.let { deltas += StreamDelta(text = it) }
-                        }
+                        "output_text", "text" -> block.string("text")?.takeIf { it.isNotEmpty() }
+                            ?.let { deltas += StreamDelta(text = it) }
                         "reasoning_text", "summary_text" -> block.string("text")?.takeIf { it.isNotEmpty() }
                             ?.let { deltas += StreamDelta(reasoning = it) }
                     }
@@ -206,8 +245,8 @@ internal fun parseResponsesApiBody(text: String): List<StreamDelta> {
                     summary.string("text")?.takeIf { it.isNotEmpty() }?.let { deltas += StreamDelta(reasoning = it) }
                 }
             }
-            "image_generation_call" -> item.string("result")?.let {
-                deltas += StreamDelta(text = imageMarkdown("data:image/png;base64,$it"))
+            "image_generation_call" -> item.string("result")?.takeIf { it.isNotBlank() }?.let {
+                deltas += StreamDelta(text = imageResultMarkdown(it))
             }
             "function_call" -> {
                 val callId = item.string("call_id")
@@ -228,5 +267,13 @@ internal fun parseResponsesApiBody(text: String): List<StreamDelta> {
     return deltas
 }
 
-private fun JsonObject.string(key: String): String? = this[key]?.jsonPrimitive?.contentOrNull
-private fun JsonObject.int(key: String): Int? = this[key]?.jsonPrimitive?.intOrNull
+private fun JsonObject.string(key: String): String? = (this[key] as? JsonPrimitive)?.contentOrNull
+private fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.intOrNull
+
+private fun imageResultMarkdown(result: String): String {
+    val value = result.trim()
+    return if (value.startsWith("http://", true) ||
+        value.startsWith("https://", true) ||
+        value.startsWith("data:image/", true)) imageMarkdown(value)
+    else imageMarkdown("data:image/png;base64,$value")
+}

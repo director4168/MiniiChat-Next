@@ -16,16 +16,17 @@ import com.miniichatNext.carter.data.model.recordUsage
 import com.miniichatNext.carter.data.store.AppSettings
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.util.AppJson
+import com.miniichatNext.carter.util.readTextBounded
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
-import io.ktor.client.request.get
+import io.ktor.client.request.prepareGet
 import io.ktor.client.request.headers
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.client.statement.bodyAsText
+import io.ktor.client.statement.HttpResponse
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -34,6 +35,7 @@ import io.ktor.http.isSuccess
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readUTF8Line
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flow
@@ -41,6 +43,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -156,7 +159,7 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
                 setBody(bodyText)
             }.execute { response ->
                 if (!response.status.isSuccess()) {
-                    val errBody = runCatching { response.bodyAsText() }.getOrDefault("")
+                    val errBody = response.errorExcerpt()
                     DebugLog.w(
                         "Llm",
                         "HTTP ${response.status.value} from $target, body=${errBody.take(500)}"
@@ -168,7 +171,13 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
                     throw RuntimeException(msg)
                 }
                 DebugLog.d("Llm", "HTTP ${response.status.value} OK from $target (stream=${settings.stream})")
-                if (settings.stream) {
+                val mediaType = response.headers[HttpHeaders.ContentType]?.substringBefore(';')?.trim()?.lowercase(java.util.Locale.ROOT)
+                val responseIsSse = when {
+                    mediaType == "text/event-stream" -> true
+                    mediaType == "application/json" || mediaType?.endsWith("+json") == true -> false
+                    else -> settings.stream
+                }
+                if (responseIsSse) {
                     val channel: ByteReadChannel = response.bodyAsChannel()
                     when {
                         isClaude -> readClaudeStream(channel)
@@ -215,7 +224,7 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
         // 思考等级：对话级唯一来源
         val effThinking = thinking
         val reasoningOk = provider.supportsReasoning(modelId)
-        val host = hostOf(provider.baseUrl)
+        val host = hostOf(provider.effectiveBaseUrl(modelId))
         val msgsJson = kotlinx.serialization.json.buildJsonArray {
             for (m in messages) {
                 add(kotlinx.serialization.json.buildJsonObject {
@@ -267,11 +276,11 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
             // 各家的推理参数形状不同，按host特判（见applyReasoning）
             if (reasoningOk) applyReasoning(host, effThinking)
             for ((k, v) in provider.extraBody) {
-                if (k.isBlank()) continue
+                if (k.isBlank() || k == "stream") continue
                 put(k, coerceToJson(v))
             }
             for ((k, v) in modelCfg?.extraBody ?: emptyMap()) {
-                if (k.isBlank()) continue
+                if (k.isBlank() || k == "stream") continue
                 put(k, coerceToJson(v))
             }
             if (tools.isNotEmpty()) {
@@ -302,7 +311,7 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
     ): String = buildResponsesApiRequest(provider, modelId, messages, stream, temperature, tools, thinking)
 
     private suspend fun listOpenAiModels(provider: ProviderConfig): List<String> {
-        val resp = client.get(modelsEndpoint(provider.baseUrl)) {
+        val text = client.prepareGet(modelsEndpoint(provider.baseUrl)) {
             headers {
                 if (provider.apiKey.isNotBlank()) {
                     append(HttpHeaders.Authorization, "Bearer ${provider.apiKey}")
@@ -312,12 +321,10 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
                     append(k, v)
                 }
             }
+        }.execute { response ->
+            if (!response.status.isSuccess()) throw IllegalStateException("HTTP ${response.status.value}: ${response.errorExcerpt()}")
+            response.readTextBounded(MAX_MODELS_BYTES).first
         }
-        if (!resp.status.isSuccess()) {
-            val err = runCatching { resp.bodyAsText() }.getOrDefault("")
-            throw RuntimeException("HTTP ${resp.status.value}: ${err.take(300)}")
-        }
-        val text = resp.bodyAsText()
         val parsed = runCatching {
             json.decodeFromString(ModelsResponse.serializer(), text)
         }.getOrNull()
@@ -341,8 +348,8 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
             val line = if (finished) {
                 val remaining = 1000L - (android.os.SystemClock.elapsedRealtime() - finishAt)
                 if (remaining <= 0) break
-                kotlinx.coroutines.withTimeoutOrNull(remaining) { channel.readUTF8Line() }
-            } else channel.readUTF8Line()
+                kotlinx.coroutines.withTimeoutOrNull(remaining) { channel.readUTF8Line(MAX_STREAM_LINE_CHARS) }
+            } else channel.readUTF8Line(MAX_STREAM_LINE_CHARS)
             if (line == null) break
             if (line.isEmpty()) continue
             if (!line.startsWith("data:")) continue
@@ -406,7 +413,7 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
     private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamDelta>.readOpenAiNonStream(
         response: io.ktor.client.statement.HttpResponse
     ) {
-        val raw = response.bodyAsText()
+        val raw = response.readTextBounded(MAX_CHAT_BODY_BYTES).first
         val parsed = runCatching { json.decodeFromJsonElement(ChatResponse.serializer(), normalizeOpenAiImageOutput(json.parseToJsonElement(raw))) }
             .getOrElse { throw IllegalStateException("Invalid Chat Completions response", it) }
         val message = parsed.choices.firstOrNull()?.message
@@ -426,14 +433,14 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
     private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamDelta>.readResponsesStream(channel: ByteReadChannel) {
         val parser = ResponsesApiStreamParser()
         while (true) {
-            val line = channel.readUTF8Line() ?: break
+            val line = channel.readUTF8Line(MAX_STREAM_LINE_CHARS) ?: break
             if (!line.startsWith("data:")) continue
             val data = line.removePrefix("data:").trim()
-            if (data.isEmpty() || data == "[DONE]") continue
+            if (data == "[DONE]") break
+            if (data.isEmpty()) continue
             emit(StreamDelta(eventReceived = true))
             parser.accept(data).forEach { emit(it) }
-            val type = runCatching { json.parseToJsonElement(data).jsonObject["type"]?.jsonPrimitive?.contentOrNull }.getOrNull()
-            if (type == "response.completed" || type == "response.incomplete") break
+            if (parser.finalized) break
         }
         parser.finish().forEach { emit(it) }
     }
@@ -441,7 +448,7 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
     private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamDelta>.readResponsesNonStream(
         response: io.ktor.client.statement.HttpResponse
     ) {
-        parseResponsesApiBody(response.bodyAsText()).forEach { emit(it) }
+        parseResponsesApiBody(response.readTextBounded(MAX_CHAT_BODY_BYTES).first).forEach { emit(it) }
     }
 
     private fun buildClaudeBody(
@@ -591,11 +598,11 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
                 }
             }
             for ((k, v) in provider.extraBody) {
-                if (k.isBlank()) continue
+                if (k.isBlank() || k == "stream") continue
                 put(k, coerceToJson(v))
             }
             for ((k, v) in modelCfg?.extraBody ?: emptyMap()) {
-                if (k.isBlank()) continue
+                if (k.isBlank() || k == "stream") continue
                 put(k, coerceToJson(v))
             }
             if (tools.isNotEmpty()) {
@@ -696,8 +703,10 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
         val realUserIdx = msgs.mapIndexedNotNull { i, m ->
             val o = m as? JsonObject ?: return@mapIndexedNotNull null
             if (o["role"]?.jsonPrimitive?.contentOrNull != "user") return@mapIndexedNotNull null
-            val arr = o["content"] as? JsonArray ?: return@mapIndexedNotNull null
-            val isToolResult = arr.any {
+            val content = o["content"]
+            if (content is JsonPrimitive && content.contentOrNull?.isNotBlank() == true) return@mapIndexedNotNull i
+            val arr = content as? JsonArray ?: return@mapIndexedNotNull null
+            val isToolResult = arr.isEmpty() || arr.any {
                 (it as? JsonObject)?.get("type")?.jsonPrimitive?.contentOrNull == "tool_result"
             }
             if (isToolResult) null else i
@@ -707,7 +716,11 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
         return JsonArray(msgs.mapIndexed { i, m ->
             if (i != target) return@mapIndexed m
             val o = m.jsonObject
-            val arr = o["content"] as? JsonArray ?: return@mapIndexed m
+            val arr = when (val source = o["content"]) {
+                is JsonArray -> source
+                is JsonPrimitive -> JsonArray(listOf(buildJsonObject { put("type", "text"); put("text", source.content) }))
+                else -> return@mapIndexed m
+            }
             val last = arr.lastIndex
             JsonObject(o + ("content" to JsonArray(arr.mapIndexed { j, b ->
                 if (j == last) JsonObject(b.jsonObject + ("cache_control" to cacheControlOf(ttl)))
@@ -732,20 +745,25 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
         return Regex("\"id\"\\s*:\\s*\"([^\"]+)\"").findAll(text)
             .map { it.groupValues[1] }.toList().distinct().sorted()
     }
-    private suspend fun claudeGetText(provider: ProviderConfig, target: String): String {
-        val resp = client.get(target) {
-            headers {
-                for ((k, v) in claudeAuthHeaders(provider)) append(k, v)
-            }
+    private suspend fun claudeGetText(provider: ProviderConfig, target: String): String = client.prepareGet(target) {
+        headers { for ((k, v) in claudeAuthHeaders(provider)) append(k, v) }
+    }.execute { response ->
+        if (!response.status.isSuccess()) {
+            val message = "HTTP ${response.status.value}: ${response.errorExcerpt()}"
+            if (response.status == HttpStatusCode.NotFound) throw ClaudeEndpoint404(message)
+            throw IllegalStateException(message)
         }
-        if (!resp.status.isSuccess()) {
-            val err = runCatching { resp.bodyAsText() }.getOrDefault("")
-            val msg = "HTTP ${resp.status.value}: ${err.take(300)}"
-            if (resp.status == HttpStatusCode.NotFound) throw ClaudeEndpoint404(msg)
-            throw RuntimeException(msg)
-        }
-        return resp.bodyAsText()
+        response.readTextBounded(MAX_MODELS_BYTES).first
     }
+
+    private suspend fun HttpResponse.errorExcerpt(): String = try {
+        readTextBounded(8192, allowTruncation = true).first.take(500)
+    } catch (cancel: CancellationException) {
+        throw cancel
+    } catch (_: Exception) {
+        ""
+    }
+
     private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamDelta>.readClaudeStream(
         channel: ByteReadChannel
     ) {
@@ -756,7 +774,7 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
         var thinkEvents = 0
         var blockStarts = 0
         while (true) {
-            val raw = channel.readUTF8Line() ?: break
+            val raw = channel.readUTF8Line(MAX_STREAM_LINE_CHARS) ?: break
             if (raw.isEmpty()) continue
             val colon = raw.indexOf(':')
             if (colon <= 0) continue
@@ -823,7 +841,7 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
     private suspend fun kotlinx.coroutines.flow.FlowCollector<StreamDelta>.readClaudeNonStream(
         response: io.ktor.client.statement.HttpResponse
     ) {
-        val text = response.bodyAsText()
+        val text = response.readTextBounded(MAX_CHAT_BODY_BYTES).first
         val obj = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull()
             ?: throw RuntimeException("Bad Claude response")
         if (obj["type"]?.jsonPrimitive?.contentOrNull == "error") {
@@ -854,15 +872,19 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
     }
 }
 
-internal fun claudeAuthHeaders(provider: ProviderConfig, modelId: String? = null): List<Pair<String, String>> =
-    buildList {
-        if (provider.apiKey.isNotBlank()) add("x-api-key" to provider.apiKey)
-        add("anthropic-version" to "2023-06-01")
-        val headers = provider.customHeaders + provider.model(modelId.orEmpty())?.customHeaders.orEmpty()
-        for ((k, v) in headers) {
-            if (k.isBlank()) continue
-            add(k to v)
-        }
+private const val MAX_MODELS_BYTES = 2 * 1024 * 1024
+private const val MAX_CHAT_BODY_BYTES = 32 * 1024 * 1024
+private const val MAX_STREAM_LINE_CHARS = MAX_CHAT_BODY_BYTES
+
+internal fun claudeAuthHeaders(provider: ProviderConfig, modelId: String? = null): List<Pair<String, String>> {
+    val headers = linkedMapOf<String, Pair<String, String>>()
+    val key = provider.effectiveApiKey(modelId.orEmpty())
+    if (key.isNotBlank()) headers["x-api-key"] = "x-api-key" to key
+    headers["anthropic-version"] = "anthropic-version" to "2023-06-01"
+    for ((name, value) in provider.customHeaders + provider.model(modelId.orEmpty())?.customHeaders.orEmpty()) {
+        if (name.isNotBlank()) headers[name.lowercase(java.util.Locale.ROOT)] = name to value
     }
+    return headers.values.toList()
+}
 
 internal class ClaudeEndpoint404(message: String) : RuntimeException(message)
