@@ -6,6 +6,7 @@
  */
 package com.miniichatNext.carter.data.update
 
+import android.content.ClipData
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
@@ -83,11 +84,24 @@ object UpdateInstaller {
             }
             val authority = "${context.packageName}.fileprovider"
             val uri = FileProvider.getUriForFile(context, authority, apkFile)
-            val intent = Intent(Intent.ACTION_VIEW).apply {
+            // 部分Android 10 ROM只认ClipData里的URI授权，单纯FLAG_GRANT_READ_URI_PERMISSION会静默不拉起。
+            val base = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "application/vnd.android.package-archive")
+                clipData = ClipData.newRawUri("update", uri)
                 flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK
             }
-            context.startActivity(intent)
+            // 不用resolveActivity做门禁：Android 11+包可见性可能查不到系统安装器，但startActivity仍可拉起。
+            val fallback = Intent(base).setAction(Intent.ACTION_INSTALL_PACKAGE)
+            try {
+                context.startActivity(base)
+            } catch (first: Throwable) {
+                try {
+                    context.startActivity(fallback)
+                } catch (second: Throwable) {
+                    second.addSuppressed(first)
+                    throw second
+                }
+            }
             true
         } catch (t: Throwable) {
             DebugLog.e("Update", "install failed", t)

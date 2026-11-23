@@ -302,6 +302,13 @@ rm -rf .gradle build app/build
 
 权限只在对应功能触发时使用，日历创建工具默认需要审批
 
+> [!CAUTION]
+> 在v1.9.0版本，软件新增两项高危权限
+>
+> **ROOT**：用于`execute_shell_root`工具
+>
+> **Shizuku**：用于`execute_shell_shizuku`工具
+
 <a name='LicenseAndThird-PartyNotices'></a>
 ## 许可证与第三方声明
 

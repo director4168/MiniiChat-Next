@@ -111,14 +111,18 @@ internal object UpdateDownloadSession {
             val hash = snapshot.forceDigest ?: return false
             return try {
                 kotlinx.coroutines.withContext(Dispatchers.IO) {
-                    UpdateArtifactCache(context.applicationContext).validateForForce(file, hash, snapshot.info.packageForDevice())
+                    UpdateArtifactCache(context.applicationContext).validateForForce(file, hash)
                 }
-                if (!com.miniichatNext.carter.util.AppForeground.isForeground()) return false
+                // 用户已在前台点击强制安装；不再依赖生命周期计数，避免部分ROM计数异常导致静默返回。
                 val result = UpdateInstaller.install(context, file)
                 if (result) hide() else update(snapshot.copy(message = context.getString(R.string.update_install_failed)))
                 result
             } catch (cancel: CancellationException) { throw cancel }
-            catch (failure: Exception) { update(snapshot.copy(message = failure.message.orEmpty())); false }
+            catch (failure: Exception) {
+                update(snapshot.copy(message = failure.message?.takeIf { it.isNotBlank() }
+                    ?: context.getString(R.string.update_install_failed)))
+                false
+            }
         } finally { installMutex.unlock() }
     }
 
@@ -138,7 +142,8 @@ internal object UpdateDownloadSession {
                 false
             } else {
                 update(snapshot.copy(autoInstall = false))
-                if (!com.miniichatNext.carter.util.AppForeground.isForeground() || (automatic && !visible.value)) return false
+                // 自动安装才要求前台；用户手动点“立即安装”时，弹窗本身已证明在前台。
+                if (automatic && (!com.miniichatNext.carter.util.AppForeground.isForeground() || !visible.value)) return false
                 val result = UpdateInstaller.install(context, snapshot.file ?: return false)
                 if (result) hide() else update(snapshot.copy(autoInstall = false, message = context.getString(R.string.update_install_failed)))
                 result

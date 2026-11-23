@@ -89,23 +89,43 @@ internal class UpdateArtifactCache(private val context: Context) {
         return actual
     }
 
-    private fun validateInstallable(file: File, selected: UpdatePackage): PackageInfo {
-        @Suppress("DEPRECATION")
-        val flags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+    private fun validateInstallable(
+        file: File,
+        selected: UpdatePackage,
+        enforceSignature: Boolean = true,
+        enforceAbi: Boolean = true,
+    ): PackageInfo {
+        val flags = packageFlags()
         val archive = context.packageManager.getPackageArchiveInfo(file.absolutePath, flags) ?: error("Invalid APK archive")
         require(archive.packageName == context.packageName) { "APK package name mismatch" }
-        val installed = context.packageManager.getPackageInfo(context.packageName, flags)
-        val current = signers(installed)
-        val candidate = signers(archive)
-        require(current.isNotEmpty() && candidate == current) { "APK signing certificate mismatch" }
+        if (enforceSignature) {
+            val installed = context.packageManager.getPackageInfo(context.packageName, flags)
+            val current = signers(installed)
+            val candidate = signers(archive)
+            // Android 10部分ROM对归档APK不返回signingInfo；能用时严格比对，拿不到时交给系统安装器最终校验。
+            if (current.isNotEmpty() && candidate.isNotEmpty()) {
+                require(candidate == current) { "APK signing certificate mismatch" }
+            } else {
+                DebugLog.w("Update", "APK signer metadata unavailable on API ${Build.VERSION.SDK_INT}; deferring to installer")
+            }
+        }
         ZipFile(file).use { zip ->
-            val nativeAbis = zip.entries().asSequence().map { it.name }
-                .filter { it.startsWith("lib/") && it.endsWith(".so") }
-                .map { it.split('/')[1] }.toSet()
-            require(selected.abi in nativeAbis) { "APK architecture mismatch: ${selected.abi}" }
             require(zip.getEntry("AndroidManifest.xml") != null && zip.getEntry("classes.dex") != null) { "Incomplete APK archive" }
+            if (enforceAbi) {
+                val nativeAbis = zip.entries().asSequence().map { it.name }
+                    .filter { it.startsWith("lib/") && it.endsWith(".so") }
+                    .map { it.split('/')[1] }.toSet()
+                require(selected.abi in nativeAbis) { "APK architecture mismatch: ${selected.abi}" }
+            }
         }
         return archive
+    }
+
+    /** 旧版本归档解析可能只填充signatures，不能只因signingInfo为空就判失败。 */
+    private fun packageFlags(): Int {
+        @Suppress("DEPRECATION")
+        val legacy = PackageManager.GET_SIGNATURES
+        return if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES or legacy else legacy
     }
 
     suspend fun retainFailed(file: File): Pair<File, String> = cacheMutex.withLock {
@@ -116,10 +136,16 @@ internal class UpdateArtifactCache(private val context: Context) {
         failed to hash
     }
 
-    suspend fun validateForForce(file: File, expectedHash: String, selected: UpdatePackage) {
+    suspend fun validateForForce(file: File, expectedHash: String) {
         require(file == failed && Files.isRegularFile(file.toPath(), NOFOLLOW_LINKS)) { "Failed APK is missing" }
+        require(file.length() in 1..(512L * 1024 * 1024)) { "Invalid APK file" }
         require(expectedHash.isNotBlank() && sha256(file) == expectedHash) { "Downloaded APK was changed" }
-        validateInstallable(file, selected)
+        // 强制安装是用户明确选择；不在本地重复做归档签名/ABI判断，避免旧ROM解析差异造成假失败，最终交给系统安装器校验。
+        ZipFile(file).use { zip ->
+            require(zip.getEntry("AndroidManifest.xml") != null && zip.getEntry("classes.dex") != null) {
+                "Incomplete APK archive"
+            }
+        }
     }
 
     suspend fun commit(info: UpdateInfo, selected: UpdatePackage, location: String? = null): CachedUpdate = cacheMutex.withLock {
@@ -149,11 +175,16 @@ internal class UpdateArtifactCache(private val context: Context) {
         private fun versionCode(info: PackageInfo): Long = if (Build.VERSION.SDK_INT >= 28) info.longVersionCode
             else @Suppress("DEPRECATION") info.versionCode.toLong()
 
-        private fun signers(info: PackageInfo): Set<String> = if (Build.VERSION.SDK_INT >= 28) {
-            info.signingInfo?.apkContentsSigners?.map { digest(it.toByteArray()) }?.toSet().orEmpty()
-        } else {
+        private fun signers(info: PackageInfo): Set<String> {
+            if (Build.VERSION.SDK_INT >= 28) {
+                val modern = info.signingInfo?.apkContentsSigners
+                    ?.map { digest(it.toByteArray()) }
+                    ?.toSet()
+                    .orEmpty()
+                if (modern.isNotEmpty()) return modern
+            }
             @Suppress("DEPRECATION")
-            info.signatures?.map { digest(it.toByteArray()) }?.toSet().orEmpty()
+            return info.signatures?.map { digest(it.toByteArray()) }?.toSet().orEmpty()
         }
 
         private fun digest(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes)
