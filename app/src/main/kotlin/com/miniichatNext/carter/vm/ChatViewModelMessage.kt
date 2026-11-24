@@ -73,7 +73,6 @@ internal fun ChatViewModel.sendMessage(
     val app = getApplication<Application>()
     val current = settings.value
     val assistant = activeAssistant()
-    // store.snapshot()是suspend，sendMessage本身不是suspend——先取内存缓存的conversations StateFlow
     val conv = conversations.value.firstOrNull { it.id == _activeId.value }
 
     val (provider, model) = effectiveConversationModel(conv, assistant, current, providers.value)
@@ -145,7 +144,7 @@ private fun ChatViewModel.launchGeneration(
                 reuse = res.msgId
                 if (res.pending.isEmpty()) break
                 if (!executeAutoApprovedTools(cid, res.pending)) {
-                    val latest = store.snapshot().firstOrNull { it.id == cid }
+                    val latest = store.get(cid)
                         ?.messages?.firstOrNull { it.id == res.msgId }
                     waitingApproval = latest?.toolInvocations?.any { it.isUnanswered() } == true
                     _hasPendingTools.value = waitingApproval
@@ -173,9 +172,9 @@ private fun ChatViewModel.launchGeneration(
 }
 
 private fun ToolInvocation.isUnanswered(): Boolean =
-    state == ToolInvocationState.PENDING_APPROVAL || state == ToolInvocationState.EXECUTING
+    !historical && (state == ToolInvocationState.PENDING_APPROVAL || state == ToolInvocationState.EXECUTING)
 
-/** 流式期间DataStore节流落库间隔（ms）；toolCalls delta在流末尾统一到达，流结束后的强制落库兜底 */
+/** 流式期间数据库节流落库间隔（ms）；toolCalls delta在流末尾统一到达，流结束后的强制落库兜底 */
 private const val PERSIST_INTERVAL_MS = 800L
 private const val STREAM_OVERLAY_INTERVAL_MS = 33L
 
@@ -187,7 +186,7 @@ private suspend fun ChatViewModel.runGenerationRound(
     reuseMsgId: String?,
     session: ChatTaskSession,
 ): RoundResult? {
-    val conv = store.snapshot().firstOrNull { it.id == cid } ?: return null
+    val conv = store.get(cid) ?: return null
     currentCoroutineContext().ensureActive()
     val assistant = assistantForConversation(conv)
     val (provider, model) = effectiveConversationModel(conv, assistant, settings.value, providers.value) ?: run {
@@ -487,13 +486,15 @@ private suspend fun ChatViewModel.persistAssistantStep(
 ) {
     // IO期间计时快照仍在推进；持久化结束后再回写旧帧会让界面和计量倒退。
     if (session.stopSettled) return
+    val persistedVersion = session.generationVersion
     if (canPublishStream(session)) {
         _streamingOverlay.value = StreamOverlay(msgId, content, reasoning, orderedParts, stats.usage, stats.generationTimeMs, stats.lastUsage, stats.stepCount, stats.finishedAt)
     }
-    store.updateMessages(cid) { msgs ->
-        if (session.stopSettled) return@updateMessages msgs
-        msgs.map { m ->
-            if (m.id == msgId) m.copy(
+    store.updateMessage(cid, msgId) { m ->
+        if (session.generationVersion != persistedVersion || session.stopSettled ||
+            (!session.stopRequested && !ownsSession(session)) || (taskSession != null && taskSession !== session)
+        ) return@updateMessage m
+        m.copy(
                 content = content,
                 reasoningContent = reasoning.ifBlank { null },
                 toolInvocations = invocations.map { incoming ->
@@ -507,8 +508,7 @@ private suspend fun ChatViewModel.persistAssistantStep(
                 lastUsage = stats.lastUsage,
                 stepCount = stats.stepCount,
                 finishedAt = stats.finishedAt,
-            ) else m
-        }
+        )
     }
 }
 
@@ -580,9 +580,9 @@ private fun ChatViewModel.sessionForApproval(cid: String, callId: String): ChatT
         if (_isStreaming.value || _hasPendingTools.value) return null
         stopTaskSession()
     }
-    val pending = conversations.value.firstOrNull { it.id == cid }?.messages
+    val pending = activeConversation.value?.takeIf { it.id == cid }?.messages
         ?.flatMap { it.toolInvocations }
-        ?.any { it.callId == callId && it.state == ToolInvocationState.PENDING_APPROVAL } == true
+        ?.any { !it.historical && it.callId == callId && it.state == ToolInvocationState.PENDING_APPROVAL } == true
     if (!pending) return null
     return ChatTaskSession(cid, viewModelScope).also {
         taskSession = it
@@ -602,7 +602,7 @@ private suspend fun ChatViewModel.claimPendingTool(
     store.updateMessages(cid) { msgs ->
         msgs.map { msg ->
             msg.copy(toolInvocations = msg.toolInvocations.map { inv ->
-                if (inv.callId == callId && callId !in stoppedToolCalls &&
+                if (!inv.historical && inv.callId == callId && callId !in stoppedToolCalls &&
                     inv.state == from && claimed == null) {
                     claimed = inv
                     inv.copy(state = state)
@@ -616,8 +616,8 @@ private suspend fun ChatViewModel.claimPendingTool(
 private suspend fun ChatViewModel.continueIfAllToolsAnswered(session: ChatTaskSession, callId: String) {
     val cid = session.conversationId
     if (!ownsSession(session)) return
-    val owner = store.snapshot().firstOrNull { it.id == cid }?.messages
-        ?.firstOrNull { msg -> msg.toolInvocations.any { it.callId == callId } } ?: return
+    val owner = store.get(cid)?.messages
+        ?.firstOrNull { msg -> msg.toolInvocations.any { !it.historical && it.callId == callId } } ?: return
     if (owner.toolInvocations.any { it.isUnanswered() || it.state == ToolInvocationState.CANCELLED }) return
     val batchKey = owner.id + ":" + owner.toolInvocations.joinToString(",") { it.callId }
     if (session.claimContinuation(batchKey)) launchGeneration(session, owner.id)
@@ -626,9 +626,9 @@ private suspend fun ChatViewModel.continueIfAllToolsAnswered(session: ChatTaskSe
 private suspend fun ChatViewModel.markToolPendingApproval(cid: String, callId: String) {
     store.updateMessages(cid) { msgs ->
         msgs.map { msg ->
-            if (msg.toolInvocations.none { it.callId == callId }) msg
+            if (msg.toolInvocations.none { !it.historical && it.callId == callId }) msg
             else msg.copy(toolInvocations = msg.toolInvocations.map { inv ->
-                if (inv.callId == callId && inv.state == ToolInvocationState.EXECUTING) {
+                if (!inv.historical && inv.callId == callId && inv.state == ToolInvocationState.EXECUTING) {
                     inv.copy(state = ToolInvocationState.PENDING_APPROVAL)
                 } else inv
             })
@@ -644,10 +644,10 @@ private suspend fun ChatViewModel.updateToolInvocationState(
 ) {
     store.updateMessages(cid) { msgs ->
         msgs.map { msg ->
-            if (msg.toolInvocations.none { it.callId == callId }) msg
+            if (msg.toolInvocations.none { !it.historical && it.callId == callId }) msg
             else msg.copy(
                 toolInvocations = msg.toolInvocations.map { inv ->
-                    if (inv.callId == callId && callId !in stoppedToolCalls &&
+                    if (!inv.historical && inv.callId == callId && callId !in stoppedToolCalls &&
                         inv.state != ToolInvocationState.CANCELLED) inv.copy(
                         state = state,
                         result = resultOutput ?: inv.result,
@@ -688,7 +688,7 @@ private data class AvailableTool(
 
 private suspend fun ChatViewModel.resolveAvailableTool(cid: String, name: String): AvailableTool {
     val disabled = AvailableTool(EffectiveToolPermission(false, true))
-    val conv = store.snapshot().firstOrNull { it.id == cid } ?: return disabled
+    val conv = store.get(cid) ?: return disabled
     val assistant = assistantForConversation(conv)
     val (configuredServers, registeredTools, perms) = mcpStore.toolSnapshot()
     if (isWorkspaceTool(name)) {
@@ -800,7 +800,7 @@ private suspend fun ChatViewModel.executeAutoApprovedTools(
         answeredAny = true
     }
     val ids = invocations.map { it.callId }.toSet()
-    val current = store.snapshot().firstOrNull { it.id == cid }?.messages
+    val current = store.get(cid)?.messages
         ?.flatMap { it.toolInvocations }?.filter { it.callId in ids }.orEmpty()
     return answeredAny && current.none { it.isUnanswered() }
 }
@@ -809,7 +809,7 @@ internal fun ChatViewModel.regenerate() {
     val cid = _activeId.value ?: return
     stopTaskSession()
     viewModelScope.launch {
-        val conv = store.snapshot().firstOrNull { it.id == cid } ?: return@launch
+        val conv = store.get(cid) ?: return@launch
         val lastUserIdx = conv.messages.indexOfLast { it.role == "user" }
         if (lastUserIdx < 0) return@launch
         store.updateMessages(cid) { current ->
@@ -829,7 +829,7 @@ internal fun ChatViewModel.regenerateFrom(messageId: String) {
     stopTaskSession()
     viewModelScope.launch {
         val cid = findConvIdForMessage(messageId) ?: return@launch
-        val conv = store.snapshot().firstOrNull { it.id == cid } ?: return@launch
+        val conv = store.get(cid) ?: return@launch
         val idx = conv.messages.indexOfFirst { it.id == messageId }
         if (idx < 0) return@launch
         val target = conv.messages[idx]
@@ -847,7 +847,7 @@ internal fun ChatViewModel.regenerateFrom(messageId: String) {
 internal fun ChatViewModel.continueGenerating() {
     val cid = _activeId.value ?: return
     viewModelScope.launch {
-        val conv = store.snapshot().firstOrNull { it.id == cid } ?: return@launch
+        val conv = store.get(cid) ?: return@launch
         val last = conv.messages.lastOrNull() ?: return@launch
         if (last.role != "assistant" || last.content.isEmpty()) return@launch
         // 追加一条隐形续写指令（UI不渲染）；新开一个AI回复气泡继续
@@ -866,7 +866,7 @@ internal fun ChatViewModel.continueGenerating() {
 internal fun ChatViewModel.deleteMessage(messageId: String) {
     viewModelScope.launch {
         val cid = findConvIdForMessage(messageId) ?: return@launch
-        val deleted = store.snapshot().firstOrNull { it.id == cid }?.messages?.firstOrNull { it.id == messageId } ?: return@launch
+        val deleted = store.get(cid)?.messages?.firstOrNull { it.id == messageId } ?: return@launch
         stopForMessageMutation(cid)
         store.updateMessages(cid) { it.filterNot { m -> m.id == messageId } }
         cleanupGeneratedImages(listOf(deleted))
@@ -888,6 +888,7 @@ private fun Message.generatedImageRefs(): List<String> = buildList {
  * 删除消息/会话后清理不再被任何消息引用的生成图；共享图片会在剩余引用里保留。
  */
 internal suspend fun ChatViewModel.cleanupGeneratedImages(deleted: List<Message>) {
+    if (store.hasMigrationWarnings()) return
     val deletedRefs = deleted.flatMap { it.generatedImageRefs() }.toSet()
     if (deletedRefs.isEmpty()) return
     val remaining = store.snapshot().flatMap { it.messages }.flatMap { it.generatedImageRefs() }.toSet()
@@ -903,7 +904,7 @@ internal suspend fun ChatViewModel.cleanupGeneratedImages(deleted: List<Message>
  * 按消息id反查所在会话id（不依赖_activeId，避免编辑非当前会话的消息时改错）。
  */
 private suspend fun ChatViewModel.findConvIdForMessage(messageId: String): String? =
-    store.snapshot().firstOrNull { conv -> conv.messages.any { it.id == messageId } }?.id
+    store.owner(messageId, _activeId.value)
 
 internal fun ChatViewModel.editMessage(messageId: String, newContent: String) {
     viewModelScope.launch {
@@ -914,6 +915,7 @@ internal fun ChatViewModel.editMessage(messageId: String, newContent: String) {
                 if (m.id != messageId) m
                 else m.copy(
                     content = newContent,
+                    editedAt = System.currentTimeMillis(),
                     // 渲染走orderedParts；同时重写文本段，Reasoning/Tool段原位保留
                     orderedParts = rewriteTextSegments(m.orderedParts, newContent),
                 )

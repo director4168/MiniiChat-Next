@@ -7,11 +7,8 @@
 package com.miniichatNext.carter.data.store
 
 import android.content.Context
-import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.miniichatNext.carter.data.model.ModelConfig
 import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.util.ApiKeyCrypto
@@ -29,14 +26,14 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-private val Context.providersDataStore: DataStore<Preferences> by preferencesDataStore(name = "providers")
+private val Context.providersPreferences get() = SqlPreferences(this, "providers")
 
 class ProviderStore(private val context: Context) {
     private val key = stringPreferencesKey("providers_json")
     private val json get() = AppJson.json
 
     val providersFlow: Flow<List<ProviderConfig>> =
-        context.providersDataStore.data.map { prefs ->
+        context.providersPreferences.data.map { prefs ->
             val raw = prefs[key] ?: return@map emptyList()
             runCatching { decode(raw, allowInvalidEntries = true) }
                 .getOrDefault(emptyList())
@@ -47,7 +44,7 @@ class ProviderStore(private val context: Context) {
     suspend fun snapshot(): List<ProviderConfig> = providersFlow.first()
 
     suspend fun backupSnapshot(): List<ProviderConfig> {
-        val stored = storedProviders(context.providersDataStore.data.first())
+        val stored = storedProviders(context.providersPreferences.data.first())
         fun checkKey(value: String?) {
             if (!value.isNullOrEmpty()) require(ApiKeyCrypto.decrypt(value).isNotEmpty()) { "Stored credential cannot be decrypted; re-enter it before backing up" }
         }
@@ -117,11 +114,11 @@ class ProviderStore(private val context: Context) {
     }
 
     suspend fun save(list: List<ProviderConfig>) {
-        context.providersDataStore.edit { prefs -> prefs[key] = encodeProviders(list, storedProviders(prefs)) }
+        context.providersPreferences.edit { prefs -> prefs[key] = encodeProviders(list, storedProviders(prefs)) }
     }
 
     suspend fun reorder(ids: List<String>) {
-        context.providersDataStore.edit { prefs ->
+        context.providersPreferences.edit { prefs ->
             val current = storedProviders(prefs)
             val byId = current.associateBy { it.id }
             val ordered = ids.distinct().mapNotNull { byId[it] } + current.filterNot { it.id in ids }
@@ -130,7 +127,7 @@ class ProviderStore(private val context: Context) {
     }
 
     suspend fun upsert(provider: ProviderConfig) {
-        context.providersDataStore.edit { prefs ->
+        context.providersPreferences.edit { prefs ->
             val previous = storedProviders(prefs)
             val list = previous.toMutableList()
             val index = list.indexOfFirst { it.id == provider.id }
@@ -141,7 +138,7 @@ class ProviderStore(private val context: Context) {
 
     suspend fun update(id: String, transform: (ProviderConfig) -> ProviderConfig): ProviderConfig? {
         var updated: ProviderConfig? = null
-        context.providersDataStore.edit { prefs ->
+        context.providersPreferences.edit { prefs ->
             val previous = storedProviders(prefs)
             val index = previous.indexOfFirst { it.id == id }
             if (index < 0) return@edit
@@ -155,7 +152,7 @@ class ProviderStore(private val context: Context) {
     }
 
     suspend fun delete(id: String) {
-        context.providersDataStore.edit { prefs ->
+        context.providersPreferences.edit { prefs ->
             val previous = storedProviders(prefs)
             prefs[key] = json.encodeToString(ListSerializer(ProviderConfig.serializer()), previous.filterNot { it.id == id })
         }

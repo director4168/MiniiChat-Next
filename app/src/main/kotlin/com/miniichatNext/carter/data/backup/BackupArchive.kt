@@ -33,12 +33,12 @@ internal object BackupArchive {
     }
 
     fun write(folder: File, output: File, version: String, missing: List<String>,
-        mode: BackupMode? = null, credentialKey: String? = null, missingFileCount: Int = missing.size): BackupManifest {
+        mode: BackupMode? = null, credentialKey: String? = null, missingFileCount: Int = missing.size, sql: Boolean = false): BackupManifest {
         val files = folder.walkTopDown().filter { it.isFile && it != File(folder, "manifest.json") }.map { file ->
             BackupFileIndex(file.relativeTo(folder).invariantSeparatorsPath, file.length(), md5(file))
         }.toList()
         val manifest = BackupManifest(
-            formatVersion = if (mode != null) 3 else if (files.any { it.path == "data/snapshot.enc" }) 2 else 1,
+            formatVersion = if (sql) SqlBackup.FORMAT else if (mode != null) 3 else if (files.any { it.path == "data/snapshot.enc" }) 2 else 1,
             appVersion = version, createdAt = System.currentTimeMillis(), files = files, missingFiles = missing,
             missingFileCount = missingFileCount,
             encrypted = mode == BackupMode.ENCRYPTED,
@@ -70,7 +70,8 @@ internal object BackupArchive {
                 require(path == "manifest.json" || path.startsWith("data/")) { "Unknown ZIP entry" }
                 val dest = File(folder, path).canonicalFile
                 require(dest.path.startsWith(folder.canonicalPath + File.separator)) { "ZIP path outside staging" }
-                if ((path == "data/snapshot.json" || path == "data/snapshot.enc") && entry.size > 128L * 1024 * 1024) error("Snapshot too large")
+                val bounded = path == "data/snapshot.json" || path == "data/snapshot.enc" || (path in LegacyConversationBackup.paths || LegacyConfigurationBackup.namespace(path) != null)
+                if (bounded) require(entry.size <= LegacyConversationBackup.MAX_BYTES) { "Backup data file too large" }
                 if (!entry.isDirectory) {
                     dest.parentFile?.mkdirs()
                     dest.outputStream().use { output ->
@@ -81,7 +82,7 @@ internal object BackupArchive {
                             total += count
                             require(total <= MAX_TOTAL_BYTES) { "Backup exceeds size limit" }
                             if (path == "manifest.json") require(dest.length() + count <= 16 * 1024 * 1024) { "Manifest too large" }
-                            if ((path == "data/snapshot.json" || path == "data/snapshot.enc")) require(dest.length() + count <= 128L * 1024 * 1024) { "Snapshot too large" }
+                            if (bounded) require(dest.length() + count <= LegacyConversationBackup.MAX_BYTES) { "Backup data file too large" }
                             output.write(buffer, 0, count)
                         }
                     }
@@ -92,24 +93,35 @@ internal object BackupArchive {
         val manifestFile = File(folder, "manifest.json")
         require(manifestFile.isFile) { "Missing manifest.json" }
         val manifest = AppJson.json.decodeFromString(BackupManifest.serializer(), manifestFile.readText())
-        require(manifest.formatVersion in 1..3) { "Unsupported backup version" }
+        require(manifest.formatVersion in 1..SqlBackup.FORMAT) { "Unsupported backup version" }
         require(manifest.files.map { it.path }.distinct().size == manifest.files.size) { "Duplicate manifest path" }
         val indexed = manifest.files.map { it.path }.toSet()
         val actual = folder.walkTopDown().filter { it.isFile && it != manifestFile }.map { it.relativeTo(folder).invariantSeparatorsPath }.toSet()
         require(indexed == actual) { "Backup index mismatch" }
-        if (manifest.formatVersion == 3) {
+        val rawStores = indexed.count { it in LegacyConversationBackup.paths }
+        require(rawStores <= 1) { "Ambiguous conversation DataStore files" }
+        val configFiles = indexed.mapNotNull(LegacyConfigurationBackup::namespace)
+        require(configFiles.distinct().size == configFiles.size) { "Ambiguous configuration DataStore files" }
+        require(manifest.formatVersion == SqlBackup.FORMAT || SqlBackup.PATH !in indexed) { "Unexpected backup database" }
+        if (manifest.formatVersion >= 3) {
             when (manifest.backupMode) {
                 BackupMode.ENCRYPTED.name -> {
                     require(manifest.encrypted && manifest.credentialKey == null && indexed == setOf("data/payload.enc")) { "Invalid encrypted backup index" }
                 }
                 BackupMode.QUICK.name -> {
-                    require(!manifest.encrypted && "data/snapshot.json" in indexed && "data/payload.enc" !in indexed && "data/snapshot.enc" !in indexed) { "Invalid quick backup index" }
+                    val primary = if (manifest.formatVersion == SqlBackup.FORMAT) SqlBackup.PATH else "data/snapshot.json"
+                    require(!manifest.encrypted && primary in indexed && "data/payload.enc" !in indexed && "data/snapshot.enc" !in indexed) { "Invalid quick backup index" }
+                    if (manifest.formatVersion == SqlBackup.FORMAT) require(indexed.all {
+                        it == primary || it.startsWith("data/assets/") || it.startsWith("data/skills/")
+                    }) { "Unexpected SQL backup files" }
                     BackupCredentials.validateKey(requireNotNull(manifest.credentialKey) { "Missing credential recovery key" })
                 }
                 else -> error("Unknown backup mode")
             }
         } else {
-            require(indexed.count { it == "data/snapshot.json" || it == "data/snapshot.enc" } == 1 && "data/payload.enc" !in indexed) { "Ambiguous snapshot" }
+            val snapshots = indexed.count { it == "data/snapshot.json" || it == "data/snapshot.enc" }
+            require(snapshots <= 1 && (snapshots == 1 || rawStores == 1 || configFiles.isNotEmpty()) && "data/payload.enc" !in indexed) { "Ambiguous snapshot" }
+            if (snapshots == 0) require(indexed.size == rawStores + configFiles.size && !manifest.encrypted) { "Invalid legacy DataStore backup" }
         }
         manifest.files.forEach { index ->
             require(index.path.split('/').none { it == ".." || it == "." }) { "Invalid manifest path" }

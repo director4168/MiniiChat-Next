@@ -7,15 +7,12 @@
 package com.miniichatNext.carter.data.store
 
 import android.content.Context
-import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.miniichatNext.carter.data.model.TokenUsage
 import com.miniichatNext.carter.data.update.UpdateDownloadSources
 import com.miniichatNext.carter.debug.DebugLog
@@ -32,7 +29,7 @@ import kotlinx.serialization.builtins.ListSerializer
 
 const val COMPRESS_MODEL_CONVERSATION = "@conversation"
 
-private val Context.settingsDataStore: DataStore<Preferences> by preferencesDataStore(name = "settings")
+private val Context.settingsPreferences get() = SqlPreferences(this, "settings")
 
 @Serializable
 data class AppSettings(
@@ -69,7 +66,7 @@ data class AppSettings(
     /** 辅助模型无法使用时回退到当前正在使用的模型 */
     val auxFallbackToActive: Boolean = false,
     /** 调试悬浮球：显示在所有页面之上的日志等级快速切换入口 */
-    val debugLogBall: Boolean = false,
+    val debugLogBall: Boolean = com.miniichatNext.carter.BuildConfig.DEBUG,
     val totalPromptTokens: Long = 0,
     val totalCompletionTokens: Long = 0,
     val totalCachedTokens: Long = 0,
@@ -127,7 +124,7 @@ class SettingsRepository(private val context: Context) {
         val IGNORED_UPDATE_VERSIONS = stringPreferencesKey("ignored_update_versions")
     }
 
-    val settings: Flow<AppSettings> = context.settingsDataStore.data.map { p: Preferences -> read(p) }
+    val settings: Flow<AppSettings> = context.settingsPreferences.data.map { p: Preferences -> read(p) }
 
     private fun read(p: Preferences): AppSettings {
         val rawNodes = p[Keys.UPDATE_NODES]
@@ -159,7 +156,7 @@ class SettingsRepository(private val context: Context) {
             compressModel = p[Keys.COMPRESS_MODEL] ?: COMPRESS_MODEL_CONVERSATION,
             suggestionModel = p[Keys.SUGGESTION_MODEL] ?: COMPRESS_MODEL_CONVERSATION,
             auxFallbackToActive = p[Keys.AUX_FALLBACK] ?: false,
-            debugLogBall = p[Keys.DEBUG_LOG_BALL] ?: false,
+            debugLogBall = p[Keys.DEBUG_LOG_BALL] ?: com.miniichatNext.carter.BuildConfig.DEBUG,
             totalCachedTokens = p[Keys.TOTAL_CACHED] ?: 0L,
             totalPromptTokens = p[Keys.TOTAL_PROMPT] ?: p[Keys.TOTAL_PROMPT_LEGACY]?.toLong() ?: 0L,
             totalCompletionTokens = p[Keys.TOTAL_COMPLETION] ?: p[Keys.TOTAL_COMPLETION_LEGACY]?.toLong() ?: 0L,
@@ -183,13 +180,13 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun saveUpdateNodes(nodes: List<UpdateMirrorNode>) = updateMutex.withLock {
         UpdateDownloadSources.validateNodes(nodes)
-        context.settingsDataStore.edit { p ->
+        context.settingsPreferences.edit { p ->
             p[Keys.UPDATE_NODES] = AppJson.json.encodeToString(ListSerializer(UpdateMirrorNode.serializer()), nodes)
         }
     }
 
     suspend fun update(transform: (AppSettings) -> AppSettings) = updateMutex.withLock {
-        context.settingsDataStore.edit { p ->
+        context.settingsPreferences.edit { p ->
             val current = read(p)
             val next = transform(current)
             p[Keys.LAUNCH_COUNT] = next.launchCount.coerceAtLeast(0L)
@@ -240,7 +237,7 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setUpdateNodesEnabled(enabled: Boolean) = updateMutex.withLock {
         // 总开关独立保存，关闭代理不依赖节点列表的解析或校验。
-        context.settingsDataStore.edit { it[Keys.UPDATE_NODES_ENABLED] = enabled }
+        context.settingsPreferences.edit { it[Keys.UPDATE_NODES_ENABLED] = enabled }
     }
 
     suspend fun ignoreUpdateVersion(version: String) {

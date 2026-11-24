@@ -23,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DrawerDefaults
+import androidx.compose.material3.DrawerState
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -39,7 +41,6 @@ import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -49,10 +50,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
@@ -134,6 +139,7 @@ import com.miniichatNext.carter.vm.updateUserProfile
 import com.miniichatNext.carter.vm.upsertAssistant
 import com.miniichatNext.carter.vm.upsertProvider
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 
 /** 路由表：新增页面只需在这里加一项（配合AppNavRegistry可自定义过渡动画） */
@@ -155,7 +161,23 @@ fun AppRoot(vm: ChatViewModel) {
     val visibleMcpServers = mcpServers.filter { it.enabled }
     val workspaces by vm.workspaces.collectAsState()
     val context = LocalContext.current
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    // 抽屉不参与状态恢复，冷启动一律从闭合开始。ModalNavigationDrawer在锚点初始化前
+    // 会先把抽屉放在打开位置；这段期间保持抽屉透明、遮罩透明，等偏移落在闭合位再显示。
+    val drawerState = remember { DrawerState(DrawerValue.Closed) }
+    val drawerWidthPx = with(LocalDensity.current) { 312.dp.toPx() }
+    var drawerVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(drawerState, drawerWidthPx) {
+        val closed = withTimeoutOrNull(500L) {
+            snapshotFlow { runCatching { drawerState.currentOffset }.getOrDefault(0f) }
+                .first { it <= -drawerWidthPx + 1f }
+            true
+        } ?: false
+        if (closed) {
+            drawerState.snapTo(DrawerValue.Closed)
+            drawerVisible = true
+        }
+    }
+    val drawerScrim = DrawerDefaults.scrimColor
     val scope = rememberCoroutineScope()
 
     // 统一导航：返回栈+过渡动画（动画可在AppNavRegistry里按路由定制）
@@ -228,16 +250,17 @@ fun AppRoot(vm: ChatViewModel) {
 
     val conversations by vm.conversations.collectAsState()
     val activeId by vm.activeId.collectAsState()
+    val loadedConversation by vm.activeConversation.collectAsState()
     val settings by vm.settings.collectAsState()
     LaunchedEffect(Unit) {
         if (vm.startupApplied) return@LaunchedEffect
         vm.startupApplied = true
         val startup = vm.settingsRepo.settings.first()
-        val previous = vm.store.snapshot().filter { it.assistantId == startup.activeAssistantId }
+        val previous = vm.store.forAssistant(startup.activeAssistantId)
         if (startup.autoNewChatOnLaunch) vm.newConversation()
         else {
             val lastId = context.getSharedPreferences("last_conversation", android.content.Context.MODE_PRIVATE).getString("id", null)
-            vm.selectConversation(previous.firstOrNull { it.id == lastId }?.id ?: previous.maxByOrNull { it.updatedAt }?.id)
+            vm.selectConversation(previous.firstOrNull { it.id == lastId }?.id ?: previous.firstOrNull()?.id)
         }
     }
 
@@ -282,8 +305,11 @@ fun AppRoot(vm: ChatViewModel) {
     val effectiveSkillIds: Set<String> by remember(activeId) {
         vm.effectiveSkillIdsFlow(activeId)
     }.collectAsState(emptySet<String>())
-    val assistantConversations = conversations.filter { it.assistantId == settings.activeAssistantId }
-    val activeConv = assistantConversations.firstOrNull { it.id == activeId }
+    val knownAssistants = assistants.mapTo(HashSet()) { it.id } + "default"
+    val assistantConversations = conversations.filter {
+        it.assistantId == settings.activeAssistantId || it.assistantId !in knownAssistants
+    }
+    val activeConv = loadedConversation?.takeIf { it.id == activeId }
     // busy态按对话隔离：对话a的流未结束不该让新建的对话显示停止键
     val conversationBusy = (isStreaming && streamingConvId == activeConv?.id) ||
         (toolBusy && pendingConvId == activeConv?.id)
@@ -417,7 +443,10 @@ fun AppRoot(vm: ChatViewModel) {
                     Screen.Chat -> {
                         ModalNavigationDrawer(
                             drawerState = drawerState,
+                            gesturesEnabled = drawerVisible,
+                            scrimColor = if (drawerVisible) drawerScrim else Color.Transparent,
                             drawerContent = {
+                                Box(Modifier.graphicsLayer { alpha = if (drawerVisible) 1f else 0f }) {
                                 GlassDrawer(
                                     conversations = assistantConversations,
                                     activeId = activeId,
@@ -450,6 +479,7 @@ fun AppRoot(vm: ChatViewModel) {
                                         }
                                     }
                                 )
+                                }
                             }
                         ) {
                             ChatScreen(
@@ -524,7 +554,12 @@ fun AppRoot(vm: ChatViewModel) {
                                 onSuggestions = { anchorMsgId, page, manual -> vm.generateSuggestions(anchorMsgId, page, manual) },
                                 suggestionsGenerating = suggestionsGenerating,
                                 onRenameChat = { newTitle -> vm.renameConversation(activeId ?: "", newTitle) },
-                                onMenu = { scope.launch { drawerState.open() } },
+                                onMenu = {
+                                    scope.launch {
+                                        drawerVisible = true
+                                        drawerState.open()
+                                    }
+                                },
                                 onSend = { text, atts -> vm.sendMessage(text, atts) },
                                 onStop = { vm.stopStreaming() },
                                 onRegenerateFrom = { msgId -> vm.regenerateFrom(msgId) },

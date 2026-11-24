@@ -15,18 +15,24 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.miniichatNext.carter.data.store.migration.ConversationMigration
+import com.miniichatNext.carter.data.store.migration.ConversationMigrationService
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.ui.AppRoot
+import com.miniichatNext.carter.ui.migration.ConversationMigrationScreen
+import com.miniichatNext.carter.ui.onboarding.OnboardingState
 import com.miniichatNext.carter.ui.onboarding.WelcomeActivity
 import com.miniichatNext.carter.ui.theme.MiniiChatTheme
 import com.miniichatNext.carter.vm.ChatViewModel
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -57,40 +63,65 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
-        if (intent.getBooleanExtra(com.miniichatNext.carter.data.update.UpdateDownloadService.OPEN_DOWNLOAD, false)) {
-            com.miniichatNext.carter.data.update.UpdateDownloadSession.show()
-        }
-        if (intent.getBooleanExtra("open_debug", false)) {
-            com.miniichatNext.carter.debug.DebugNavRequest.openDebug.value = true
-        }
-        if (intent.getBooleanExtra("open_debug_panel", false)) {
-            com.miniichatNext.carter.debug.DebugNavRequest.openPanel.value = true
+        if (ConversationMigration.flow.value.phase == ConversationMigration.Phase.READY) {
+            dispatchIntent(intent)
+        } else if (intent.extras != null) {
+            setIntent(intent)
         }
     }
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        (application as MiniiChatApplication).recordAppLaunch()
+    private fun dispatchIntent(intent: Intent?) {
         if (intent?.getBooleanExtra(com.miniichatNext.carter.data.update.UpdateDownloadService.OPEN_DOWNLOAD, false) == true) {
             com.miniichatNext.carter.data.update.UpdateDownloadSession.show()
         }
-        if (!com.miniichatNext.carter.ui.onboarding.OnboardingState.isDone(this)) {
-            startActivity(Intent(this, WelcomeActivity::class.java))
-            finish()
-            return
-        }
-        com.miniichatNext.carter.debug.DebugLog.i(
-            "Activity", "MainActivity.onCreate (savedState=${savedInstanceState != null})"
-        )
-        // 调试球"打开Debug页"：从悬浮球启动时带上extra
         if (intent?.getBooleanExtra("open_debug", false) == true) {
             com.miniichatNext.carter.debug.DebugNavRequest.openDebug.value = true
         }
         if (intent?.getBooleanExtra("open_debug_panel", false) == true) {
             com.miniichatNext.carter.debug.DebugNavRequest.openPanel.value = true
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        ConversationMigrationService.start(this)
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val app = application as MiniiChatApplication
+        DebugLog.i("Activity", "MainActivity.onCreate (savedState=${savedInstanceState != null})")
         enableEdgeToEdge()
         setContent {
+            val upgrade by ConversationMigration.flow.collectAsState()
+            LaunchedEffect(upgrade.phase) {
+                when (upgrade.phase) {
+                    ConversationMigration.Phase.CHECKING -> ConversationMigration.probe(applicationContext)
+                    ConversationMigration.Phase.REQUIRED -> if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                        ConversationMigrationService.start(this@MainActivity)
+                    }
+                    ConversationMigration.Phase.READY -> {
+                        app.recordAppLaunch()
+                        app.startNormalServices()
+                        if (!OnboardingState.isDone(this@MainActivity)) {
+                            startActivity(Intent(this@MainActivity, WelcomeActivity::class.java))
+                            finish()
+                        } else dispatchIntent(intent)
+                    }
+                    else -> Unit
+                }
+            }
+            if (upgrade.phase == ConversationMigration.Phase.CHECKING) return@setContent
+            if (upgrade.phase != ConversationMigration.Phase.READY || !OnboardingState.isDone(this@MainActivity)) {
+                if (upgrade.phase != ConversationMigration.Phase.READY) {
+                    MiniiChatTheme(themeMode = "system", dynamicColor = true) {
+                        ConversationMigrationScreen(upgrade, ConversationMigration::retry) {
+                            lifecycleScope.launch { ConversationMigration.acknowledge(applicationContext) }
+                        }
+                    }
+                }
+                return@setContent
+            }
             val s by vm.settings.collectAsState()
 
             val prefs = getSharedPreferences("locale_cache", MODE_PRIVATE)

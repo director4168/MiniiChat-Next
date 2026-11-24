@@ -22,5 +22,6 @@ data class BackupSnapshot(
     val profile: UserProfile,
     val mcp: String,
     val theme: String = "",
+    val conversationFormat: Int = 1,
 )
 

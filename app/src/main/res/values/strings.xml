@@ -619,7 +619,7 @@
     <string name="update_probe_latency">%1$d ms</string>
     <string name="update_probe_speed">Sample throughput: %1$s</string>
     <string name="update_probing_nodes">Testing download sources: %1$d/%2$d</string>
-    <string name="update_direct_download">Downloading directly from the original URL</string>
+    <string name="update_direct_download">Direct from original URL</string>
     <string name="update_using_node">Selected source: %1$s</string>
     <string name="update_verifying_package">Verifying APK checksum, version, architecture and signing certificate…</string>
     <string name="update_reused_package">The verified APK is already downloaded; no download is needed.</string>
@@ -1029,7 +1029,9 @@
     <string name="backup_saved">Backup saved</string>
     <string name="backup_missing">Some linked files were not readable or excluded. Their original references were retained. Count</string>
     <string name="backup_restore_confirm">Choose a restore mode. Replace overwrites existing application data. Merge keeps existing items with the same ID and imports new items. Settings and profile remain unchanged during merge. The app will restart after restoring.</string>
-    <string name="backup_replace_warning">Replace will overwrite all existing application configuration and conversations. Continue?</string>
+    <string name="backup_legacy_partial">Older conversations were upgraded. %1$d unreadable entries were skipped; keep the original backup.</string>
+    <string name="backup_legacy_upgraded">Older backup data was upgraded to the new database.</string>
+    <string name="backup_replace_warning">Replace overwrites the local data covered by this backup. Continue?</string>
     <string name="backup_replace">Replace existing data</string>
     <string name="backup_merge">Merge with existing data</string>
 
@@ -1122,12 +1124,12 @@
     <string name="debug_role_on_surface_variant">On surface variant</string>
     <string name="debug_role_outline">Outline</string>
     <string name="debug_role_outline_variant">Outline variant</string>
-    <string name="debug_role_error">Error</string>
-    <string name="debug_role_on_error">On error</string>
-    <string name="debug_role_tool_shizuku_background">Shizuku tool call background</string>
-    <string name="debug_role_tool_root_background">Root tool call background</string>
+    <string name="debug_role_error">Error / risk</string>
+    <string name="debug_role_on_error">On error / risk</string>
+    <string name="debug_role_tool_shizuku_background">Warning 2</string>
+    <string name="debug_role_tool_root_background">Error / risk 2</string>
     <string name="debug_role_warning">Warning</string>
-    <string name="debug_role_warning_action">Warning and error actions</string>
+    <string name="debug_role_warning_action">Toast button</string>
 
 
 
@@ -1148,4 +1150,55 @@
     <string name="diagram_zoom_hint">Pinch to zoom; drag to move</string>
     <string name="diagram_render_failed">Diagram rendering failed: %1$s</string>
     <string name="update_force_install_confirm">The downloaded APK failed checksum or version verification. Continue only if you trust the file. Android still checks installability and may reject an older version. Continue?</string>
+
+
+
+    <!-- Application data upgrade -->
+    <string name="migration_title">Application data upgrade</string>
+    <string name="migration_checking">Checking conversation storage</string>
+    <string name="migration_preparing">Preparing the upgrade</string>
+    <string name="migration_reading">Reading and keeping the old data</string>
+    <string name="migration_writing">Migrating conversations</string>
+    <string name="migration_verifying">Verifying the new database</string>
+    <string name="migration_done">Upgrade complete</string>
+    <string name="migration_warnings">Upgrade complete, with records to review</string>
+    <string name="migration_failed">Upgrade paused</string>
+    <string name="migration_invalid">Failed to read or verify the conversation data or database.</string>
+    <string name="migration_no_space">Not enough free storage. Free up space and try again.</string>
+    <string name="migration_service_failed">The foreground service failed to start. Keep the app in the foreground and try again.</string>
+    <string name="migration_interrupted">The upgrade was interrupted by the system. You can continue from the latest checkpoint.</string>
+    <string name="migration_retained">The original data has been kept.</string>
+    <string name="migration_retry">Retry upgrade</string>
+    <string name="migration_continue">Continue to the app</string>
+    <string name="migration_notification_progress">Processing records: %1$d / %2$d</string>
+    <string name="migration_summary">Migrated %1$d conversations and %2$d messages</string>
+    <string name="migration_issues">%1$d repairs or conflicts, and %2$d entries could not be read and remain in the original data</string>
+    <string name="migration_wait_hint">Do not close the app before the upgrade finishes. You can also check progress in the notification.</string>
+    <string name="migration_unknown_sender">Unknown sender</string>
+    <string name="date_unknown">Unknown date</string>
+    <string name="migration_duration">Generation time: %1$d ms</string>
+    <string name="migration_total_tokens">Total tokens: %1$s</string>
+    <string name="migration_last_usage">Most recent request</string>
+    <string name="migration_report">View upgrade report</string>
+    <string name="migration_report_close">Close report</string>
+    <string name="migration_report_legend">Source record: repairs or conflicts / unreadable entries. Up to 200 entries are shown here.</string>
+    <string name="migration_compression_unknown">The history contains messages from an unknown sender. Choose a compression range that does not include them.</string>
+
+
+
+    <!-- Debug clear data -->
+    <string name="debug_clear_data_title">Clear data</string>
+    <string name="debug_clear_data_sub">Clear all data for this app</string>
+    <string name="debug_clear_data_confirm_title">Clear all local data?</string>
+    <string name="debug_clear_data_confirm_message">This will delete all data for this app. If you have not backed it up, it can never be recovered.</string>
+    <string name="debug_clear_data_continue">Continue</string>
+    <string name="debug_clear_data_final_title">Type the confirmation word</string>
+    <string name="debug_clear_data_final_message">Type “%1$s” to clear data. After deletion the process will exit, and the next launch opens the first-run guide.</string>
+    <string name="debug_clear_data_keyword">CLEAR</string>
+    <string name="debug_clear_data_action">Clear and exit</string>
+    <string name="debug_clear_data_failed">The system did not accept the clear request. Try again, or clear storage in the system app settings.</string>
+    <string name="migration_cleaning">Removing migrated old data</string>
+    <string name="migration_configuration">Migrating app settings</string>
+    <string name="migration_cleanup_failed">The new database passed verification, but cleanup of the old files is not finished.</string>
+    <string name="migration_legacy_removed">Removed the old files that finished migrating.</string>
 </resources>

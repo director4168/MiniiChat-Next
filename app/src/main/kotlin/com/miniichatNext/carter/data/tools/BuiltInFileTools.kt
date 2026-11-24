@@ -69,7 +69,16 @@ object BuiltInFileTools {
         .distinctBy { it.path }
         .also { cachedRoots = it }
 
-    private fun safeFile(rawPath: String): File = resolveToolPath(rawPath, allowedRoots())
+    private fun protectedConversationPath(file: File, includesChildren: Boolean = false): Boolean {
+        val path = file.toPath()
+        val legacy = appFilesDir?.canonicalFile?.resolve("datastore")?.toPath() ?: return false
+        return path.startsWith(legacy) ||
+            (includesChildren && legacy.startsWith(path))
+    }
+
+    private fun safeFile(rawPath: String): File = resolveToolPath(rawPath, allowedRoots()).also {
+        require(!protectedConversationPath(it)) { "Protected conversation data" }
+    }
 
     /** 工具名列表（给权限页计数、isBuiltIn等无文案场景用） */
     val toolNames: List<String> = listOf(
@@ -298,11 +307,13 @@ object BuiltInFileTools {
         return ok(context.getString(R.string.builtin_clarify_shown))
     }
 
+    private fun protectedFile(file: File): Boolean = protectedConversationPath(file.canonicalFile)
+
     private fun fileList(args: JsonObject): McpToolResult {
         val f = safeFile(requireArg(args, "path"))
         if (!f.exists()) return fail("not found: ${f.path}")
         if (!f.isDirectory) return fail("not a directory: ${f.path}")
-        val children = f.listFiles()?.sortedBy { it.name } ?: emptyList()
+        val children = f.listFiles()?.filterNot(::protectedFile)?.sortedBy { it.name } ?: emptyList()
         val sb = StringBuilder()
         sb.append("directory: ").append(f.path).append('\n')
         children.forEach { c ->
@@ -352,13 +363,14 @@ object BuiltInFileTools {
 
     private fun fileDelete(args: JsonObject): McpToolResult {
         val file = safeFile(requireArg(args, "path"))
-        require(allowedRoots().none { it == file }) { "Refusing to delete an allowed root" }
+        require(allowedRoots().none { it == file } && !protectedConversationPath(file, true)) { "Protected directory" }
         if (!file.exists()) return fail("not found: ${file.path}")
         return if (deleteTreeNoFollow(file)) ok("deleted: ${file.path}") else fail("delete failed: ${file.path}")
     }
 
     private fun fileMoveOrCopy(args: JsonObject, copy: Boolean): McpToolResult {
         val from = safeFile(requireArg(args, "from"))
+        require(!protectedConversationPath(from, true)) { "Protected directory" }
         val directoryOrTarget = safeFile(requireArg(args, "to"))
         val target = if (directoryOrTarget.isDirectory) File(directoryOrTarget, from.name) else directoryOrTarget
         require(!Files.isSymbolicLink(target.toPath()) && safeFile(target.path) == target) { "Invalid destination" }
@@ -417,6 +429,7 @@ object BuiltInFileTools {
         if (!f.exists()) return fail("not found: ${f.path}")
         val target = runCatching { resolveRenameTarget(f, newName, allowedRoots()) }
             .getOrElse { return fail(it.message ?: "invalid rename target") }
+        require(!protectedConversationPath(f, true) && !protectedConversationPath(target, true)) { "Protected directory" }
         val done = f.renameTo(target)
         return if (done) ok("renamed ${f.name} -> $newName") else fail("rename failed")
     }
@@ -456,7 +469,7 @@ object BuiltInFileTools {
         val out = mutableListOf<String>()
         root.walkTopDown().forEach { f ->
             if (out.size >= max) return@forEach
-            if (matcher(f.name)) out.add(f.path)
+            if (!protectedFile(f) && matcher(f.name)) out.add(f.path)
         }
         val mode = if (useRegex) "regex" else "keyword"
         val sb = StringBuilder()

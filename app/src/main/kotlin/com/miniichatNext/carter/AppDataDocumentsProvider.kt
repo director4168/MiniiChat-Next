@@ -52,6 +52,20 @@ class AppDataDocumentsProvider : DocumentsProvider() {
         Document.COLUMN_LAST_MODIFIED
     )
 
+    private fun protectedPath(file: File, includesChildren: Boolean = false): Boolean {
+        val root = appDataRoot.canonicalFile
+        val target = file.canonicalFile.toPath()
+        val protected = listOf(
+            File(root, "databases"),
+            File(root, "no_backup/conversation-migration"),
+            File(root, "files/datastore"),
+        )
+        return protected.any { entry ->
+            val path = entry.toPath()
+            target.startsWith(path) || (includesChildren && path.startsWith(target))
+        }
+    }
+
     private val appDataRoot: File
         get() {
             val ctx = context ?: throw FileNotFoundException("Context is unavailable")
@@ -109,7 +123,7 @@ class AppDataDocumentsProvider : DocumentsProvider() {
                     runCatching {
                         val canonical = child.canonicalFile
                         ensureInside(canonical)
-                        canonical.parentFile == parent && !java.nio.file.Files.isSymbolicLink(child.toPath())
+                        canonical.parentFile == parent && !protectedPath(canonical) && !java.nio.file.Files.isSymbolicLink(child.toPath())
                     }.getOrDefault(false)
                 }
                 ?.sortedWith(compareBy<File> { !it.isDirectory }.thenBy { it.name.lowercase() })
@@ -155,6 +169,7 @@ class AppDataDocumentsProvider : DocumentsProvider() {
 
         // 同名时按“名字(1).ext”找一个可用的
         val finalTarget = if (target.exists()) uniqueChild(target) else target
+        if (protectedPath(finalTarget)) throw FileNotFoundException("Protected application data")
         if (mimeType == Document.MIME_TYPE_DIR) {
             if (!finalTarget.mkdirs() && !finalTarget.isDirectory) {
                 throw FileNotFoundException("Failed to create directory: $safeName")
@@ -174,6 +189,7 @@ class AppDataDocumentsProvider : DocumentsProvider() {
         if (target == appDataRoot.canonicalFile) {
             throw FileNotFoundException("Refusing to delete the root")
         }
+        if (protectedPath(target, includesChildren = true)) throw FileNotFoundException("Protected application data")
         val deleted = deleteTreeNoFollow(target)
         if (!deleted) throw FileNotFoundException("Failed to delete: $documentId")
     }
@@ -188,6 +204,9 @@ class AppDataDocumentsProvider : DocumentsProvider() {
         ensureInside(target)
         if (target == source) return getDocumentId(source)
         val finalTarget = if (target.exists()) uniqueChild(target) else target
+        if (protectedPath(source, includesChildren = true) || protectedPath(finalTarget, includesChildren = true)) {
+            throw FileNotFoundException("Protected application data")
+        }
         if (!source.renameTo(finalTarget)) throw FileNotFoundException("Failed to rename: $documentId")
         return getDocumentId(finalTarget)
     }
@@ -230,7 +249,7 @@ class AppDataDocumentsProvider : DocumentsProvider() {
         } else {
             flags = flags or Document.FLAG_SUPPORTS_WRITE
         }
-        if (!isRoot) {
+        if (!isRoot && !protectedPath(file, includesChildren = true)) {
             // 根目录本身不允许删除/重命名
             flags = flags or Document.FLAG_SUPPORTS_DELETE or Document.FLAG_SUPPORTS_RENAME
         }
@@ -284,6 +303,7 @@ class AppDataDocumentsProvider : DocumentsProvider() {
         }.canonicalFile
 
         ensureInside(target)
+        if (protectedPath(target)) throw FileNotFoundException("Protected application data")
         if (requireExists && !target.exists()) throw FileNotFoundException("Not found: $documentId")
         return target
     }

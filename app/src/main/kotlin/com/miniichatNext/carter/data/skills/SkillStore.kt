@@ -7,11 +7,8 @@
 package com.miniichatNext.carter.data.skills
 
 import android.content.Context
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
+import com.miniichatNext.carter.data.store.SqlPreferences
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.util.AppJson
 import com.miniichatNext.carter.util.deleteTreeNoFollow
@@ -33,7 +30,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 
-private val Context.skillsDataStore: DataStore<Preferences> by preferencesDataStore(name = "skills")
+private val Context.skillsPreferences get() = SqlPreferences(this, "skills")
 
 class SkillStore(private val context: Context) {
     private val mutex = Mutex()
@@ -146,7 +143,7 @@ class SkillStore(private val context: Context) {
     fun getSkillDir(name: String): File? = SkillFrontmatterParser.resolveSkillDir(skillsRoot(), name)
 
     private suspend fun readLegacy(): List<Skill> {
-        val raw = context.skillsDataStore.data.first()[LEGACY_KEY] ?: return emptyList()
+        val raw = context.skillsPreferences.data.first()[LEGACY_KEY] ?: return emptyList()
         return try { legacyJson.decodeFromString(ListSerializer(Skill.serializer()), raw) }
         catch (_: IllegalArgumentException) { emptyList() }
     }

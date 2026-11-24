@@ -34,7 +34,8 @@ internal fun Message.nerdStats(usage: TokenUsage): NerdStats {
     val last = if (usage.estimated) usage
     else lastRequestUsage()?.takeIf { it.promptTokens + it.completionTokens > 0 } ?: usage
     // 生成中也要显示耗时与速度：generationTimeMs在流式期间持续累加
-    val durationMillis = (generationTimeMs ?: finishedAt?.let { it - createdAt })?.takeIf { it > 0 }
+    val durationMillis = (generationTimeMs ?: usage.durationMs.takeIf { it > 0 } ?: if (legacyImported) null else
+        createdAt?.let { created -> finishedAt?.minus(created) })?.takeIf { it > 0 }
     return NerdStats(
         total = usage,
         lastUsage = last,

@@ -132,14 +132,18 @@ class UpdateDownloadService : Service() {
         val settings = SettingsRepository(this).settings.first()
         val nodes = if (settings.updateNodesInvalid) emptyList() else settings.updateNodes
         val sources = UpdateDownloadSources.candidates(selectedPackage.downloadUrl, settings.updateNodesEnabled, nodes)
-        DebugLog.i("Update", "nodesEnabled=${settings.updateNodesEnabled} candidates=${sources.size}")
+        // 测速走固定文件；真实APK仍按节点名映射回原下载地址。
+        val probes = UpdateDownloadSources.probeCandidates(settings.updateNodesEnabled, nodes)
+            .filter { probe -> sources.any { it.key == probe.key } }
+        DebugLog.i("Update", "nodesEnabled=${settings.updateNodesEnabled} candidates=${sources.size} probes=${probes.size}")
         val transfer = UpdateSourceDownloader().also { downloader = it }
         val selected = if (sources.size == 1) {
             sources.single()
         } else {
-            publish(UpdateDownloadSnapshot(info, phase = UpdatePhase.PROBING, sourceCount = sources.size,
-                probes = sources.map { UpdateNodeProbe(it.key) }), true)
-            val results = transfer.probe(sources, onStarted = { source ->
+            require(probes.isNotEmpty()) { "No probe source for the selected download" }
+            publish(UpdateDownloadSnapshot(info, phase = UpdatePhase.PROBING, sourceCount = probes.size,
+                probes = probes.map { UpdateNodeProbe(it.key) }), true)
+            val results = transfer.probe(probes, onStarted = { source ->
                 synchronized(this) {
                     snapshot?.let { publish(it.copy(source = source.key, probes = it.probes.withProbeStarted(source.key))) }
                 }
@@ -149,8 +153,9 @@ class UpdateDownloadService : Service() {
                         tested = maxOf(completed, it.tested), sourceCount = count, probes = it.probes.withProbeResult(result))) }
                 }
             }
-            UpdateDownloadSources.ranked(results).firstOrNull()
+            val best = UpdateDownloadSources.ranked(results).firstOrNull()
                 ?: error(results.joinToString("\n") { "${it.key}: ${it.error}" })
+            sources.firstOrNull { it.key == best.key } ?: sources.first()
         }
         publish(UpdateDownloadSnapshot(info, phase = UpdatePhase.DOWNLOADING, source = selected.key, tested = 1, sourceCount = 1,
             direct = selected.url == selectedPackage.downloadUrl), true)

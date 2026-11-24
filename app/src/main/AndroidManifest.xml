@@ -101,6 +101,12 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <service
+            android:name=".data.store.migration.ConversationMigrationService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync"
+            android:stopWithTask="false" />
+
         <!-- DocumentsProvider -->
         <provider
             android:name=".AppDataDocumentsProvider"

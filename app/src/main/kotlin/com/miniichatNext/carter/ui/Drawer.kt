@@ -421,8 +421,10 @@ private fun groupConversationsByDate(
     val today = mutableListOf<Conversation>(); val yest = mutableListOf<Conversation>()
     val sevenDays = mutableListOf<Conversation>(); val thirtyDays = mutableListOf<Conversation>()
     val older = mutableListOf<Conversation>()
+    val unknown = mutableListOf<Conversation>()
     list.sortedByDescending { it.updatedAt }.forEach { c ->
         when {
+            c.updatedAt == null -> unknown += c
             c.updatedAt >= todayStart -> today += c
             c.updatedAt >= yStart -> yest += c
             c.updatedAt >= sStart -> sevenDays += c
@@ -436,6 +438,7 @@ private fun groupConversationsByDate(
     if (sevenDays.isNotEmpty()) out += R.string.date_previous_7 to sevenDays
     if (thirtyDays.isNotEmpty()) out += R.string.date_previous_30 to thirtyDays
     if (older.isNotEmpty()) out += R.string.date_older to older
+    if (unknown.isNotEmpty()) out += R.string.date_unknown to unknown
     return out
 }
 

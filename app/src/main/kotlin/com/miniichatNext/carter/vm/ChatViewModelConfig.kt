@@ -34,7 +34,7 @@ internal fun ChatViewModel.selectAssistant(id: String) {
     viewModelScope.launch {
         settingsRepo.update { it.copy(activeAssistantId = id) }
         val convForNew = store.forAssistant(id)
-        _activeId.value = convForNew.maxByOrNull { it.updatedAt }?.id
+        _activeId.value = convForNew.firstOrNull()?.id
     }
 }
 

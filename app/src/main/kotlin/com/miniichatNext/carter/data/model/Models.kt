@@ -62,7 +62,8 @@ data class TokenUsage(
     val cachedTokens: Int = 0,
     val promptEstimated: Boolean = false,
     val completionEstimated: Boolean = false,
-    val contextEstimated: Boolean = false
+    val contextEstimated: Boolean = false,
+    val legacyMissingFields: Set<String> = emptySet(),
 )
 
 /** 消息内记录的一次工具调用与执行结果 */
@@ -76,6 +77,7 @@ data class ToolInvocation(
     val result: String = "",
     val error: String? = null,
     val mcpBinding: String? = null,
+    val historical: Boolean = false,
 ) {
     val argumentsJson: String get() = arguments
     val resultOutput: String get() = result
@@ -134,7 +136,9 @@ data class Message(
     val orderedParts: List<MessageSegment> = emptyList(),
     /** 续写指令等隐形消息：UI不渲染，但参与API请求历史 */
     val hidden: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long? = System.currentTimeMillis(),
+    val editedAt: Long? = null,
+    val legacyImported: Boolean = false,
 ) {
     fun lastRequestUsage(): TokenUsage? = lastUsage ?: usage
     fun contextTokens(): Int? = lastRequestUsage()?.let { it.promptTokens + it.completionTokens }
@@ -185,8 +189,8 @@ data class Conversation(
      * null=自动（AUTO，等价于让服务商决定，旧数据兼容）
      */
     val thinkingLevel: String? = null,
-    val createdAt: Long = System.currentTimeMillis(),
-    val updatedAt: Long = System.currentTimeMillis()
+    val createdAt: Long? = System.currentTimeMillis(),
+    val updatedAt: Long? = System.currentTimeMillis()
 ) {
     /**
      * 该对话的「思考等级」。null=自动（AUTO，等价于「不干预」）。

@@ -7,163 +7,155 @@
 package com.miniichatNext.carter.data.store
 
 import android.content.Context
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.miniichatNext.carter.data.model.Conversation
 import com.miniichatNext.carter.data.model.Message
-import com.miniichatNext.carter.debug.DebugLog
-import com.miniichatNext.carter.util.AppJson
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.Json
+import kotlinx.coroutines.withContext
 
-private val Context.conversationsDataStore: DataStore<Preferences> by preferencesDataStore(name = "conversations")
+class ConversationStore(context: Context) {
+    private val database = ConversationDatabase.get(context)
+    private val _conversations = MutableStateFlow<List<Conversation>>(emptyList())
+    private val _active = MutableStateFlow<Conversation?>(null)
+    private var observedId: String? = null
+    val conversationsFlow: StateFlow<List<Conversation>> = _conversations.asStateFlow()
+    val activeConversation: StateFlow<Conversation?> = _active.asStateFlow()
 
-/**
- * 会话存储：每个会话一个key（conv_<id>），读取侧用内存缓存做UI数据源。
- * 缓存由本类独占维护（所有写入都过这里的mutex），所以不会读到陈旧数据。
- */
-class ConversationStore(private val context: Context) {
-
-    private val mutex = Mutex()
-    private val json get() = AppJson.json
-    private val legacyKey = stringPreferencesKey(LEGACY_KEY)
-
-    private val _cache = MutableStateFlow<List<Conversation>>(emptyList())
-    val conversationsFlow: StateFlow<List<Conversation>> = _cache.asStateFlow()
-
-    @Volatile
-    private var hydrated = false
-
-    private fun keyFor(id: String) = stringPreferencesKey(KEY_PREFIX + id)
-
+    suspend fun observe(id: String?) = mutex.withLock {
+        val next = io { id?.let(database::get) }
+        observedId = id
+        _active.value = next
+    }
 
     suspend fun snapshot(): List<Conversation> = mutex.withLock {
-        hydrateLocked()
-        _cache.value
+        io { database.transaction { database.summaries().map { checkNotNull(database.get(it.id)) } } }
     }
 
-    suspend fun forAssistant(assistantId: String): List<Conversation> =
-        snapshot().filter { it.assistantId == assistantId }
-
-    /** 首次访问时把磁盘内容读进缓存，并把旧的单key格式迁移成per-conversation key */
-    private suspend fun hydrateLocked() {
-        if (hydrated) return
-        val dataStore = context.conversationsDataStore
-        val prefs = dataStore.data.first()
-        val loaded = if (prefs[legacyKey] == null) {
-            readPerConversation(prefs)
-        } else {
-            val migrated = dataStore.edit { current ->
-                val raw = current[legacyKey] ?: return@edit
-                val legacy = try {
-                    json.decodeFromString(ListSerializer(Conversation.serializer()), raw)
-                } catch (_: IllegalArgumentException) {
-                    DebugLog.w("Store", "Legacy conversations could not be read; original retained")
-                    return@edit
-                }
-                if (legacy.map { it.id }.toSet().size != legacy.size) {
-                    DebugLog.w("Store", "Duplicate legacy conversation IDs; original retained")
-                    return@edit
-                }
-                if (legacy.any { current[keyFor(it.id)]?.let { stored -> decodeOne(stored) == null } == true }) {
-                    DebugLog.w("Store", "Conflicting conversation record; original retained")
-                    return@edit
-                }
-                legacy.forEach { conversation ->
-                    val key = keyFor(conversation.id)
-                    if (current[key] == null) current[key] = encodeOne(conversation)
-                }
-                current.remove(legacyKey)
-            }
-            readPerConversation(migrated)
-        }
-        _cache.value = loaded
-        hydrated = true
+    suspend fun get(id: String): Conversation? = mutex.withLock {
+        _active.value?.takeIf { it.id == id } ?: io { database.transaction { database.get(id) } }
     }
 
-    private fun readPerConversation(prefs: Preferences): List<Conversation> =
-        prefs.asMap().entries
-            .filter { it.key.name.startsWith(KEY_PREFIX) }
-            .mapNotNull { (k, value) ->
-                val raw = value as? String ?: return@mapNotNull null
-                val conv = decodeOne(raw)
-                if (conv == null) {
-                    // 不能静默丢弃：解析失败说明这条数据有问题，至少要在日志里留痕，
-                    // 否则用户只会看到"对话凭空消失"，且无法定位
-                    DebugLog.w(
-                        "Store",
-                        "conversation.decode failed key=${k.name} bytes=${raw.length}"
-                    )
-                }
-                conv
-            }
+    suspend fun owner(id: String, activeId: String?): String? = mutex.withLock {
+        _active.value?.takeIf { conv -> conv.id == activeId && conv.messages.any { it.id == id } }?.id ?: io { database.owner(id) }
+    }
 
+    suspend fun forAssistant(assistantId: String): List<Conversation> = mutex.withLock {
+        io { database.summaries(assistantId) }
+    }
 
-    /** 全量替换（会重写每个会话的key） */
+    suspend fun loadSummaries() = mutex.withLock { refresh() }
+
     suspend fun save(list: List<Conversation>) = mutex.withLock {
-        hydrateLocked()
-        val previousIds = _cache.value.map { it.id }.toSet()
-        val nextIds = list.map { it.id }.toSet()
-        context.conversationsDataStore.edit { p ->
-            (previousIds - nextIds).forEach { p.remove(keyFor(it)) }
-            list.forEach { conv -> p[keyFor(conv.id)] = encodeOne(conv) }
+        require(list.map { it.id }.distinct().size == list.size)
+        io {
+            database.transaction {
+                val nextIds = list.mapTo(HashSet()) { it.id }
+                database.summaries().filterNot { it.id in nextIds }.forEach { database.delete(it.id) }
+                list.forEach { database.putConversation(database.get(it.id), it) }
+            }
         }
-        _cache.value = list
+        refresh()
+        _active.value = list.firstOrNull { it.id == observedId }
     }
 
-    suspend fun upsert(conv: Conversation) = mutex.withLock {
-        hydrateLocked()
-        com.miniichatNext.carter.debug.DebugLog.d(
-            "Store",
-            "conversation.upsert id=${conv.id} msgs=${conv.messages.size} " +
-                "assistant=${conv.assistantId} title=${conv.title}"
-        )
-        context.conversationsDataStore.edit { p -> p[keyFor(conv.id)] = encodeOne(conv) }
-        val cur = _cache.value.toMutableList()
-        val idx = cur.indexOfFirst { it.id == conv.id }
-        if (idx >= 0) cur[idx] = conv else cur.add(conv)
-        _cache.value = cur
+    internal suspend fun restoreLegacyBackup(
+        list: List<Conversation>?,
+        preferences: Map<String, Map<String, SqlPreference>>,
+        replace: Boolean,
+    ) = mutex.withLock {
+        require(list == null || list.map { it.id }.distinct().size == list.size)
+        io {
+            database.transaction {
+                if (list != null) {
+                    if (replace) {
+                        val nextIds = list.mapTo(HashSet()) { it.id }
+                        database.summaries().filterNot { it.id in nextIds }.forEach { database.delete(it.id) }
+                    }
+                    list.forEach { conv ->
+                        if (replace || !database.exists(conv.id)) {
+                            database.putConversation(database.get(conv.id), conv)
+                            check(database.get(conv.id) == conv)
+                        }
+                    }
+                }
+                for ((namespace, imported) in preferences) {
+                    val before = database.readPreferences(namespace)
+                    val after = if (replace) imported else imported + before
+                    database.writePreferences(namespace, before, after)
+                    check(database.readPreferences(namespace).asPreferences().encodePreferences() == after)
+                }
+                database.verifyIntegrity()
+            }
+            if (preferences.isNotEmpty()) database.notifyPreferencesChanged()
+            observedId?.let(database::get)
+        }.also { active ->
+            refresh()
+            _active.value = active
+        }
+        Unit
     }
 
-    /** 读改写共用一把锁，避免设置与流式落库互相覆盖。 */
+    suspend fun upsert(conv: Conversation) {
+        updateConversation(conv.id, create = { conv }) { conv }
+    }
+
     suspend fun updateConversation(
         id: String,
         create: (() -> Conversation)? = null,
         transform: (Conversation) -> Conversation,
     ): Conversation? = mutex.withLock {
-        hydrateLocked()
-        val cur = _cache.value
-        val index = cur.indexOfFirst { it.id == id }
-        val current = cur.getOrNull(index) ?: create?.invoke() ?: return@withLock null
-        val next = transform(current)
-        require(next.id == id) { "Conversation id changed during update" }
-        if (index >= 0 && next == current) return@withLock current
-        val updated = next.copy(updatedAt = System.currentTimeMillis())
-        context.conversationsDataStore.edit { p -> p[keyFor(id)] = encodeOne(updated) }
-        _cache.value = cur.toMutableList().also {
-            if (index >= 0) it[index] = updated else it.add(updated)
+        val current = _active.value?.takeIf { it.id == id }
+        val updated = io {
+            database.transaction {
+                val previous = current ?: database.get(id)
+                val base = previous ?: create?.invoke() ?: return@transaction null
+                val next = transform(base)
+                require(next.id == id)
+                if (next == previous) return@transaction previous
+                next.copy(updatedAt = System.currentTimeMillis()).also { database.putConversation(previous, it) }
+            }
         }
+        if (updated != null) publish(updated)
         updated
     }
 
-    suspend fun delete(id: String) = mutex.withLock {
-        hydrateLocked()
-        context.conversationsDataStore.edit { p -> p.remove(keyFor(id)) }
-        _cache.value = _cache.value.filterNot { it.id == id }
+    suspend fun updateMessage(conversationId: String, messageId: String, transform: (Message) -> Message) = mutex.withLock {
+        val change = io {
+            database.transaction {
+                val message = database.message(conversationId, messageId) ?: return@transaction null
+                val next = transform(message)
+                require(next.id == messageId)
+                if (next == message) return@transaction null
+                val updatedAt = System.currentTimeMillis()
+                database.putMessage(conversationId, message, next)
+                database.touch(conversationId, updatedAt)
+                next to updatedAt
+            }
+        } ?: return@withLock
+        _active.value?.takeIf { it.id == conversationId }?.let { active ->
+            _active.value = active.copy(updatedAt = change.second, messages = active.messages.map {
+                if (it.id == messageId) change.first else it
+            })
+        }
+        _conversations.value = _conversations.value.map {
+            if (it.id == conversationId) it.copy(updatedAt = change.second) else it
+        }.sortedWith(summaryOrder)
     }
 
-    suspend fun rename(id: String, title: String) {
-        updateConversation(id) { it.copy(title = title) }
+    suspend fun delete(id: String) = mutex.withLock {
+        io { database.transaction { database.delete(id) } }
+        _conversations.value = _conversations.value.filterNot { it.id == id }
+        if (observedId == id) _active.value = null
     }
+
+    suspend fun rename(id: String, title: String) { updateConversation(id) { it.copy(title = title) } }
 
     suspend fun appendMessages(convId: String, newMessages: List<Message>) {
         updateMessages(convId) { it + newMessages }
@@ -174,22 +166,37 @@ class ConversationStore(private val context: Context) {
     }
 
     suspend fun migrateAssistantId(defaultAssistantId: String) {
-        snapshot().forEach { conv ->
-            updateConversation(conv.id) { current ->
-                if (current.assistantId.isBlank()) current.copy(assistantId = defaultAssistantId) else current
+        for (conv in _conversations.value.filter { it.assistantId.isBlank() }) {
+            updateConversation(conv.id) { if (it.assistantId.isBlank()) it.copy(assistantId = defaultAssistantId) else it }
+        }
+    }
+
+    suspend fun hasMigrationWarnings(): Boolean = mutex.withLock { io { database.state("warnings") == "1" } }
+
+    private fun publish(conversation: Conversation) {
+        if (observedId == conversation.id) _active.value = conversation
+        val summary = conversation.copy(messages = emptyList(), chatSuggestionsByMsg = emptyMap())
+        _conversations.value = (_conversations.value.filterNot { it.id == summary.id } + summary).sortedWith(summaryOrder)
+    }
+
+    private suspend fun refresh() {
+        _conversations.value = io { database.summaries().map { summary ->
+            (database.metadata(summary.id) ?: summary).copy(updatedAt = summary.updatedAt, chatSuggestionsByMsg = emptyMap())
+        } }
+    }
+
+    private suspend fun <T> io(block: () -> T): T {
+        currentCoroutineContext().ensureActive()
+        return withContext(NonCancellable) {
+            withContext(Dispatchers.IO) {
+                database.requireReady()
+                block()
             }
         }
     }
 
-
-    private fun encodeOne(conv: Conversation): String =
-        json.encodeToString(Conversation.serializer(), conv)
-
-    private fun decodeOne(raw: String): Conversation? =
-        runCatching { json.decodeFromString(Conversation.serializer(), raw) }.getOrNull()
-
     companion object {
-        private const val KEY_PREFIX = "conv_"
-        private const val LEGACY_KEY = "conversations_json"
+        private val mutex = Mutex()
+        private val summaryOrder = compareByDescending<Conversation> { it.updatedAt }.thenBy { it.id }
     }
 }

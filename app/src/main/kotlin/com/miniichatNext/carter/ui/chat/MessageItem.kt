@@ -102,9 +102,11 @@ internal fun MessageItem(
         )
     } else {
         AssistantRow(
-            message = message,
+            message = message.copy(toolInvocations = message.toolInvocations.map { tool ->
+                if (tool.historical && tool.state in setOf("executing", "pending_approval", "running")) tool.copy(state = "cancelled") else tool
+            }),
             avatar = avatar,
-            senderLabel = senderLabel,
+            senderLabel = if (message.role == "legacy_unknown") stringResource(R.string.migration_unknown_sender) else senderLabel,
             isLastAssistant = isLastAssistant,
             isStreaming = isStreaming,
             onStartEdit = onStartEdit,

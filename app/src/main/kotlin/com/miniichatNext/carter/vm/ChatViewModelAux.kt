@@ -346,8 +346,8 @@ private suspend fun ChatViewModel.runOcrCompletion(
 }
 
 /** 完成一次兑换后，根据第一条对话生成标题 */
-internal fun ChatViewModel.generateTitle(convId: String) {
-    val conv = conversations.value.firstOrNull { it.id == convId } ?: return
+internal suspend fun ChatViewModel.generateTitle(convId: String) {
+    val conv = store.get(convId) ?: return
     // 仅在完成第一轮对话（user+assistant各1条=共2条消息）后触发一次；后续该对话不再生成
     if (conv.messages.size != 2) return
     // title仍等于占位符（用户第一条消息前30字）才生成；
@@ -362,7 +362,7 @@ internal fun ChatViewModel.generateTitle(convId: String) {
         return
     }
     viewModelScope.launch {
-        val content = conv.messages.take(4).joinToString("\n\n") { m ->
+        val content = conv.messages.filter { it.role != "legacy_unknown" }.take(4).joinToString("\n\n") { m ->
             "${m.role}: ${m.content.take(500)}"
         }
         val locale = java.util.Locale.getDefault().displayName
@@ -418,7 +418,7 @@ internal fun ChatViewModel.clearAuxModelFailed(ref: String) {
 /** 生成候选词：按(锚点消息,页)缓存，同会话保留最近4个锚点 */
 internal fun ChatViewModel.generateSuggestions(anchorMessageId: String, page: Int, isManual: Boolean = false) {
     val convId = _activeId.value ?: return
-    val conv = conversations.value.firstOrNull { it.id == convId } ?: return
+    val conv = activeConversation.value?.takeIf { it.id == convId } ?: return
     if (conv.messages.isEmpty()) return
     val assistant = activeAssistant()
     // 候选词用「回复建议」辅助模型；未配置时直接提示
@@ -436,7 +436,7 @@ internal fun ChatViewModel.generateSuggestions(anchorMessageId: String, page: In
     _suggestionsGenerating.value = _suggestionsGenerating.value + cacheKey
     viewModelScope.launch {
         try {
-            val content = conv.messages.takeLast(8).joinToString("\n\n") { m ->
+            val content = conv.messages.filter { it.role != "legacy_unknown" }.takeLast(8).joinToString("\n\n") { m ->
                 "${m.role}: ${m.content.take(500)}"
             }
             val prompt = buildString {
@@ -481,7 +481,7 @@ internal fun ChatViewModel.generateSuggestions(anchorMessageId: String, page: In
 /** 对话压缩 */
 internal fun ChatViewModel.compressContext(targetTokens: Int, keepRecentMessages: Int, additionalPrompt: String): kotlinx.coroutines.Job? {
     val convId = _activeId.value ?: return null
-    val conv = conversations.value.firstOrNull { it.id == convId } ?: return null
+    val conv = activeConversation.value?.takeIf { it.id == convId } ?: return null
     val ref = settings.value.compressModel
     if (ref.isBlank()) {
         pushToast(com.miniichatNext.carter.data.model.ToastItem(
@@ -511,6 +511,14 @@ internal fun ChatViewModel.compressContext(targetTokens: Int, keepRecentMessages
             messagesToCompress = all
         }
 
+        if (messagesToCompress.any { it.role == "legacy_unknown" }) {
+            pushToast(com.miniichatNext.carter.data.model.ToastItem(
+                message = getApplication<Application>().getString(R.string.migration_compression_unknown),
+                tone = com.miniichatNext.carter.data.model.ToastTone.Warning,
+                withDismiss = true,
+            ))
+            return@launch
+        }
         val content = messagesToCompress.joinToString("\n\n") { m ->
             "${m.role}: ${m.content.take(2000)}"
         }

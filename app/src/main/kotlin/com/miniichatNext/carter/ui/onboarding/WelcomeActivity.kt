@@ -143,6 +143,13 @@ class WelcomeActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (com.miniichatNext.carter.data.store.migration.ConversationMigration.flow.value.phase !=
+            com.miniichatNext.carter.data.store.migration.ConversationMigration.Phase.READY
+        ) {
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            finish()
+            return
+        }
         enableEdgeToEdge()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() = Unit

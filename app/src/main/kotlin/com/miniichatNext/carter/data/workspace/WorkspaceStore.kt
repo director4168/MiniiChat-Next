@@ -6,14 +6,12 @@
  */
 package com.miniichatNext.carter.data.workspace
 
+import com.miniichatNext.carter.data.store.SqlPreferences
 import com.miniichatNext.carter.util.AppJson
 
 import android.content.Context
-import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -21,7 +19,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
-private val Context.workspaceDataStore: DataStore<Preferences> by preferencesDataStore(name = "workspaces")
+private val Context.workspacePreferences get() = SqlPreferences(this, "workspaces")
 
 @Serializable
 data class WorkspaceEntity(
@@ -57,7 +55,7 @@ class WorkspaceStore(private val context: Context) {
     private val key = stringPreferencesKey("workspaces_json")
     private val json get() = AppJson.json
 
-    val workspacesFlow: Flow<List<WorkspaceEntity>> = context.workspaceDataStore.data.map { prefs ->
+    val workspacesFlow: Flow<List<WorkspaceEntity>> = context.workspacePreferences.data.map { prefs ->
         val raw = prefs[key] ?: return@map emptyList()
         runCatching {
             json.decodeFromString(ListSerializer(WorkspaceEntity.serializer()), raw)
@@ -67,7 +65,7 @@ class WorkspaceStore(private val context: Context) {
     suspend fun snapshot(): List<WorkspaceEntity> = workspacesFlow.first()
 
     suspend fun save(list: List<WorkspaceEntity>) {
-        context.workspaceDataStore.edit { prefs ->
+        context.workspacePreferences.edit { prefs ->
             prefs[key] = json.encodeToString(ListSerializer(WorkspaceEntity.serializer()), list)
         }
     }
@@ -77,7 +75,7 @@ class WorkspaceStore(private val context: Context) {
     }.orEmpty()
 
     suspend fun upsert(entity: WorkspaceEntity) {
-        context.workspaceDataStore.edit { prefs ->
+        context.workspacePreferences.edit { prefs ->
             val list = read(prefs).toMutableList()
             val index = list.indexOfFirst { it.id == entity.id }
             if (index >= 0) list[index] = entity else list.add(entity)
@@ -87,7 +85,7 @@ class WorkspaceStore(private val context: Context) {
 
     suspend fun update(id: String, transform: (WorkspaceEntity) -> WorkspaceEntity): WorkspaceEntity? {
         var updated: WorkspaceEntity? = null
-        context.workspaceDataStore.edit { prefs ->
+        context.workspacePreferences.edit { prefs ->
             val list = read(prefs).toMutableList()
             val index = list.indexOfFirst { it.id == id }
             if (index < 0) return@edit
@@ -101,7 +99,7 @@ class WorkspaceStore(private val context: Context) {
     }
 
     suspend fun delete(id: String) {
-        context.workspaceDataStore.edit { prefs ->
+        context.workspacePreferences.edit { prefs ->
             prefs[key] = json.encodeToString(ListSerializer(WorkspaceEntity.serializer()), read(prefs).filterNot { it.id == id })
         }
     }

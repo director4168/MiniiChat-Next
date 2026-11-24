@@ -11,6 +11,7 @@ import android.net.Uri
 import com.miniichatNext.carter.BuildConfig
 import com.miniichatNext.carter.data.avatar.Avatar
 import com.miniichatNext.carter.data.mcp.McpStore
+import com.miniichatNext.carter.data.model.Conversation
 import com.miniichatNext.carter.data.model.GeneratedImageStore
 import com.miniichatNext.carter.data.model.Message
 import com.miniichatNext.carter.data.model.MessageSegment
@@ -47,6 +48,7 @@ class BackupManager(
         settings.settings.first(), providers.backupSnapshot(), assistants.snapshotForCleanup(), conversations.snapshot(),
         profile.snapshotForCleanup(), mcp.exportFullJson(),
         context.getSharedPreferences("theme_overrides", Context.MODE_PRIVATE).getString("json", "").orEmpty(),
+        conversationFormat = 2,
     )
 
     suspend fun export(password: CharArray): Pair<File, BackupManifest> = export(BackupMode.ENCRYPTED, password)
@@ -123,18 +125,16 @@ class BackupManager(
             }
             val key = BackupCredentials.newKey()
             val protected = BackupCredentials.transform(data, key, encrypt = true)
-            val dataFile = File(stage, "data/snapshot.json")
-            dataFile.parentFile?.mkdirs()
-            dataFile.writeText(json.encodeToString(BackupSnapshot.serializer(), protected))
+            SqlBackup.write(context, File(stage, SqlBackup.PATH), protected)
             if (mode == BackupMode.QUICK) {
-                output to BackupArchive.write(stage, output, BuildConfig.VERSION_NAME, missing.distinct(), mode, key)
+                output to BackupArchive.write(stage, output, BuildConfig.VERSION_NAME, missing.distinct(), mode, key, sql = true)
             } else {
                 val innerZip = File(work, "payload.zip")
-                BackupArchive.write(stage, innerZip, BuildConfig.VERSION_NAME, missing.distinct(), BackupMode.QUICK, key)
+                BackupArchive.write(stage, innerZip, BuildConfig.VERSION_NAME, missing.distinct(), BackupMode.QUICK, key, sql = true)
                 val outer = File(work, "outer").apply { mkdirs() }
                 BackupCipher.encryptFile(innerZip, File(outer, "data/payload.enc"), password)
                 // 缺失资源详情只保留在加密载荷内，外部索引不暴露原始路径。
-                output to BackupArchive.write(outer, output, BuildConfig.VERSION_NAME, emptyList(), BackupMode.ENCRYPTED, missingFileCount = missing.distinct().size)
+                output to BackupArchive.write(outer, output, BuildConfig.VERSION_NAME, emptyList(), BackupMode.ENCRYPTED, missingFileCount = missing.distinct().size, sql = true)
             }
         } catch (error: Exception) {
             output.delete()
@@ -152,27 +152,63 @@ class BackupManager(
         } finally { stage.deleteRecursively() }
     }
 
-    suspend fun restore(uri: Uri, mode: RestoreMode, password: CharArray = charArrayOf()) = withContext(Dispatchers.IO) {
+    data class RestoreResult(val upgradedLegacy: Boolean, val skippedRecords: Int)
+
+    suspend fun restore(uri: Uri, mode: RestoreMode, password: CharArray = charArrayOf()): RestoreResult = withContext(Dispatchers.IO) {
         val work = File(context.cacheDir, "restore_stage_${UUID.randomUUID()}").apply { mkdirs() }
         var stage = File(work, "outer").apply { mkdirs() }
         try {
             var manifest = context.contentResolver.openInputStream(uri)?.use { BackupArchive.read(it, stage) }
                 ?: error("Backup is not readable")
-            if (manifest.formatVersion == 3 && manifest.encrypted) {
+            if (manifest.formatVersion >= 3 && manifest.encrypted) {
+                val envelopeVersion = manifest.formatVersion
                 require(password.isNotEmpty()) { "Backup password is required" }
                 val innerZip = File(work, "payload.zip")
                 BackupCipher.decryptFile(File(stage, "data/payload.enc"), innerZip, password)
                 stage = File(work, "content").apply { mkdirs() }
                 manifest = innerZip.inputStream().use { BackupArchive.read(it, stage) }
-                require(manifest.formatVersion == 3 && !manifest.encrypted && manifest.backupMode == BackupMode.QUICK.name) { "Invalid encrypted payload" }
+                require(manifest.formatVersion == envelopeVersion && !manifest.encrypted && manifest.backupMode == BackupMode.QUICK.name) { "Invalid encrypted payload" }
             }
+            val legacyPath = manifest.files.singleOrNull { it.path in LegacyConversationBackup.paths }?.path
+            val legacyFile = legacyPath?.let { File(stage, it) }
             val encrypted = File(stage, "data/snapshot.enc")
-            val raw = if (encrypted.isFile) {
-                val bytes = BackupCipher.decrypt(encrypted.readBytes(), password)
-                try { bytes.toString(Charsets.UTF_8) } finally { bytes.fill(0) }
-            } else File(stage, "data/snapshot.json").readText()
-            val stored = json.decodeFromString(BackupSnapshot.serializer(), raw)
-            val decoded = if (manifest.formatVersion == 3) BackupCredentials.transform(stored,
+            val snapshotFile = File(stage, "data/snapshot.json")
+            val rawConfiguration = manifest.files.filter { LegacyConfigurationBackup.namespace(it.path) != null }
+            if (manifest.formatVersion < SqlBackup.FORMAT && !encrypted.isFile && !snapshotFile.isFile) {
+                val legacy = legacyFile?.let { LegacyConversationBackup.read(it) }
+                val imported = legacy?.conversations?.map(::markRestored)
+                val config = LegacyConfigurationBackup.read(stage, rawConfiguration)
+                conversations.restoreLegacyBackup(imported, config, replace = mode == RestoreMode.REPLACE)
+                return@withContext RestoreResult(upgradedLegacy = true, skippedRecords = legacy?.skipped ?: 0)
+            }
+            require(rawConfiguration.isEmpty()) { "Conflicting configuration sources in backup" }
+            var legacy: LegacyConversationBackup.Decoded? = null
+            val stored = if (manifest.formatVersion == SqlBackup.FORMAT) {
+                SqlBackup.read(context, File(stage, SqlBackup.PATH)).let { it.copy(conversations = it.conversations.map(::markRestored)) }
+            } else {
+                val raw = if (encrypted.isFile) {
+                    val bytes = BackupCipher.decrypt(encrypted.readBytes(), password)
+                    try { bytes.toString(Charsets.UTF_8) } finally { bytes.fill(0) }
+                } else snapshotFile.readText()
+                val root = json.parseToJsonElement(raw) as? JsonObject ?: error("Invalid backup snapshot")
+                val records = root["conversations"].let {
+                    if (it == null && legacyFile != null) JsonArray(emptyList())
+                    else it as? JsonArray ?: error("Invalid backup conversations")
+                }
+                val metadata = json.decodeFromJsonElement(BackupSnapshot.serializer(), JsonObject(root + ("conversations" to JsonArray(emptyList()))))
+                require(metadata.conversationFormat in 1..2) { "Unsupported conversation format in backup" }
+                legacy = when {
+                    legacyFile != null -> {
+                        require(metadata.conversationFormat == 1 && records.isEmpty()) { "Ambiguous conversation sources in backup" }
+                        LegacyConversationBackup.read(legacyFile)
+                    }
+                    metadata.conversationFormat == 1 -> LegacyConversationBackup.readSnapshot(records)
+                    else -> null
+                }
+                val recovered = legacy?.conversations ?: records.map { json.decodeFromJsonElement(Conversation.serializer(), it) }
+                metadata.copy(conversations = recovered.map(::markRestored))
+            }
+            val decoded = if (manifest.formatVersion >= 3) BackupCredentials.transform(stored,
                 requireNotNull(manifest.credentialKey) { "Missing credential recovery key" }, encrypt = false) else stored
             require(decoded.settings.fontSizeSp.isFinite() && decoded.settings.fontSizeSp in 12f..22f) { "Invalid font size" }
             require(decoded.providers.map { it.id }.distinct().size == decoded.providers.size) { "Duplicate provider ID" }
@@ -257,8 +293,15 @@ class BackupManager(
                 }
                 throw error
             }
+            RestoreResult(upgradedLegacy = legacy != null, skippedRecords = legacy?.skipped ?: 0)
         } finally { work.deleteRecursively() }
     }
+
+    private fun markRestored(conversation: Conversation) = conversation.copy(
+        messages = conversation.messages.map { message ->
+            message.copy(toolInvocations = message.toolInvocations.map { it.copy(historical = true) })
+        },
+    )
 
     private fun Message.mapGeneratedImages(transform: (String) -> String): Message = copy(
         content = GeneratedImageStore.mapReferences(content, transform),

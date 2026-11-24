@@ -8,6 +8,7 @@ package com.miniichatNext.carter.ui.settings
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -185,8 +186,14 @@ fun BackupScreen(vm: ChatViewModel, onBack: () -> Unit) {
             scope.launch {
                 try {
                     session?.awaitStopped()
-                    manager.restore(uri, mode, secret)
+                    val restored = manager.restore(uri, mode, secret)
                     status = completed
+                    if (restored.upgradedLegacy) {
+                        val message = if (restored.skippedRecords > 0) {
+                            context.getString(R.string.backup_legacy_partial, restored.skippedRecords)
+                        } else context.getString(R.string.backup_legacy_upgraded)
+                        Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+                    }
                     com.miniichatNext.carter.util.AppThemeOverrides.version.intValue++
                     context.getSharedPreferences("locale_cache", android.content.Context.MODE_PRIVATE)
                         .edit().putString("language", vm.settingsRepo.settings.first().language).commit()

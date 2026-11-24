@@ -44,6 +44,13 @@ class MiniiChatApplication : Application() {
         }
         // 前后台追踪（更新下载完成后决定是否可拉起安装器）
         registerActivityLifecycleCallbacks(com.miniichatNext.carter.util.AppForeground.callbacks)
+    }
+
+    private var normalServicesStarted = false
+
+    fun startNormalServices() {
+        if (normalServicesStarted) return
+        normalServicesStarted = true
         // 更新包位于files/updates，临时缓存清理不触碰已验证安装包。
         // 启动自动检查更新（用户设置关闭则跳过）
         kickOffAutoUpdateCheck()

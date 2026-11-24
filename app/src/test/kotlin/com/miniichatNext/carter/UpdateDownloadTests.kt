@@ -50,6 +50,19 @@ class UpdateDownloadTests {
         assertEquals(1, UpdateDownloadSources.candidates("https:" + "//github.com/u/r/releases/latest").size)
     }
 
+    @Test fun probeCandidatesUseFixedFileThroughEveryNode() {
+        val nodes = listOf(
+            UpdateMirrorNode("prefix", "https:" + "//proxy.example/"),
+            UpdateMirrorNode("template", "https:" + "//proxy.example/?u={url}"),
+        )
+        val probes = UpdateDownloadSources.probeCandidates(true, nodes)
+        assertEquals(listOf("GitHub", "prefix", "template"), probes.map { it.key })
+        assertEquals(UpdateDownloadSources.PROBE_URL, probes.first().url)
+        assertEquals("https://proxy.example/" + UpdateDownloadSources.PROBE_URL, probes[1].url)
+        assertEquals("https://proxy.example/?u=" + UpdateDownloadSources.PROBE_URL, probes[2].url)
+        assertTrue(probes.none { it.url.contains("app.apk") })
+    }
+
     @Test fun abiSelectionUsesMatchingUrlAndChecksum() {
         val arm64 = info.packageForDevice(listOf("arm64-v8a", "armeabi-v7a"))
         val arm32 = info.packageForDevice(listOf("armeabi-v7a"))

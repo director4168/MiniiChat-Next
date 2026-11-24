@@ -29,6 +29,8 @@ internal data class UpdateSource(
 data class UpdateMirrorNode(val name: String, val url: String, val enabled: Boolean = true)
 
 internal object UpdateDownloadSources {
+    /** 节点测速统一使用固定文件，不再下载真实APK的前64KiB。 */
+    const val PROBE_URL = "https://github.com/director4168/-1/releases/download/v0.0.1/tt.mn"
     private val mirrors = linkedMapOf(
         "Ghfast" to "https://ghfast.top/",
         "GhProxy" to "https://ghproxy.com/",
@@ -102,6 +104,10 @@ internal object UpdateDownloadSources {
             UpdateSource(node.name, target)
         }.filter { it.url != original }.distinctBy { it.url }
     }
+
+    /** 测速候选：节点/直连都指向固定测速文件，键名与真实下载候选一致。 */
+    fun probeCandidates(nodesEnabled: Boolean = true, nodes: List<UpdateMirrorNode> = defaultNodes()): List<UpdateSource> =
+        candidates(PROBE_URL, nodesEnabled, nodes)
 
     fun ranked(results: List<UpdateSource>): List<UpdateSource> = results.filter { it.error == null }
         .sortedWith(compareByDescending<UpdateSource> { it.speedBytesPerSec }.thenBy { it.elapsedMs }.thenBy { it.key })

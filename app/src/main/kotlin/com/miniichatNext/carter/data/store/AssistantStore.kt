@@ -7,11 +7,8 @@
 package com.miniichatNext.carter.data.store
 
 import android.content.Context
-import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
 import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.model.AssistantPresets
 import com.miniichatNext.carter.debug.DebugLog
@@ -22,14 +19,14 @@ import kotlinx.coroutines.flow.map
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
-private val Context.assistantsDataStore: DataStore<Preferences> by preferencesDataStore(name = "assistants")
+private val Context.assistantsPreferences get() = SqlPreferences(this, "assistants")
 
 class AssistantStore(private val context: Context) {
     private val key = stringPreferencesKey("assistants_json")
     private val json get() = AppJson.json
 
     val assistantsFlow: Flow<List<Assistant>> =
-        context.assistantsDataStore.data.map { prefs ->
+        context.assistantsPreferences.data.map { prefs ->
             val raw = prefs[key]
             if (raw.isNullOrBlank()) AssistantPresets.defaults()
             else runCatching {
@@ -39,10 +36,10 @@ class AssistantStore(private val context: Context) {
 
     suspend fun snapshot(): List<Assistant> = assistantsFlow.first()
 
-    suspend fun snapshotForCleanup(): List<Assistant> = read(context.assistantsDataStore.data.first())
+    suspend fun snapshotForCleanup(): List<Assistant> = read(context.assistantsPreferences.data.first())
 
     suspend fun save(list: List<Assistant>) {
-        context.assistantsDataStore.edit { prefs ->
+        context.assistantsPreferences.edit { prefs ->
             prefs[key] = json.encodeToString(ListSerializer(Assistant.serializer()), list)
         }
     }
@@ -54,7 +51,7 @@ class AssistantStore(private val context: Context) {
     }
 
     suspend fun updateAll(transform: (List<Assistant>) -> List<Assistant>) {
-        context.assistantsDataStore.edit { prefs ->
+        context.assistantsPreferences.edit { prefs ->
             prefs[key] = json.encodeToString(ListSerializer(Assistant.serializer()), transform(read(prefs)))
         }
     }

@@ -73,6 +73,10 @@ fun ChatMessageNerdLine(
     color: Color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.5f),
 ) {
     val settings = LocalAppPreferences.current
+    if (message.legacyImported && !generating) {
+        if (settings.showCardTokenUsage) LegacyMessageStats(message, modifier, color)
+        return
+    }
     val real = message.usage?.takeUnless { usage ->
         usage.estimated || (usage.promptTokens == 0 && usage.completionTokens == 0 &&
             usage.cachedTokens == 0 && usage.totalTokens == 0)
@@ -156,6 +160,60 @@ fun ChatMessageNerdLine(
                 }
             }
         }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun LegacyMessageStats(message: Message, modifier: Modifier, color: Color) {
+    val total = message.usage
+    val last = message.lastUsage
+    val duration = message.generationTimeMs ?: total?.durationMs?.takeIf {
+        "durationMs" !in total.legacyMissingFields && it > 0
+    } ?: last?.durationMs?.takeIf { "durationMs" !in last.legacyMissingFields && it > 0 }
+    if (total == null && last == null && duration == null) return
+    val tooltipState = rememberTooltipState(isPersistent = true)
+    val scope = rememberCoroutineScope()
+    val summary = when {
+        duration != null -> stringResource(R.string.migration_duration, duration)
+        total != null && "totalTokens" !in total.legacyMissingFields ->
+            stringResource(R.string.migration_total_tokens, (if (total.estimated) "≈" else "") + total.totalTokens.exact())
+        else -> stringResource(R.string.chat_message_usage_title)
+    }
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { RichTooltip(title = { Text(stringResource(R.string.chat_message_usage_title)) }) {
+            Column {
+                total?.let { LegacyUsageRows(it) }
+                last?.let {
+                    Text(stringResource(R.string.migration_last_usage), style = MaterialTheme.typography.labelMedium)
+                    LegacyUsageRows(it)
+                }
+                duration?.let { Text(stringResource(R.string.migration_duration, it)) }
+            }
+        } },
+        state = tooltipState,
+        enableUserInput = false,
+        modifier = modifier,
+    ) {
+        Text(summary, modifier = Modifier.clickable { scope.launch { tooltipState.show() } }, color = color,
+            style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+@Composable
+private fun LegacyUsageRows(usage: TokenUsage) {
+    if ("promptTokens" !in usage.legacyMissingFields) {
+        UsageDetailRow(stringResource(R.string.chat_message_usage_input), (if (usage.estimated || usage.promptEstimated) "≈" else "") + usage.promptTokens.exact())
+    }
+    if ("completionTokens" !in usage.legacyMissingFields) {
+        UsageDetailRow(stringResource(R.string.chat_message_usage_output), (if (usage.estimated || usage.completionEstimated) "≈" else "") + usage.completionTokens.exact())
+    }
+    if ("cachedTokens" !in usage.legacyMissingFields) {
+        UsageDetailRow(stringResource(R.string.chat_message_usage_cached), usage.cachedTokens.exact())
+    }
+    if ("totalTokens" !in usage.legacyMissingFields) {
+        Text(stringResource(R.string.migration_total_tokens, (if (usage.estimated) "≈" else "") + usage.totalTokens.exact()))
     }
 }
 

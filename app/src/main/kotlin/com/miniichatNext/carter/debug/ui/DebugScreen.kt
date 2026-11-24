@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
@@ -140,6 +141,7 @@ fun DebugScreen(
     var level by remember { mutableStateOf(DebugLog.level) }
     // 崩溃测试确认弹窗（null=不弹；"main"/"bg"=确认后执行对应崩溃）
     var crashConfirm by remember { mutableStateOf<String?>(null) }
+    var showClearData by remember { mutableStateOf(false) }
     LaunchedEffect(level) { DebugLog.setLevel(context, level) }
 
     Column(
@@ -173,10 +175,35 @@ fun DebugScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Spacer(Modifier.height(8.dp))
+            com.miniichatNext.carter.ui.components.SectionCard {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showClearData = true }
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            stringResource(R.string.debug_clear_data_title),
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                        Text(
+                            stringResource(R.string.debug_clear_data_sub),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null)
+                }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 0.5.dp)
 
             Text(
                 stringResource(R.string.debug_level_label, level.name),
@@ -402,6 +429,8 @@ fun DebugScreen(
             }
         }
     }
+
+    if (showClearData) DebugClearDataDialog(onDismiss = { showClearData = false })
 
     // 崩溃测试确认弹窗：警告→确定后才真正崩
     crashConfirm?.let { kind ->

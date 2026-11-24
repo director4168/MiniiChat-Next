@@ -1029,7 +1029,9 @@
     <string name="backup_saved">备份已保存</string>
     <string name="backup_missing">部分关联文件读取失败或被排除，保留原引用。数量</string>
     <string name="backup_restore_confirm">请选择恢复方式。覆盖会替换现有应用数据，合并保留同ID的现有内容并导入新增内容，保留当前设置和个人资料。恢复完成后会重启应用</string>
-    <string name="backup_replace_warning">覆盖导入将替换现有全部应用配置和对话，是否继续？</string>
+    <string name="backup_legacy_partial">旧会话已升级。跳过了%1$d个无法读取的条目，请保留原备份。</string>
+    <string name="backup_legacy_upgraded">旧备份数据已升级到新版数据库。</string>
+    <string name="backup_replace_warning">覆盖导入会替换此备份所包含的数据，是否继续？</string>
     <string name="backup_replace">覆盖恢复</string>
     <string name="backup_merge">合并导入</string>
 
@@ -1148,4 +1150,55 @@
     <string name="diagram_zoom_hint">双指缩放，拖动平移</string>
     <string name="diagram_render_failed">图表渲染失败：%1$s</string>
     <string name="update_force_install_confirm">下载的APK未通过校验值或版本检查。仅在确认文件可信时继续，系统仍会检查安装条件，旧版本可能被拒绝。是否继续？</string>
+
+
+
+    <!-- 应用数据升级 -->
+    <string name="migration_title">应用数据升级</string>
+    <string name="migration_checking">正在检查会话存储</string>
+    <string name="migration_preparing">正在准备升级</string>
+    <string name="migration_reading">正在读取并留存旧数据</string>
+    <string name="migration_writing">正在迁移会话</string>
+    <string name="migration_verifying">正在校验新数据库</string>
+    <string name="migration_done">升级完成</string>
+    <string name="migration_warnings">升级完成，有需留意的记录</string>
+    <string name="migration_failed">升级已暂停</string>
+    <string name="migration_invalid">会话数据或数据库读取、校验失败。</string>
+    <string name="migration_no_space">可用存储空间不足，请清理空间后重试！</string>
+    <string name="migration_service_failed">前台服务启动失败，请保持应用在前台后重试</string>
+    <string name="migration_interrupted">升级被系统中断，可从最近的检查点继续</string>
+    <string name="migration_retained">原始数据已保留</string>
+    <string name="migration_retry">重试升级</string>
+    <string name="migration_continue">继续进入应用</string>
+    <string name="migration_notification_progress">处理记录：%1$d / %2$d</string>
+    <string name="migration_summary">已迁入 %1$d 个会话和 %2$d 条消息</string>
+    <string name="migration_issues">修复或冲突 %1$d 项，另有 %2$d 项未读出，已保留在原数据中</string>
+    <string name="migration_wait_hint">升级完成前请勿关闭应用，也可通过通知查看进度</string>
+    <string name="migration_unknown_sender">未知发送者</string>
+    <string name="date_unknown">日期未知</string>
+    <string name="migration_duration">生成耗时：%1$d毫秒</string>
+    <string name="migration_total_tokens">总Token：%1$s</string>
+    <string name="migration_last_usage">最近一次请求</string>
+    <string name="migration_report">查看升级报告</string>
+    <string name="migration_report_close">关闭报告</string>
+    <string name="migration_report_legend">来源记录：修复或冲突数 / 未读出数。此处最多显示200条</string>
+    <string name="migration_compression_unknown">历史中包含未知发送者的消息，请选择不包含这些消息的压缩范围</string>
+
+
+
+    <!-- Debug clear data -->
+    <string name="debug_clear_data_title">清空数据</string>
+    <string name="debug_clear_data_sub">清空本应用的所有数据</string>
+    <string name="debug_clear_data_confirm_title">确认清空全部本地数据？</string>
+    <string name="debug_clear_data_confirm_message">此操作会将本应用的所有数据！若未备份，则永远无法恢复！</string>
+    <string name="debug_clear_data_continue">继续</string>
+    <string name="debug_clear_data_final_title">输入确认词</string>
+    <string name="debug_clear_data_final_message">请输入“%1$s”以清空数据。删除后进程会退出，下次启动进入初始引导</string>
+    <string name="debug_clear_data_keyword">清空</string>
+    <string name="debug_clear_data_action">清空并退出</string>
+    <string name="debug_clear_data_failed">系统未接受清空请求，请重试或在系统应用设置中清除存储</string>
+    <string name="migration_cleaning">正在移除已迁移的旧数据</string>
+    <string name="migration_configuration">正在迁移应用配置</string>
+    <string name="migration_cleanup_failed">新数据库已通过校验，但旧文件清理未完成</string>
+    <string name="migration_legacy_removed">已移除完成迁移的旧文件</string>
 </resources>

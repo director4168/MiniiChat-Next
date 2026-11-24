@@ -100,6 +100,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     // 显示直接使用存储内存快照，结束生成时无需等待第二层stateIn传播。
     val conversations: StateFlow<List<Conversation>> = store.conversationsFlow
+    val activeConversation: StateFlow<Conversation?> = store.activeConversation
 
     val workspaces: StateFlow<List<WorkspaceEntity>> = workspaceRepository.workspacesFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -182,7 +183,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     val tempSkillOverrides: StateFlow<Map<String, Map<String, Boolean>>> = _tempSkillOverrides.asStateFlow()
 
     internal var streamingJob: Job? = null
-    internal var taskSession: ChatTaskSession? = null
+    @Volatile internal var taskSession: ChatTaskSession? = null
     internal var stoppingSession: ChatTaskSession? = null
     internal val stoppedToolCalls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
@@ -198,6 +199,10 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
+            _activeId.collect { store.observe(it) }
+        }
+        viewModelScope.launch {
+            store.loadSummaries()
             store.migrateAssistantId(settings.value.activeAssistantId)
             val loadedSkills = skillStore.refresh()
             // 旧助手可能保存的是技能名称；目录技能现在有稳定id，首次加载时迁移引用。
@@ -217,6 +222,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     internal fun pruneOrphanAvatars() {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
+                if (store.hasMigrationWarnings()) return@launch
                 val loaded = assistantStore.snapshotForCleanup()
                 val profile = userProfileStore.snapshotForCleanup()
                 val keep = buildSet {
@@ -258,7 +264,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         // 删除前先切断该对话的生成与pending工具（停止键同款清理），再落盘删除
         if (taskSession?.conversationId == id) stopTaskSession()
         viewModelScope.launch {
-            val deleted = store.snapshot().firstOrNull { it.id == id }?.messages.orEmpty()
+            val deleted = store.get(id)?.messages.orEmpty()
             store.delete(id)
             if (_activeId.value == id) _activeId.value = null
             cleanupGeneratedImages(deleted)
@@ -282,7 +288,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     internal fun stopTaskSession() {
         val session = taskSession ?: return
         val cid = session.conversationId
-        val callIds = conversations.value.firstOrNull { it.id == cid }?.messages
+        val callIds = activeConversation.value?.takeIf { it.id == cid }?.messages
             ?.flatMap { it.toolInvocations }?.map { it.callId }?.toSet().orEmpty() + session.toolCallIds()
         stoppedToolCalls.addAll(callIds)
         stoppingSession = session
@@ -300,7 +306,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 store.updateMessages(cid) { msgs ->
                     msgs.map { msg ->
                         msg.copy(toolInvocations = msg.toolInvocations.map { inv ->
-                            if (inv.callId in callIds && (inv.state == ToolInvocationState.EXECUTING ||
+                            if (!inv.historical && inv.callId in callIds && (inv.state == ToolInvocationState.EXECUTING ||
                                     inv.state == ToolInvocationState.PENDING_APPROVAL)) {
                                 inv.copy(state = ToolInvocationState.CANCELLED, error = stoppedNote)
                             } else inv

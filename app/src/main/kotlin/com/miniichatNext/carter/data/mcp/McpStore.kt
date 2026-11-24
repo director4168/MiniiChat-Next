@@ -7,12 +7,9 @@
 package com.miniichatNext.carter.data.mcp
 
 import android.content.Context
-import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
-import androidx.datastore.preferences.preferencesDataStore
+import com.miniichatNext.carter.data.store.SqlPreferences
 import com.miniichatNext.carter.util.AppJson
 import java.util.UUID
 import kotlinx.coroutines.flow.Flow
@@ -22,7 +19,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
-private val Context.mcpDataStore: DataStore<Preferences> by preferencesDataStore(name = "mcp_configs")
+private val Context.mcpPreferences get() = SqlPreferences(this, "mcp_configs")
 
 class McpStore(private val context: Context) {
     private val serversKey = stringPreferencesKey("mcp_servers_json")
@@ -31,15 +28,15 @@ class McpStore(private val context: Context) {
 
     private val json get() = AppJson.json
 
-    val serversFlow: Flow<List<McpServerConfig>> = context.mcpDataStore.data.map { prefs ->
+    val serversFlow: Flow<List<McpServerConfig>> = context.mcpPreferences.data.map { prefs ->
         decode(prefs[serversKey], McpServerConfig.serializer())
     }
 
-    val toolsFlow: Flow<List<McpTool>> = context.mcpDataStore.data.map { prefs ->
+    val toolsFlow: Flow<List<McpTool>> = context.mcpPreferences.data.map { prefs ->
         decode(prefs[toolsKey], McpTool.serializer())
     }
 
-    val permsFlow: Flow<List<McpToolPermission>> = context.mcpDataStore.data.map { prefs ->
+    val permsFlow: Flow<List<McpToolPermission>> = context.mcpPreferences.data.map { prefs ->
         decode(prefs[permsKey], McpToolPermission.serializer())
     }
 
@@ -51,7 +48,7 @@ class McpStore(private val context: Context) {
     }
 
     internal suspend fun toolSnapshot(): Triple<List<McpServerConfig>, List<McpTool>, List<McpToolPermission>> {
-        val p = context.mcpDataStore.data.first()
+        val p = context.mcpPreferences.data.first()
         return Triple(decode(p[serversKey], McpServerConfig.serializer()),
             decode(p[toolsKey], McpTool.serializer()), decode(p[permsKey], McpToolPermission.serializer()))
     }
@@ -68,7 +65,7 @@ class McpStore(private val context: Context) {
     suspend fun permsSnapshot(): List<McpToolPermission> = permsFlow.first()
 
     suspend fun saveServers(servers: List<McpServerConfig>) {
-        context.mcpDataStore.edit { prefs ->
+        context.mcpPreferences.edit { prefs ->
             val previous = decode(prefs[serversKey], McpServerConfig.serializer()).associateBy { it.id }
             val next = servers.map { item ->
                 val old = previous[item.id]
@@ -84,19 +81,19 @@ class McpStore(private val context: Context) {
     }
 
     suspend fun saveTools(tools: List<McpTool>) {
-        context.mcpDataStore.edit { prefs ->
+        context.mcpPreferences.edit { prefs ->
             prefs[toolsKey] = json.encodeToString(ListSerializer(McpTool.serializer()), tools)
         }
     }
 
     suspend fun savePerms(perms: List<McpToolPermission>) {
-        context.mcpDataStore.edit { prefs ->
+        context.mcpPreferences.edit { prefs ->
             prefs[permsKey] = json.encodeToString(ListSerializer(McpToolPermission.serializer()), perms)
         }
     }
 
     suspend fun upsertServer(server: McpServerConfig) {
-        context.mcpDataStore.edit { prefs ->
+        context.mcpPreferences.edit { prefs ->
             val cur = decode(prefs[serversKey], McpServerConfig.serializer()).toMutableList()
             val index = cur.indexOfFirst { it.id == server.id }
             if (index >= 0) {
@@ -112,7 +109,7 @@ class McpStore(private val context: Context) {
     suspend fun saveEditor(server: McpServerConfig): McpServerConfig {
         val url = normalizedMcpUrl(server.url)
         var saved = server.copy(url = url)
-        context.mcpDataStore.edit { prefs ->
+        context.mcpPreferences.edit { prefs ->
             val current = decode(prefs[serversKey], McpServerConfig.serializer()).toMutableList()
             val index = current.indexOfFirst { it.id == server.id }.takeIf { it >= 0 }
                 ?: current.indexOfFirst { sameMcpConnection(it, saved) }
@@ -134,7 +131,7 @@ class McpStore(private val context: Context) {
 
     suspend fun recordSyncFailure(server: McpServerConfig, error: String): Boolean {
         var recorded = false
-        context.mcpDataStore.edit { prefs ->
+        context.mcpPreferences.edit { prefs ->
             val current = decode(prefs[serversKey], McpServerConfig.serializer())
             val updated = current.map {
                 if (sameMcpSession(it, server)) {
@@ -148,7 +145,7 @@ class McpStore(private val context: Context) {
     }
 
     suspend fun setServerEnabled(id: String, enabled: Boolean) {
-        context.mcpDataStore.edit { prefs ->
+        context.mcpPreferences.edit { prefs ->
             val current = decode(prefs[serversKey], McpServerConfig.serializer())
             prefs[serversKey] = json.encodeToString(ListSerializer(McpServerConfig.serializer()),
                 current.map { if (it.id == id) it.copy(enabled = enabled) else it })
@@ -157,7 +154,7 @@ class McpStore(private val context: Context) {
 
     suspend fun commitTools(server: McpServerConfig, tools: List<McpTool>): Boolean {
         var committed = false
-        context.mcpDataStore.edit { prefs ->
+        context.mcpPreferences.edit { prefs ->
             val servers = decode(prefs[serversKey], McpServerConfig.serializer()).toMutableList()
             val index = servers.indexOfFirst { it.id == server.id }
             if (index < 0) return@edit
@@ -173,7 +170,7 @@ class McpStore(private val context: Context) {
     }
 
     suspend fun deleteServer(id: String) {
-        context.mcpDataStore.edit { prefs ->
+        context.mcpPreferences.edit { prefs ->
             val servers = decode(prefs[serversKey], McpServerConfig.serializer()).filterNot { it.id == id }
             val tools = decode(prefs[toolsKey], McpTool.serializer()).filterNot { it.serverId == id }
             val permissions = decode(prefs[permsKey], McpToolPermission.serializer()).filterNot { it.serverId == id }
@@ -184,14 +181,14 @@ class McpStore(private val context: Context) {
     }
 
     suspend fun replaceToolsForServer(serverId: String, tools: List<McpTool>) {
-        context.mcpDataStore.edit { prefs ->
+        context.mcpPreferences.edit { prefs ->
             val cur = decode(prefs[toolsKey], McpTool.serializer()).filterNot { it.serverId == serverId }
             prefs[toolsKey] = json.encodeToString(ListSerializer(McpTool.serializer()), cur + tools.map { it.copy(serverId = serverId) })
         }
     }
 
     suspend fun setToolPermission(serverId: String, toolName: String, enabled: Boolean, requireApproval: Boolean, inheritApproval: Boolean = false) {
-        context.mcpDataStore.edit { prefs ->
+        context.mcpPreferences.edit { prefs ->
             val cur = decode(prefs[permsKey], McpToolPermission.serializer()).toMutableList()
             val index = cur.indexOfFirst { it.serverId == serverId && it.toolName == toolName }
             val next = McpToolPermission(toolName = toolName, serverId = serverId,
@@ -208,7 +205,7 @@ class McpStore(private val context: Context) {
 
     suspend fun importFullJson(raw: String) {
         val payload = json.decodeFromString(McpBackupPayload.serializer(), raw)
-        context.mcpDataStore.edit { prefs ->
+        context.mcpPreferences.edit { prefs ->
             val previous = decode(prefs[serversKey], McpServerConfig.serializer()).associateBy { it.id }
             val ids = payload.servers.map { it.id }.toSet()
             require(ids.size == payload.servers.size) { "Duplicate MCP server IDs" }

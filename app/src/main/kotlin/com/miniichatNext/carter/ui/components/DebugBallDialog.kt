@@ -10,6 +10,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -27,6 +29,7 @@ import com.miniichatNext.carter.R
 import com.miniichatNext.carter.data.store.AppSettings
 import com.miniichatNext.carter.debug.DebugLevel
 import com.miniichatNext.carter.debug.DebugLog
+import com.miniichatNext.carter.debug.ui.DebugClearDataDialog
 
 /**
  * 调试球弹窗（MdDialog风格）：折叠区块（日志等级/快速跳转/界面设置），
@@ -40,17 +43,23 @@ fun DebugBallDialog(
     onOpenDebugPage: () -> Unit,
 ) {
     val context = LocalContext.current
+    var showClearData by remember { mutableStateOf(false) }
     var logExpanded by remember { mutableStateOf(false) }
     var jumpExpanded by remember { mutableStateOf(false) }
     var uiExpanded by remember { mutableStateOf(false) }
     // DebugLog.level是静态属性不触发重组——本地state记录选中档，点击即刷新高亮
     var currentLevel by remember { mutableStateOf(DebugLog.level) }
 
+    if (showClearData) {
+        DebugClearDataDialog(onDismiss = { showClearData = false })
+        return
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.debug_ball_title)) },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 SectionHeader(
                     label = stringResource(R.string.debug_ball_log_level),
                     expanded = logExpanded,
@@ -124,6 +133,11 @@ fun DebugBallDialog(
                         )
                     }
                 }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { showClearData = true }) {
+                Text(stringResource(R.string.debug_clear_data_title), color = MaterialTheme.colorScheme.error)
             }
         },
         confirmButton = {
