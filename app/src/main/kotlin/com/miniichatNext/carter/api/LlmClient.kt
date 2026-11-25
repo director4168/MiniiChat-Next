@@ -6,6 +6,7 @@
  */
 package com.miniichatNext.carter.api
 
+import com.miniichatNext.carter.data.localmodel.LocalLlmEngine
 import com.miniichatNext.carter.data.model.PromptCacheTtl
 import com.miniichatNext.carter.data.model.ProviderConfig
 import com.miniichatNext.carter.data.model.ProviderOverride
@@ -55,6 +56,11 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 
 class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
+    private var localEngine: LocalLlmEngine? = null
+
+    internal constructor(engine: LocalLlmEngine, onUsage: suspend (TokenUsage) -> Unit) : this(onUsage) {
+        localEngine = engine
+    }
     private val json get() = AppJson.jsonCompact
 
     private val client by lazy {
@@ -105,6 +111,11 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
         override: ProviderOverride? = null,
         thinking: ThinkingLevel = ThinkingLevel.AUTO,
     ): Flow<StreamDelta> = flow {
+        if (provider.type() == ProviderType.LOCAL) {
+            val engine = checkNotNull(localEngine)
+            engine.chatStream(modelId, messages, settings.stream).recordUsage(onUsage).collect { emit(it) }
+            return@flow
+        }
         val bodyText = buildRequestBody(
             provider = provider,
             modelId = modelId,
@@ -207,6 +218,7 @@ class LlmClient(private val onUsage: suspend (TokenUsage) -> Unit = {}) {
 
     suspend fun listModels(provider: ProviderConfig): List<String> = when (provider.type()) {
         ProviderType.CLAUDE -> listClaudeModels(provider)
+        ProviderType.LOCAL -> provider.models.map { it.modelId }
         else -> listOpenAiModels(provider)
     }
 

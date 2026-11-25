@@ -11,7 +11,7 @@ import com.miniichatNext.carter.R
 import kotlinx.serialization.Serializable
 import java.util.Locale
 
-enum class ProviderType { OPENAI, CLAUDE }
+enum class ProviderType { OPENAI, CLAUDE, LOCAL }
 
 enum class ThinkingLevel(val budgetTokens: Int, val effort: String?) {
     OFF(0, null),

@@ -31,14 +31,22 @@ fun effectiveConversationModel(
     val cp = conv?.modelProviderId?.takeIf { it.isNotBlank() }
     val cm = conv?.modelId?.takeIf { it.isNotBlank() }
     if (cp != null && cm != null) {
+        if (cp == com.miniichatNext.carter.data.localmodel.LocalModelStore.PROVIDER_ID) {
+            return providers.firstOrNull { it.id == cp && it.model(cm) != null }?.let { it to cm }
+        }
         providers.firstOrNull { it.id == cp }?.let { return it to cm }
     }
     val ap = assistant?.preferredProviderId?.takeIf { it.isNotBlank() }
         ?.let { id -> providers.firstOrNull { it.id == id } }
     val am = assistant?.preferredModel?.takeIf { it.isNotBlank() }
+    if (am != null && assistant?.preferredProviderId == com.miniichatNext.carter.data.localmodel.LocalModelStore.PROVIDER_ID) {
+        return ap?.takeIf { it.model(am) != null }?.let { it to am }
+    }
     if (ap != null && am != null) return ap to am
     val dp = providers.firstOrNull { it.id == settings.activeProviderId }
-    if (dp != null && settings.activeModel.isNotBlank()) return dp to settings.activeModel
+    if (dp != null && settings.activeModel.isNotBlank() &&
+        (dp.id != com.miniichatNext.carter.data.localmodel.LocalModelStore.PROVIDER_ID || dp.model(settings.activeModel) != null)
+    ) return dp to settings.activeModel
     return null
 }
 

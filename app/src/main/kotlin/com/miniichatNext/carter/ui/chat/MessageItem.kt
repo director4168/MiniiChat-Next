@@ -158,7 +158,6 @@ internal fun UserBubble(
         ) {
             if (message.content.isNotEmpty() || message.attachments.isNotEmpty()) {
                 Box {
-                    val hasLink = com.miniichatNext.carter.ui.markdown.containsMarkdownLink(message.content)
                     Box(
                         modifier = Modifier
                             .clipDrawing(
@@ -170,10 +169,7 @@ internal fun UserBubble(
                                 )
                             )
                             .background(MaterialTheme.colorScheme.primary)
-                            .then(
-                                if (hasLink) Modifier
-                                else Modifier.combinedClickable(onClick = {}, onLongClick = onLongPress)
-                            )
+                            .combinedClickable(onClick = {}, onLongClick = onLongPress)
                             .padding(horizontal = 14.dp, vertical = 10.dp)
                     ) {
                         Column {
@@ -195,6 +191,7 @@ internal fun UserBubble(
                                     ),
                                     onFullscreen = onFullscreen,
                                     selectable = true,
+                                    codeSelectable = true,
                                     selectionColors = TextSelectionColors(
                                         handleColor = MaterialTheme.colorScheme.onPrimary,
                                         backgroundColor = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.30f),
@@ -206,7 +203,9 @@ internal fun UserBubble(
                 }
             }
         }
-        if (com.miniichatNext.carter.ui.markdown.containsMarkdownLink(message.content)) {
+        if (com.miniichatNext.carter.ui.markdown.containsMarkdownLink(message.content) ||
+            com.miniichatNext.carter.ui.markdown.containsMarkdownCodeBlock(message.content)
+        ) {
             IconButton(onClick = onLongPress, modifier = Modifier.size(26.dp)) {
                 Icon(
                     Icons.Default.MoreVert,

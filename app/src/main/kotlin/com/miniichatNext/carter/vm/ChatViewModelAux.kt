@@ -104,7 +104,7 @@ internal suspend fun ChatViewModel.runAuxCompletion(
     val conv = conversations.value.firstOrNull { it.id == conversationId }
     val assistant = assistants.value.firstOrNull { it.id == conv?.assistantId } ?: activeAssistant()
     val active = effectiveConversationModel(conv, assistant, settings.value, providers.value)
-    if (active == null) return null
+    if (active == null || active.first.type() == com.miniichatNext.carter.data.model.ProviderType.LOCAL) return null
     val (providerCfg, activeModel) = active
     // 辅助模型与当前模型相同则无需重复调用
     if (resolved != null && resolved.first.id == providerCfg.id && resolved.second == activeModel) return null

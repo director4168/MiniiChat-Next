@@ -78,3 +78,9 @@
 -keep class com.miniichatNext.carter.data.tools.IShizukuShellService { *; }
 -keep class com.miniichatNext.carter.data.tools.IShizukuShellService$Stub { *; }
 -keep class rikka.shizuku.** { *; }
+
+-keep class com.miniichatNext.carter.data.localmodel.LlamaJni { *; }
+-keep class com.miniichatNext.carter.data.localmodel.LocalTokenSink { *; }
+-keepclassmembers class * implements com.miniichatNext.carter.data.localmodel.LocalTokenSink {
+    boolean onToken(byte[]);
+}

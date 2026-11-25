@@ -9,6 +9,7 @@ package com.miniichatNext.carter
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -22,10 +23,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.miniichatNext.carter.data.localmodel.LocalModelImportService
 import com.miniichatNext.carter.data.store.migration.ConversationMigration
 import com.miniichatNext.carter.data.store.migration.ConversationMigrationService
 import com.miniichatNext.carter.debug.DebugLog
 import com.miniichatNext.carter.ui.AppRoot
+import com.miniichatNext.carter.ui.localmodel.GgufImportViewModel
 import com.miniichatNext.carter.ui.migration.ConversationMigrationScreen
 import com.miniichatNext.carter.ui.onboarding.OnboardingState
 import com.miniichatNext.carter.ui.onboarding.WelcomeActivity
@@ -37,6 +40,11 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity() {
 
     private val vm: ChatViewModel by viewModels()
+    private val ggufImport: GgufImportViewModel by viewModels()
+
+    private companion object {
+        const val PENDING_GGUF = "pending_gguf"
+    }
 
     override fun attachBaseContext(newBase: Context?) {
         if (newBase == null) { super.attachBaseContext(null); return }
@@ -63,14 +71,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
-        if (ConversationMigration.flow.value.phase == ConversationMigration.Phase.READY) {
+        setIntent(intent)
+        if (intent.action == Intent.ACTION_VIEW) ggufImport.requests.offer(intent.data)
+        if (ConversationMigration.flow.value.phase == ConversationMigration.Phase.READY && OnboardingState.isDone(this)) {
             dispatchIntent(intent)
-        } else if (intent.extras != null) {
-            setIntent(intent)
         }
     }
 
     private fun dispatchIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra(LocalModelImportService.OPEN, false) == true) {
+            LocalModelImportService.show()
+            intent.removeExtra(LocalModelImportService.OPEN)
+        }
         if (intent?.getBooleanExtra(com.miniichatNext.carter.data.update.UpdateDownloadService.OPEN_DOWNLOAD, false) == true) {
             com.miniichatNext.carter.data.update.UpdateDownloadSession.show()
         }
@@ -87,8 +99,18 @@ class MainActivity : ComponentActivity() {
         ConversationMigrationService.start(this)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString(PENDING_GGUF, ggufImport.requests.current.value?.uri?.toString())
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) {
+            if (intent?.action == Intent.ACTION_VIEW) ggufImport.requests.offer(intent?.data)
+        } else if (ggufImport.requests.current.value == null) {
+            ggufImport.requests.offer(savedInstanceState.getString(PENDING_GGUF)?.let(Uri::parse))
+        }
         val app = application as MiniiChatApplication
         DebugLog.i("Activity", "MainActivity.onCreate (savedState=${savedInstanceState != null})")
         enableEdgeToEdge()
@@ -104,7 +126,12 @@ class MainActivity : ComponentActivity() {
                         app.recordAppLaunch()
                         app.startNormalServices()
                         if (!OnboardingState.isDone(this@MainActivity)) {
-                            startActivity(Intent(this@MainActivity, WelcomeActivity::class.java))
+                            startActivity(Intent(this@MainActivity, WelcomeActivity::class.java).apply {
+                                ggufImport.requests.current.value?.uri?.let { uri ->
+                                    data = uri
+                                    if (uri.scheme == "content") addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                            })
                             finish()
                         } else dispatchIntent(intent)
                     }
@@ -150,7 +177,7 @@ class MainActivity : ComponentActivity() {
             }
 
             MiniiChatTheme(themeMode = s.themeMode, dynamicColor = s.dynamicColor) {
-                AppRoot(vm)
+                AppRoot(vm, ggufImport.requests)
             }
         }
     }

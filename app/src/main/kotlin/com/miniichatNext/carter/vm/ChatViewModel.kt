@@ -14,6 +14,8 @@ import com.miniichatNext.carter.R
 import com.miniichatNext.carter.api.LlmClient
 import com.miniichatNext.carter.data.avatar.Avatar
 import com.miniichatNext.carter.data.avatar.AvatarStorage
+import com.miniichatNext.carter.data.localmodel.LocalLlmEngine
+import com.miniichatNext.carter.data.localmodel.LocalModelStore
 import com.miniichatNext.carter.data.mcp.McpServerConfig
 import com.miniichatNext.carter.data.mcp.McpStore
 import com.miniichatNext.carter.data.mcp.McpTool
@@ -23,6 +25,7 @@ import com.miniichatNext.carter.data.model.Assistant
 import com.miniichatNext.carter.data.model.Conversation
 import com.miniichatNext.carter.data.model.MessageSegment
 import com.miniichatNext.carter.data.model.ProviderConfig
+import com.miniichatNext.carter.data.model.ProviderType
 import com.miniichatNext.carter.data.model.ToolInvocationState
 import com.miniichatNext.carter.data.model.UserProfile
 import com.miniichatNext.carter.data.model.UserProfileStore
@@ -44,6 +47,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -59,7 +63,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     val assistantStore = AssistantStore(app)
     internal val skillStore = SkillStore(app)
     internal val userProfileStore = UserProfileStore(app)
-    internal val client = LlmClient { usage ->
+    internal val client = LlmClient(LocalLlmEngine(app)) { usage ->
         runCatching { settingsRepo.addTokenUsage(usage) }
             .onFailure { DebugLog.e("UsageRecorder", "record usage failed", it) }
     }
@@ -86,8 +90,12 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     val settings: StateFlow<AppSettings> = settingsRepo.settings
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppSettings())
 
-    val providers: StateFlow<List<ProviderConfig>> = providerStore.providersFlow
-        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val providers: StateFlow<List<ProviderConfig>> = combine(providerStore.providersFlow, LocalModelStore.records) { remote, local ->
+        remote.filterNot { it.id == LocalModelStore.PROVIDER_ID || it.type() == ProviderType.LOCAL } +
+            listOfNotNull(LocalModelStore.provider(app.getString(R.string.local_model_title), local))
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    init { viewModelScope.launch { LocalModelStore.initialize(app) } }
 
     val assistants: StateFlow<List<Assistant>> = assistantStore.assistantsFlow
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())

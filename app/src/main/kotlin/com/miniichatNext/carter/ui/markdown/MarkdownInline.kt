@@ -42,6 +42,8 @@ internal val LocalMarkdownContext = staticCompositionLocalOf<MarkdownContext> {
 
 /** 消息气泡开启；每个InlineText单独套选择容器，避免整段Markdown多布局排序。 */
 internal val LocalMarkdownSelectable = staticCompositionLocalOf { false }
+/** 代码块单独允许选择：气泡长按仍归消息菜单，代码区长按进入文本选择。 */
+internal val LocalMarkdownCodeSelectable = staticCompositionLocalOf { false }
 
 /** 把一组行内节点渲染成一个Text */
 @Composable

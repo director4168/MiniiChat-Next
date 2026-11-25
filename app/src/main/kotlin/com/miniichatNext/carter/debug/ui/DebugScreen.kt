@@ -36,6 +36,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -436,6 +437,7 @@ fun DebugScreen(
     crashConfirm?.let { kind ->
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { crashConfirm = null },
+            icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
             title = { androidx.compose.material3.Text(stringResource(R.string.debug_crash_confirm_title)) },
             text = { com.miniichatNext.carter.ui.markdown.MarkdownText(
                 text = androidx.compose.ui.res.stringResource(R.string.debug_crash_confirm_message)

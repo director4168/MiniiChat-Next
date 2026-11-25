@@ -25,6 +25,7 @@ import com.miniichatNext.carter.data.model.Message
 import com.miniichatNext.carter.data.model.MessageSegment
 import com.miniichatNext.carter.data.model.GeneratedImageStore
 import com.miniichatNext.carter.data.model.ProviderConfig
+import com.miniichatNext.carter.data.model.ProviderType
 import com.miniichatNext.carter.data.model.TokenUsage
 import com.miniichatNext.carter.data.model.ToolInvocation
 import com.miniichatNext.carter.data.model.ToolInvocationState
@@ -462,7 +463,7 @@ private suspend fun ChatViewModel.runGenerationRound(
         )
     }
 
-    generateTitle(cid)
+    if (provider.type() != ProviderType.LOCAL) generateTitle(cid)
     // 候选词只在用户打开候选面板时才生成（SuggestionPanel的LaunchedEffect触发）
     // 只返回仍待用户审批的调用：已执行完的（含上一轮续写携带）不能再算pending，
     // 否则会误判为"等待用户操作"，busy状态永远不清（表现为"已完成仍显示回复中"）
@@ -1053,6 +1054,7 @@ private suspend fun ChatViewModel.buildApiMessages(
                 val ocrMode = settings.value.ocrMode
                 val msgImages = msg.attachments.filter { it.type == "image" }
                 val ocrDescriptions = when {
+                    provider.type() == ProviderType.LOCAL -> emptyMap()
                     ocrMode == "off" -> emptyMap()
                     ocrMode == "always" && msgImages.isNotEmpty() ->
                         describeImagesWithOcr(msgImages, resolver)

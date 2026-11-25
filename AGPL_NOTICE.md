@@ -686,3 +686,11 @@ that path is read-only and does not constitute a remote service.
 ### Diagram preview follow-up (v1.8.0)
 
 `ui/markdown/DiagramPreviewCard.kt` and `DiagramHtml.kt` adapt the preview/source/view controls and the offline WebView layout of rikkahub's `ui/components/richtext/HighlightCodeBlock.kt` and `Mermaid.kt` (AGPL-3.0). Changes in this application: shared SVG/Mermaid viewer, lazy inline rendering, SVG namespace normalization and external-resource blocking, zoom reset, SVG export, and visible rendering errors. The bundled Mermaid asset remains unchanged.
+
+### Local GGUF inference — llama.cpp and ggml (MIT)
+
+The arm64 build statically links llama.cpp and ggml into `libmcn_llama.so`.
+Upstream source: <https://github.com/ggml-org/llama.cpp/tree/b1b770d90d94cad9e9ea5b993bdbc383a522fb28>
+(tag `v1.0.0`). The upstream MIT notice is preserved in
+[`docs/third-party/llama.cpp-LICENSE.txt`](docs/third-party/llama.cpp-LICENSE.txt).
+The application ships no model weights.

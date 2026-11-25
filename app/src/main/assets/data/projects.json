@@ -53,6 +53,11 @@
       "url": "https://github.com/mermaid-js/mermaid"
     },
     {
+      "name": "ggml-org/llama.cpp",
+      "desc": "（MIT）本机GGUF模型的CPU推理引擎，包含ggml计算后端",
+      "url": "https://github.com/ggml-org/llama.cpp"
+    },
+    {
       "name": "MiniiChat-Next AGPL_NOTICE",
       "desc": "本项目完整第三方组件清单",
       "url": "https://github.com/director4168/MiniiChat-Next/blob/main/AGPL_NOTICE.md"

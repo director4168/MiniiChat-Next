@@ -1201,4 +1201,61 @@
     <string name="migration_configuration">Migrating app settings</string>
     <string name="migration_cleanup_failed">The new database passed verification, but cleanup of the old files is not finished.</string>
     <string name="migration_legacy_removed">Removed the old files that finished migrating.</string>
+
+
+
+    <!-- Local GGUF models -->
+    <string name="local_model_add">Add local model</string>
+    <string name="local_model_import_file">Import file</string>
+    <string name="local_model_external_import">Import GGUF</string>
+    <string name="local_model_pick_gguf">Select a GGUF file</string>
+    <string name="local_model_disabled_reason">This is a 32-bit build. Local GGUF inference requires the 64-bit package on an arm64-v8a device.</string>
+    <string name="local_model_title">Local models</string>
+    <string name="local_model_unsupported">Local inference requires the arm64-v8a build.</string>
+    <string name="local_model_from_url">Import from URL</string>
+    <string name="local_model_url">Direct GGUF download URL</string>
+    <string name="local_model_start_import">Import</string>
+    <string name="local_model_description">Import a GGUF model file and run it locally.</string>
+    <string name="local_model_copying">Copying model file</string>
+    <string name="local_model_downloading">Downloading model file</string>
+    <string name="local_model_verifying">Verifying model</string>
+    <string name="local_model_verifying_hint">Checking the GGUF header and model structure</string>
+    <string name="local_model_import_done_title">Model imported</string>
+    <string name="local_model_import_failed_title">Model import failed</string>
+    <string name="local_model_transfer_progress">%1$s / %2$s · %3$s/s</string>
+    <string name="local_model_unknown_size">Unknown size</string>
+    <string name="local_model_transfer_size">%1$s / %2$s</string>
+    <string name="local_model_transfer_speed">Speed: %1$s/s</string>
+    <string name="local_model_show_progress">View model import progress</string>
+    <string name="local_model_importing">Importing GGUF model</string>
+    <string name="local_model_imported">Imported: %1$s</string>
+    <string name="local_model_empty">No local models imported.</string>
+    <string name="local_model_external_title">Import GGUF model</string>
+    <string name="local_model_external_message">Copy the selected file into MiniiChat Next and add it to local models?</string>
+    <string name="local_model_parameters">Model parameters</string>
+    <string name="local_model_name">Model name</string>
+    <string name="local_model_temperature">Temperature (0–2)</string>
+    <string name="local_model_top_p">Top P (greater than 0, up to 1)</string>
+    <string name="local_model_top_k">Top K (0–200)</string>
+    <string name="local_model_penalty">Repeat penalty (0.5–2)</string>
+    <string name="local_model_max_tokens">Maximum output tokens (up to half the context)</string>
+    <string name="local_model_context">Context tokens (256–16384)</string>
+    <string name="local_model_threads">CPU threads (1–16)</string>
+    <string name="local_model_seed">Seed (-1 = random)</string>
+    <string name="local_model_delete_title">Delete model file?</string>
+    <string name="local_model_delete_message">Delete the local model “%1$s” and its weights?</string>
+    <string name="local_model_import_failed">Model import failed.</string>
+    <string name="local_model_save_failed">The model change could not be saved.</string>
+    <string name="local_model_invalid_source">Choose a readable GGUF file.</string>
+    <string name="local_model_invalid_url">Enter a direct HTTP or HTTPS download URL.</string>
+    <string name="local_model_http_error">Model download failed (HTTP %1$d).</string>
+    <string name="local_model_no_space">Not enough space to import this model.</string>
+    <string name="local_model_invalid_gguf">Select a complete, supported, single-file GGUF model.</string>
+    <string name="local_model_incomplete">The model download or copy was incomplete.</string>
+    <string name="local_model_missing">The local model is missing. Import it or select another model.</string>
+    <string name="local_model_memory">Not enough memory to run this model. Try a smaller GGUF.</string>
+    <string name="local_model_text_required">Local models require text input.</string>
+    <string name="local_model_load_failed">Failed to load the local model or inference library.</string>
+    <string name="local_model_context_exceeded">The latest turn and system prompt exceed the local context. Increase the context or shorten the message.</string>
+    <string name="local_model_generate_failed">Local model generation failed.</string>
 </resources>

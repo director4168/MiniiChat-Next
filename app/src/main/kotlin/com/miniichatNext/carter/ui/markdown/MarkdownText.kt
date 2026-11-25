@@ -32,8 +32,11 @@ import com.miniichatNext.carter.ui.settings.LocalAppPreferences
 
 /** 含链接的消息不套SelectionContainer：Compose 1.7的选择注册器在链接文本长按重排时会取到已脱离层级的布局。 */
 private val MARKDOWN_LINK_PATTERN = Regex("""(?i)(?:https?://|www\.|\[[^\]]*\]\([^)]*\))""")
+private val MARKDOWN_CODE_FENCE_PATTERN = Regex("""(?m)^\s*(?:```|~~~)""")
 
 internal fun containsMarkdownLink(text: String): Boolean = MARKDOWN_LINK_PATTERN.containsMatchIn(text)
+
+internal fun containsMarkdownCodeBlock(text: String): Boolean = MARKDOWN_CODE_FENCE_PATTERN.containsMatchIn(text)
 
 /**
  * Markdown渲染入口（对外签名与旧实现一致，调用方零改动）。
@@ -53,6 +56,7 @@ internal fun MarkdownText(
     onFullscreen: ((String, Boolean) -> Unit)? = null,
     onLinkClick: ((String) -> Unit)? = null,
     selectable: Boolean = false,
+    codeSelectable: Boolean = false,
     selectionColors: TextSelectionColors? = null,
 ) {
     val effColor = if (color.isSpecified) color else LocalContentColor.current
@@ -66,6 +70,7 @@ internal fun MarkdownText(
     CompositionLocalProvider(
         LocalContentColor provides effColor,
         LocalMarkdownSelectable provides selectable,
+        LocalMarkdownCodeSelectable provides codeSelectable,
         LocalTextSelectionColors provides (selectionColors ?: defaultSelectionColors),
     ) {
         Markdown(

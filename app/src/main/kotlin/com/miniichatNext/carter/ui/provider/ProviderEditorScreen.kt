@@ -191,7 +191,7 @@ fun ProviderEditorScreen(
                         .background(MaterialTheme.colorScheme.surfaceVariant)
                         .padding(3.dp)
                 ) {
-                    com.miniichatNext.carter.data.model.ProviderType.entries.forEach { type ->
+                    com.miniichatNext.carter.data.model.ProviderType.entries.filterNot { it == ProviderType.LOCAL }.forEach { type ->
                         val selected = providerType == type
                         Box(
                             modifier = Modifier
@@ -209,6 +209,7 @@ fun ProviderEditorScreen(
                                 when (type) {
                                     com.miniichatNext.carter.data.model.ProviderType.OPENAI -> stringResource(R.string.provider_type_openai)
                                     com.miniichatNext.carter.data.model.ProviderType.CLAUDE -> stringResource(R.string.provider_type_claude)
+                                    ProviderType.LOCAL -> stringResource(R.string.local_model_title)
                                 },
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = if (selected) MaterialTheme.colorScheme.onSurface

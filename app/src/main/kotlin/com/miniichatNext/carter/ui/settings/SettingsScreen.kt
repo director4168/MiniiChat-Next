@@ -92,6 +92,7 @@ fun SettingsScreen(
     onOpenUserProfile: () -> Unit,
     onOpenAbout: () -> Unit,
     onOpenUpdateSettings: () -> Unit = {},
+    onOpenLocalModels: () -> Unit = {},
     onOpenAcknowledgements: () -> Unit = {},
     onOpenMorePreferences: () -> Unit = {},
     onOpenWorkspace: () -> Unit = {},
@@ -192,6 +193,23 @@ fun SettingsScreen(
                     }
                     Icon(Icons.Default.ChevronRight, contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+
+            SectionCard {
+                Row(
+                    modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenLocalModels)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.Storage, contentDescription = null)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.local_model_title), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.local_model_description), style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
 

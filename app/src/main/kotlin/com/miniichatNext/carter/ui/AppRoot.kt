@@ -6,7 +6,13 @@
  */
 package com.miniichatNext.carter.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -61,7 +67,12 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.miniichatNext.carter.R
+import com.miniichatNext.carter.data.localmodel.ExternalGgufRequests
+import com.miniichatNext.carter.data.localmodel.LocalModelImportPhase
+import com.miniichatNext.carter.data.localmodel.LocalModelImportService
+import com.miniichatNext.carter.data.localmodel.LocalModelStore
 import com.miniichatNext.carter.data.mcp.McpClient
 import com.miniichatNext.carter.data.model.ProviderOverride
 import com.miniichatNext.carter.data.model.UserProfile
@@ -79,6 +90,8 @@ import com.miniichatNext.carter.ui.chat.ChatScreen
 import com.miniichatNext.carter.ui.chat.CompressContextDialog
 import com.miniichatNext.carter.ui.chat.ModelPickerSheet
 import com.miniichatNext.carter.ui.components.ToastStackHost
+import com.miniichatNext.carter.ui.localmodel.LocalModelImportDialog
+import com.miniichatNext.carter.ui.localmodel.LocalModelsScreen
 import com.miniichatNext.carter.ui.markdown.LocalMarkdownPreferences
 import com.miniichatNext.carter.ui.markdown.MarkdownPreferences
 import com.miniichatNext.carter.ui.mcp.McpServerDetailScreen
@@ -148,12 +161,12 @@ internal enum class Screen {
     Skills, UserProfile, About, Debug, DebugCropTest, DialogTest, ThemeColors, MorePreferences, UpdateSettings, Acknowledgements, Permissions,
     Workspace, WorkspaceDetail, WorkspaceTerminal,
     Mcp, McpDetail, McpEdit, McpBuiltIn,
-    MermaidPreview
+    MermaidPreview, LocalModels
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AppRoot(vm: ChatViewModel) {
+internal fun AppRoot(vm: ChatViewModel, externalGgufRequests: ExternalGgufRequests) {
     val mcpServers by vm.mcpServers.collectAsState()
     val syncingMcpIds by vm.syncingMcpIds.collectAsState()
     // 对外可见的MCP服务器：设置里关闭的服务器在助手/聊天等处完全隐藏（仅MCP设置列表保留）；
@@ -190,11 +203,25 @@ fun AppRoot(vm: ChatViewModel) {
     }
 
     var showModelPicker by rememberSaveable { mutableStateOf(false) }
+    val externalGgufRequest = externalGgufRequests.current.collectAsState().value
+    var askedModelNotifications by rememberSaveable { mutableStateOf(false) }
+    val modelNotificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val startModelImport: (Uri?, String?) -> Unit = { uri, url ->
+        LocalModelImportService.start(context, uri, url)
+        if (!askedModelNotifications && Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            askedModelNotifications = true
+            modelNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
     // 启动时auto-check触发的更新弹窗：监听全局UpdateState.pending，
     // 任意页面都能弹出（不依赖用户在AboutScreen里）。
     val pendingUpdate by com.miniichatNext.carter.data.update.UpdateState.pending.collectAsState()
     val updateDownloadState by com.miniichatNext.carter.data.update.UpdateDownloadSession.state.collectAsState()
     val updateDownloadVisible by com.miniichatNext.carter.data.update.UpdateDownloadSession.visible.collectAsState()
+    val localImport by LocalModelImportService.state.collectAsState()
+    val localImportVisible by LocalModelImportService.visible.collectAsState()
     val updateNotificationPermission = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
     ) { }
@@ -268,6 +295,7 @@ fun AppRoot(vm: ChatViewModel) {
         activeId?.let { context.getSharedPreferences("last_conversation", android.content.Context.MODE_PRIVATE).edit().putString("id", it).apply() }
     }
     val providers by vm.providers.collectAsState()
+    val remoteProviders = providers.filterNot { it.id == LocalModelStore.PROVIDER_ID }
     val isStreaming by vm.isStreaming.collectAsState()
     val streamingConvId by vm.streamingConvId.collectAsState()
     val pendingConvId by vm.pendingConvId.collectAsState()
@@ -584,7 +612,8 @@ fun AppRoot(vm: ChatViewModel) {
                     Screen.Settings -> {
                         SettingsScreen(
                             settings = settings,
-                            providers = providers,
+                            providers = remoteProviders,
+                            onOpenLocalModels = { nav.push(Screen.LocalModels.name) },
                             assistants = assistants,
                             skills = skills,
                             userProfile = userProfile,
@@ -825,11 +854,13 @@ fun AppRoot(vm: ChatViewModel) {
                         ) else MissingEditorTarget { nav.back() }
                     }
 
+                    Screen.LocalModels -> LocalModelsScreen(onStartImport = startModelImport, onBack = { nav.back() })
+
                     Screen.Providers -> {
                         ProvidersScreen(
                             onReorder = { ids -> vm.reorderProviders(ids) },
                             scrollState = providersScrollState,
-                            providers = providers,
+                            providers = remoteProviders,
                             fetchingId = fetchingId,
                             activeProviderId = settings.activeProviderId,
                             activeModel = settings.activeModel,
@@ -851,7 +882,7 @@ fun AppRoot(vm: ChatViewModel) {
 
                     Screen.ProviderEdit -> {
                         val providerId = key.args["providerId"]
-                        val providerToEdit = providers.firstOrNull { it.id == providerId }
+                        val providerToEdit = remoteProviders.firstOrNull { it.id == providerId }
                         if (providerId == null || providerToEdit != null) ProviderEditorScreen(
                             initial = providerToEdit,
                             onCancel = {
@@ -986,6 +1017,11 @@ fun AppRoot(vm: ChatViewModel) {
         )
     }
 
+    if (localImportVisible && localImport.phase != LocalModelImportPhase.IDLE) {
+        LocalModelImportDialog(localImport, onCancel = { context.startService(LocalModelImportService.cancelIntent(context)) },
+            onClose = LocalModelImportService::hide)
+    }
+
     if (updateDownloadVisible) updateDownloadState?.let { state ->
         com.miniichatNext.carter.ui.settings.update.UpdateDownloadDialog(
             state = state,
@@ -994,6 +1030,28 @@ fun AppRoot(vm: ChatViewModel) {
             onInstallNow = { scope.launch { com.miniichatNext.carter.data.update.UpdateDownloadSession.install(context) } },
             onCancel = { com.miniichatNext.carter.data.update.UpdateDownloadSession.cancel() },
             onHide = { com.miniichatNext.carter.data.update.UpdateDownloadSession.hide() },
+        )
+    }
+
+    externalGgufRequest?.let { request ->
+        val supported = LocalModelStore.supported
+        val dismiss = { externalGgufRequests.consume(request); Unit }
+        AlertDialog(
+            onDismissRequest = dismiss,
+            title = { Text(stringResource(R.string.local_model_external_title)) },
+            text = { Text(stringResource(if (supported) R.string.local_model_external_message else R.string.local_model_disabled_reason)) },
+            confirmButton = {
+                if (supported) {
+                    TextButton(enabled = !localImport.active, onClick = {
+                        if (externalGgufRequests.consume(request)) startModelImport(request.uri, null)
+                    }) { Text(stringResource(R.string.local_model_external_import)) }
+                } else {
+                    TextButton(onClick = dismiss) { Text(stringResource(R.string.update_close)) }
+                }
+            },
+            dismissButton = {
+                if (supported) TextButton(onClick = dismiss) { Text(stringResource(R.string.cancel)) }
+            },
         )
     }
 }

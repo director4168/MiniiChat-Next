@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ExpandLess
@@ -180,30 +181,34 @@ internal fun MdCodeBlockCard(
             }
         },
     ) {
+        val selectable = LocalMarkdownSelectable.current || LocalMarkdownCodeSelectable.current
         if (preferences.codeWrap) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
-            ) {
-                highlightedLines.forEachIndexed { index, line ->
-                    Row(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = (index + 1).toString().padStart(lineNumberWidth, ' '),
-                            style = codeStyle,
-                            color = palette.lineNumberFg,
-                            softWrap = false,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                            modifier = Modifier.width(lineNumberGutterWidth).padding(start = 10.dp, end = 8.dp),
-                        )
-                        Text(
-                            text = if (line.length == 0) AnnotatedString(" ") else line,
-                            style = codeStyle.copy(color = palette.codeFg),
-                            minLines = 1,
-                            softWrap = true,
-                            modifier = Modifier.weight(1f).padding(start = 2.dp, end = 12.dp),
-                        )
+            val body: @Composable () -> Unit = {
+                Column(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                ) {
+                    highlightedLines.forEachIndexed { index, line ->
+                        Row(modifier = Modifier.fillMaxWidth()) {
+                            Text(
+                                text = (index + 1).toString().padStart(lineNumberWidth, ' '),
+                                style = codeStyle,
+                                color = palette.lineNumberFg,
+                                softWrap = false,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                modifier = Modifier.width(lineNumberGutterWidth).padding(start = 10.dp, end = 8.dp),
+                            )
+                            Text(
+                                text = if (line.length == 0) AnnotatedString(" ") else line,
+                                style = codeStyle.copy(color = palette.codeFg),
+                                minLines = 1,
+                                softWrap = true,
+                                modifier = Modifier.weight(1f).padding(start = 2.dp, end = 12.dp),
+                            )
+                        }
                     }
                 }
             }
+            if (selectable) SelectionContainer { body() } else body()
         } else {
             Row(
                 modifier = Modifier
@@ -230,12 +235,15 @@ internal fun MdCodeBlockCard(
                         }
                         .padding(start = 10.dp, end = 8.dp),
                 )
-                Text(
-                    text = highlighted,
-                    style = codeStyle.copy(color = palette.codeFg),
-                    softWrap = false,
-                    modifier = Modifier.padding(start = 2.dp, end = 12.dp),
-                )
+                val codeText: @Composable () -> Unit = {
+                    Text(
+                        text = highlighted,
+                        style = codeStyle.copy(color = palette.codeFg),
+                        softWrap = false,
+                        modifier = Modifier.padding(start = 2.dp, end = 12.dp),
+                    )
+                }
+                if (selectable) SelectionContainer { codeText() } else codeText()
             }
         }
         if (preferences.codeFold && allLines.size > 10) {

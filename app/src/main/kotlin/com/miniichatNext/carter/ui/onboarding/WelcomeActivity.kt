@@ -146,7 +146,7 @@ class WelcomeActivity : ComponentActivity() {
         if (com.miniichatNext.carter.data.store.migration.ConversationMigration.flow.value.phase !=
             com.miniichatNext.carter.data.store.migration.ConversationMigration.Phase.READY
         ) {
-            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            openMainActivity()
             finish()
             return
         }
@@ -190,10 +190,19 @@ class WelcomeActivity : ComponentActivity() {
             return
         }
         OnboardingState.markDone(this)
+        openMainActivity()
+        finish()
+    }
+
+    private fun openMainActivity() {
         startActivity(Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            this@WelcomeActivity.intent.data?.let { uri ->
+                action = Intent.ACTION_VIEW
+                data = uri
+                if (uri.scheme == "content") addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
         })
-        finish()
     }
 
     private fun requestPermission(kind: String) {
@@ -625,7 +634,7 @@ private fun ProviderContent(
     Row(
         modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surface).padding(3.dp),
     ) {
-        ProviderType.entries.forEach { item ->
+        ProviderType.entries.filterNot { it == ProviderType.LOCAL }.forEach { item ->
             val selected = item == type
             Box(
                 modifier = Modifier.weight(1f).clip(RoundedCornerShape(10.dp)).background(

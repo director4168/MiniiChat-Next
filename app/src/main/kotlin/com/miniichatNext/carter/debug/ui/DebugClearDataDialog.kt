@@ -8,7 +8,10 @@ package com.miniichatNext.carter.debug.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -34,6 +37,7 @@ internal fun DebugClearDataDialog(onDismiss: () -> Unit) {
     var failed by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = { if (!requested) onDismiss() },
+        icon = { Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
         title = { Text(stringResource(if (finalStep) R.string.debug_clear_data_final_title else R.string.debug_clear_data_confirm_title)) },
         text = {
             if (finalStep) {

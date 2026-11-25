@@ -247,8 +247,9 @@ internal fun ModelPickerContent(
             verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             providers.forEach { provider ->
-                val matches = provider.modelIds().filter {
-                    query.isBlank() || it.contains(query, ignoreCase = true)
+                val matches = provider.modelIds().filter { model ->
+                    query.isBlank() || model.contains(query, ignoreCase = true) ||
+                        provider.model(model)?.displayName?.contains(query, ignoreCase = true) == true
                 }
                 if (matches.isNotEmpty() || query.isBlank()) {
                     item(key = "h-${provider.id}") {
@@ -263,7 +264,7 @@ internal fun ModelPickerContent(
                 itemsIndexed(matches, key = { i, m -> "${provider.id}::$m#$i" }) { _, model ->
                     val selected = provider.id == activeProviderId && model == activeModel
                     ModelRow(
-                        label = model,
+                        label = provider.model(model)?.displayName?.takeIf { it.isNotBlank() } ?: model,
                         selected = selected,
                         onClick = { onPick(provider.id, model) }
                     )
@@ -302,6 +303,7 @@ private fun ModelQuickSettings(
     onResponseApiChange: (Boolean?) -> Unit,
     onPromptCacheChange: (Boolean?) -> Unit,
 ) {
+    if (providerType == ProviderType.LOCAL) return
     var showApiWarning by remember { mutableStateOf(false) }
 
     Column(

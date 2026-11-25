@@ -1201,4 +1201,61 @@
     <string name="migration_configuration">正在迁移应用配置</string>
     <string name="migration_cleanup_failed">新数据库已通过校验，但旧文件清理未完成</string>
     <string name="migration_legacy_removed">已移除完成迁移的旧文件</string>
+
+
+
+    <!-- 本机GGUF模型 -->
+    <string name="local_model_add">添加本机模型</string>
+    <string name="local_model_import_file">导入文件</string>
+    <string name="local_model_external_import">导入GGUF</string>
+    <string name="local_model_pick_gguf">请选择GGUF文件</string>
+    <string name="local_model_disabled_reason">当前软件为32位版本，本机模型推理需要运行在64位设备并使用64位安装包（arm64-v8a）。</string>
+    <string name="local_model_title">本机模型</string>
+    <string name="local_model_unsupported">本机推理需要arm64-v8a版本。</string>
+    <string name="local_model_from_url">从URL导入</string>
+    <string name="local_model_url">GGUF直链</string>
+    <string name="local_model_start_import">导入</string>
+    <string name="local_model_description">导入GGUF模型文件，在本地运行大模型</string>
+    <string name="local_model_copying">正在复制模型文件</string>
+    <string name="local_model_downloading">正在下载模型文件</string>
+    <string name="local_model_verifying">正在校验模型</string>
+    <string name="local_model_verifying_hint">正在检查GGUF文件头和模型结构</string>
+    <string name="local_model_import_done_title">模型导入完成</string>
+    <string name="local_model_import_failed_title">模型导入失败</string>
+    <string name="local_model_transfer_progress">%1$s / %2$s · %3$s/s</string>
+    <string name="local_model_unknown_size">大小未知</string>
+    <string name="local_model_transfer_size">%1$s / %2$s</string>
+    <string name="local_model_transfer_speed">速度：%1$s/s</string>
+    <string name="local_model_show_progress">查看模型导入进度</string>
+    <string name="local_model_importing">正在导入GGUF模型</string>
+    <string name="local_model_imported">已导入：%1$s</string>
+    <string name="local_model_empty">尚未导入本机模型。</string>
+    <string name="local_model_external_title">导入GGUF模型</string>
+    <string name="local_model_external_message">将所选文件复制到MiniiChat Next并添加到本机模型？</string>
+    <string name="local_model_parameters">模型参数</string>
+    <string name="local_model_name">模型名称</string>
+    <string name="local_model_temperature">温度（0–2）</string>
+    <string name="local_model_top_p">Top P（大于0，最大1）</string>
+    <string name="local_model_top_k">Top K（0–200）</string>
+    <string name="local_model_penalty">重复惩罚（0.5–2）</string>
+    <string name="local_model_max_tokens">最大输出Token（不超过上下文的一半）</string>
+    <string name="local_model_context">上下文Token（256–16384）</string>
+    <string name="local_model_threads">CPU线程（1–16）</string>
+    <string name="local_model_seed">随机种子（-1为随机）</string>
+    <string name="local_model_delete_title">删除模型文件？</string>
+    <string name="local_model_delete_message">删除本机模型「%1$s」及其权重文件？</string>
+    <string name="local_model_import_failed">模型导入失败。</string>
+    <string name="local_model_save_failed">模型更改保存失败。</string>
+    <string name="local_model_invalid_source">请选择可读取的GGUF文件。</string>
+    <string name="local_model_invalid_url">请输入HTTP或HTTPS下载直链。</string>
+    <string name="local_model_http_error">模型下载失败（HTTP %1$d）。</string>
+    <string name="local_model_no_space">存储空间不足，无法导入此模型。</string>
+    <string name="local_model_invalid_gguf">请选择完整且受支持的单文件GGUF模型。</string>
+    <string name="local_model_incomplete">模型下载或复制不完整。</string>
+    <string name="local_model_missing">本机模型文件缺失，请导入或选择其他模型。</string>
+    <string name="local_model_memory">运行此模型的内存不足，请尝试较小的GGUF模型。</string>
+    <string name="local_model_text_required">本机模型需要文本输入。</string>
+    <string name="local_model_load_failed">本机模型或推理库加载失败。</string>
+    <string name="local_model_context_exceeded">最近一轮消息和系统提示超出本机上下文。请调大上下文或缩短消息。</string>
+    <string name="local_model_generate_failed">本机模型生成失败。</string>
 </resources>

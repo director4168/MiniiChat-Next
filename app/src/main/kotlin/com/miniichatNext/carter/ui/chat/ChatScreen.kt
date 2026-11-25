@@ -239,9 +239,9 @@ fun ChatScreen(
         )
     }
     val userSenderLabel = stringResource(R.string.profile_default_name)
-    val assistantSenderLabel = effectiveModelId.ifBlank {
-        activeProvider?.name ?: stringResource(R.string.assistant)
-    }
+    val assistantSenderLabel = activeProvider?.model(effectiveModelId)?.displayName?.takeIf { it.isNotBlank() }
+        ?: effectiveModelId.ifBlank { activeProvider?.name ?: stringResource(R.string.assistant) }
+    val providers = com.miniichatNext.carter.ui.settings.LocalUsageProviders.current
     var editingMessageId by rememberSaveable { mutableStateOf<String?>(null) }
     // 重说：先确认，再截断重生成
     var retellTargetId by remember { mutableStateOf<String?>(null) }
@@ -531,7 +531,10 @@ fun ChatScreen(
                         assistantAvatar = assistantDisplayAvatar,
                         // 每条消息显示它自己实际使用的模型：切换当前模型后历史消息不跟着变
                         senderLabel = if (msg.role == "user") userSenderLabel
-                        else msg.model?.takeIf { it.isNotBlank() } ?: assistantSenderLabel,
+                        else msg.model?.let { model ->
+                            providers.firstOrNull { it.id == msg.providerId }?.model(model)?.displayName
+                                ?.takeIf { it.isNotBlank() }
+                        } ?: msg.model?.takeIf { it.isNotBlank() } ?: assistantSenderLabel,
                         onStartEdit = {
                             editingMessageId = msg.id
                             input = msg.content

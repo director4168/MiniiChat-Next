@@ -61,6 +61,60 @@
         </activity>
 
         <activity
+            android:name=".ui.localmodel.GgufImportActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.NoDisplay" />
+
+        <activity-alias
+            android:name=".GgufImport"
+            android:exported="true"
+            android:label="@string/local_model_external_import"
+            android:targetActivity=".ui.localmodel.GgufImportActivity">
+            <intent-filter android:label="@string/local_model_external_import">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/x-gguf" />
+                <data android:mimeType="application/gguf" />
+            </intent-filter>
+            <intent-filter android:label="@string/local_model_external_import">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+            <intent-filter android:label="@string/local_model_external_import">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:pathPattern=".*\\.gguf" />
+                <data android:pathPattern=".*\\.GGUF" />
+                <data android:pathPattern=".*\\..*\\.gguf" />
+                <data android:pathPattern=".*\\..*\\..*\\.gguf" />
+                <data android:pathSuffix=".gguf" />
+                <data android:pathSuffix=".GGUF" />
+            </intent-filter>
+            <intent-filter android:label="@string/local_model_external_import">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.gguf" />
+                <data android:pathPattern=".*\\.GGUF" />
+                <data android:pathPattern=".*\\..*\\.gguf" />
+                <data android:pathPattern=".*\\..*\\..*\\.gguf" />
+                <data android:pathSuffix=".gguf" />
+                <data android:pathSuffix=".GGUF" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity
             android:name=".ui.onboarding.WelcomeActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize"
@@ -91,6 +145,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <service
+            android:name=".data.localmodel.LocalModelImportService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <service
             android:name=".data.update.UpdateDownloadService"
